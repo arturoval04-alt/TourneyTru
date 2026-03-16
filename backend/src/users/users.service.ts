@@ -1,18 +1,20 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UsersService {
-    constructor(private prisma: PrismaService) { }
+    constructor(private prisma: PrismaService) {}
 
     async findAll() {
         try {
             const users = await this.prisma.user.findMany({
-                include: { role: true }
+                include: { role: true },
             });
             return users.map(u => ({
                 id: u.id,
-                name: `${u.firstName} ${u.lastName}`.trim(),
+                firstName: u.firstName,
+                lastName: u.lastName,
                 email: u.email,
                 role: u.role ? u.role.name : 'general',
                 phone: u.phone,
@@ -24,65 +26,75 @@ export class UsersService {
         }
     }
 
-    async create(dto: any) {
-        try {
-            // Find or create role
-            let role = await this.prisma.role.findUnique({
-                where: { name: dto.role || 'general' },
-            });
+    async findById(id: string) {
+        const user = await this.prisma.user.findUnique({
+            where: { id },
+            include: { role: true },
+        });
+        if (!user) return null;
+        return {
+            id: user.id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            role: user.role.name,
+            phone: user.phone,
+            profilePicture: user.profilePicture,
+        };
+    }
 
+    // Solo para uso interno (ej. seed de admin)
+    async createAdmin(dto: { email: string; password: string; firstName: string; lastName: string }) {
+        try {
+            let role = await this.prisma.role.findUnique({ where: { name: 'admin' } });
             if (!role) {
-                role = await this.prisma.role.create({
-                    data: { name: dto.role || 'general' },
-                });
+                role = await this.prisma.role.create({ data: { name: 'admin' } });
             }
 
-            const names = dto.name ? dto.name.split(' ') : ['Usuario'];
-            const firstName = names[0];
-            const lastName = names.slice(1).join(' ') || '';
+            const passwordHash = await bcrypt.hash(dto.password, 12);
 
             const user = await this.prisma.user.create({
                 data: {
-                    email: dto.email,
-                    passwordHash: dto.password || '123456',
-                    firstName,
-                    lastName,
+                    email: dto.email.toLowerCase(),
+                    passwordHash,
+                    firstName: dto.firstName,
+                    lastName: dto.lastName,
                     roleId: role.id,
                 },
+                include: { role: true },
             });
 
             return {
                 id: user.id,
-                name: `${user.firstName} ${user.lastName}`.trim(),
                 email: user.email,
-                role: role.name
+                role: user.role.name,
             };
         } catch (e) {
-            console.error('Error creating user', e);
-            throw new InternalServerErrorException('Error creating user');
+            console.error('Error creating admin user', e);
+            throw new InternalServerErrorException('Error creating admin user');
         }
     }
 
-    async updateProfile(email: string, dto: { phone?: string; profilePicture?: string }) {
+    async updateProfile(userId: string, dto: { phone?: string; profilePicture?: string }) {
         try {
             const data: any = {};
             if (dto.phone !== undefined) data.phone = dto.phone;
             if (dto.profilePicture !== undefined) data.profilePicture = dto.profilePicture;
 
             const updated = await this.prisma.user.update({
-                where: { email },
-                data
+                where: { id: userId },
+                data,
             });
 
             return {
                 id: updated.id,
                 email: updated.email,
                 phone: updated.phone,
-                profilePicture: updated.profilePicture
+                profilePicture: updated.profilePicture,
             };
         } catch (e) {
             console.error('Error updating user profile', e);
-            throw new InternalServerErrorException('Error updating user profile');
+            throw new InternalServerErrorException('Error al actualizar el perfil');
         }
     }
 }

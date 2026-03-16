@@ -3,46 +3,48 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { saveSession } from "@/lib/auth";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
 
 export default function LoginPage() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
     const router = useRouter();
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
+        setError("");
         setLoading(true);
 
         try {
-            // Very simple simulated auth using the users endpoint directly
-            const res = await fetch('http://localhost:3001/api/users');
-            if (res.ok) {
-                const users = await res.json();
-                const user = users.find((u: any) => u.email === email);
+            const res = await fetch(`${API_URL}/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+            });
 
-                if (user) {
-                    localStorage.setItem("userRole", user.role);
-                    localStorage.setItem("userName", user.name);
-                    localStorage.setItem("userEmail", user.email);
-                    localStorage.setItem("userTournamentId", user.tournament_id || "");
-                    localStorage.setItem("userPhone", user.phone || "");
-                    localStorage.setItem("userProfilePicture", user.profilePicture || "");
+            const data = await res.json();
 
-                    if (user.role === "admin" || user.role === "scorekeeper") {
-                        router.push("/admin/dashboard");
-                        return;
-                    } else {
-                        router.push("/");
-                        return;
-                    }
-                } else {
-                    alert("Usuario no encontrado.");
-                }
+            if (!res.ok) {
+                setError(data.message || "Credenciales incorrectas.");
+                return;
             }
-        } catch (error) {
-            console.error("Login failed:", error);
-            alert("Error de conexión con el servidor.");
+
+            saveSession(data.user, {
+                accessToken: data.accessToken,
+                refreshToken: data.refreshToken,
+            });
+
+            if (data.user.role === "admin" || data.user.role === "scorekeeper") {
+                router.push("/admin/dashboard");
+            } else {
+                router.push("/");
+            }
+        } catch {
+            setError("Error de conexión con el servidor.");
         } finally {
             setLoading(false);
         }
@@ -68,10 +70,11 @@ export default function LoginPage() {
             <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
                 <div className="bg-surface py-8 px-4 shadow-xl sm:rounded-2xl sm:px-10 border border-muted/30">
 
-                    {/* Autenticación Requerida */}
-                    <div className="mb-8 border-b border-muted/20 pb-4 text-center">
-                        <p className="text-sm rounded-lg transition-all text-muted-foreground font-bold">Por favor, ingrese sus credenciales</p>
-                    </div>
+                    {error && (
+                        <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm font-medium">
+                            {error}
+                        </div>
+                    )}
 
                     <form className="space-y-5" onSubmit={handleLogin}>
                         <div>
@@ -80,7 +83,7 @@ export default function LoginPage() {
                             </label>
                             <input
                                 id="email" name="email" type="email" required
-                                value={email} onChange={e => setEmail(e.target.value)}
+                                value={email} onChange={e => { setEmail(e.target.value); setError(""); }}
                                 className="block w-full px-4 py-2 bg-background border border-muted/30 rounded-lg shadow-sm placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary sm:text-sm transition-all"
                                 placeholder="tu@correo.com"
                             />
@@ -92,7 +95,7 @@ export default function LoginPage() {
                             </label>
                             <input
                                 id="password" name="password" type="password" required
-                                value={password} onChange={e => setPassword(e.target.value)}
+                                value={password} onChange={e => { setPassword(e.target.value); setError(""); }}
                                 className="block w-full px-4 py-2 bg-background border border-muted/30 rounded-lg shadow-sm placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary sm:text-sm transition-all"
                                 placeholder="••••••••"
                             />

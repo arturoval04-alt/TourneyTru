@@ -2,25 +2,75 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { saveSession } from "@/lib/auth";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
 
 export default function RegisterPage() {
+    const router = useRouter();
     const [formData, setFormData] = useState({
         nombre: "",
         apellido: "",
         celular: "",
         correo: "",
-        ciudad: "",
-        password: ""
+        password: "",
+        confirmPassword: "",
     });
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
+        setError("");
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        // Here you would typically integrate with your auth backend
-        alert("¡Cuenta General creada con éxito!\nAhora podrías iniciar sesión para ver Estadísticas de Jugadores detalladas.");
+        setError("");
+
+        if (formData.password !== formData.confirmPassword) {
+            setError("Las contraseñas no coinciden.");
+            return;
+        }
+
+        if (formData.password.length < 8) {
+            setError("La contraseña debe tener al menos 8 caracteres.");
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const res = await fetch(`${API_URL}/auth/register`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    firstName: formData.nombre.trim(),
+                    lastName: formData.apellido.trim(),
+                    email: formData.correo.trim().toLowerCase(),
+                    password: formData.password,
+                    phone: formData.celular || undefined,
+                }),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                setError(data.message || "Error al crear la cuenta. Intenta de nuevo.");
+                return;
+            }
+
+            saveSession(data.user, {
+                accessToken: data.accessToken,
+                refreshToken: data.refreshToken,
+            });
+
+            router.push("/");
+        } catch {
+            setError("Error de conexión con el servidor.");
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -42,6 +92,12 @@ export default function RegisterPage() {
 
             <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
                 <div className="bg-surface py-8 px-4 shadow-xl sm:rounded-2xl sm:px-10 border border-muted/30">
+                    {error && (
+                        <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm font-medium">
+                            {error}
+                        </div>
+                    )}
+
                     <form className="space-y-5" onSubmit={handleSubmit}>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
@@ -63,20 +119,11 @@ export default function RegisterPage() {
                         </div>
 
                         <div>
-                            <label htmlFor="celular" className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">Celular</label>
+                            <label htmlFor="celular" className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">Celular <span className="text-muted-foreground/60 normal-case font-normal">(opcional)</span></label>
                             <input
-                                type="tel" name="celular" id="celular" required
+                                type="tel" name="celular" id="celular"
                                 className="block w-full px-4 py-2 bg-background border border-muted/30 rounded-lg shadow-sm placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary sm:text-sm transition-all"
                                 placeholder="+52 123 456 7890" onChange={handleChange} value={formData.celular}
-                            />
-                        </div>
-
-                        <div>
-                            <label htmlFor="ciudad" className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">Ciudad</label>
-                            <input
-                                type="text" name="ciudad" id="ciudad" required
-                                className="block w-full px-4 py-2 bg-background border border-muted/30 rounded-lg shadow-sm placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary sm:text-sm transition-all"
-                                placeholder="Monterrey" onChange={handleChange} value={formData.ciudad}
                             />
                         </div>
 
@@ -92,18 +139,29 @@ export default function RegisterPage() {
                         <div>
                             <label htmlFor="password" className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">Contraseña</label>
                             <input
-                                type="password" name="password" id="password" required
+                                type="password" name="password" id="password" required minLength={8}
                                 className="block w-full px-4 py-2 bg-background border border-muted/30 rounded-lg shadow-sm placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary sm:text-sm transition-all"
-                                placeholder="••••••••" onChange={handleChange} value={formData.password}
+                                placeholder="Mín. 8 caracteres" onChange={handleChange} value={formData.password}
+                            />
+                            <p className="mt-1 text-xs text-muted-foreground">Debe incluir mayúscula, minúscula y número.</p>
+                        </div>
+
+                        <div>
+                            <label htmlFor="confirmPassword" className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">Confirmar Contraseña</label>
+                            <input
+                                type="password" name="confirmPassword" id="confirmPassword" required
+                                className="block w-full px-4 py-2 bg-background border border-muted/30 rounded-lg shadow-sm placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary sm:text-sm transition-all"
+                                placeholder="••••••••" onChange={handleChange} value={formData.confirmPassword}
                             />
                         </div>
 
                         <div className="pt-2">
                             <button
                                 type="submit"
-                                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-lg shadow-primary/20 text-sm font-bold text-white bg-primary hover:bg-primary-light focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all active:scale-[0.98] cursor-pointer"
+                                disabled={loading}
+                                className={`w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-lg shadow-primary/20 text-sm font-bold text-white transition-all active:scale-[0.98] ${loading ? "bg-muted cursor-not-allowed" : "bg-primary hover:bg-primary-light focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary cursor-pointer"}`}
                             >
-                                Crear Cuenta General
+                                {loading ? "Creando cuenta..." : "Crear Cuenta"}
                             </button>
                         </div>
                     </form>
