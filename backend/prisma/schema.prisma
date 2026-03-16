@@ -1,0 +1,278 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+
+// ==========================================
+// 1. SISTEMA DE USUARIOS Y ROLES (AUTH)
+// ==========================================
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  firstName     String   @map("first_name")
+  lastName      String   @map("last_name")
+  phone         String?  @map("phone")
+  profilePicture String? @map("profile_picture") @db.NVarChar(Max)
+  
+  roleId        String   @map("role_id")
+  role          Role     @relation(fields: [roleId], references: [id])
+  
+  leaguesAdmin  League[] @relation("LeagueAdmin")
+  tournamentsAdmin Tournament[] @relation("TournamentAdmin")
+  tournamentOrganizers TournamentOrganizer[]
+  
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique // Ej. 'admin', 'scorekeeper', 'public'
+  users       User[]
+
+  @@map("roles")
+}
+
+// ==========================================
+// 2. ESTRUCTURA DEL TORNEO
+// ==========================================
+
+model League {
+  id          String       @id @default(uuid())
+  name        String
+  logoUrl     String?      @map("logo_url")
+  
+  adminId     String       @map("admin_id")
+  admin       User         @relation("LeagueAdmin", fields: [adminId], references: [id])
+  
+  tournaments Tournament[]
+  umpires     Umpire[]
+
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@map("leagues")
+}
+
+model Tournament {
+  id          String   @id @default(uuid())
+  name        String
+  season      String
+  description String?  @db.NVarChar(Max)
+  category    String?  // Libre, 1era Fuerza, etc.
+  logoUrl     String?  @map("logo_url") @db.NVarChar(Max)
+  rulesType   String   @map("rules_type") @default("baseball_9") // baseball_9, softball_7
+  
+  adminId       String   @map("admin_id")
+  leagueId      String   @map("league_id")
+  
+  locationCity  String?  @map("location_city")
+  locationState String?  @map("location_state")
+
+  league      League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  admin       User     @relation("TournamentAdmin", fields: [adminId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  
+  teams       Team[]
+  games       Game[]
+  fields      Field[]
+  organizers  TournamentOrganizer[]
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("tournaments")
+}
+
+model TournamentOrganizer {
+  id           String     @id @default(uuid())
+  tournamentId String     @map("tournament_id")
+  userId       String     @map("user_id")
+
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user         User       @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  @@unique([tournamentId, userId])
+  @@map("tournament_organizers")
+}
+
+model Field {
+  id           String     @id @default(uuid())
+  name         String
+  location     String?
+
+  tournamentId String     @map("tournament_id")
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  teamsAsHome  Team[]
+
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  @@map("fields")
+}
+
+model Team {
+  id            String       @id @default(uuid())
+  name          String
+  shortName     String?      @map("short_name")
+  logoUrl       String?      @map("logo_url") @db.NVarChar(Max)
+  managerName   String?      @map("manager_name")
+  
+  tournamentId  String       @map("tournament_id")
+  tournament    Tournament   @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  homeFieldId   String?      @map("home_field_id")
+  homeField     Field?       @relation(fields: [homeFieldId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  
+  players       Player[]     // Roster
+  
+  gamesAsHome   Game[]       @relation("HomeTeam")
+  gamesAsAway   Game[]       @relation("AwayTeam")
+  lineups       Lineup[]
+
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  @@map("teams")
+}
+
+model Player {
+  id            String   @id @default(uuid())
+  firstName     String   @map("first_name")
+  lastName      String   @map("last_name")
+  number        Int?
+  position      String?  // P, C, 1B, 2B, 3B, SS, LF, CF, RF
+  photoUrl      String?  @map("photo_url") @db.NVarChar(Max)
+  bats          String?  @default("R") // R, L, S
+  throws        String?  @default("R") // R, L
+  
+  teamId        String   @map("team_id")
+  team          Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  
+  lineupEntries Lineup[] // En cuantas posiciones de lineup ha estado
+
+  // Acciones en el Play-by-play
+  playsAsBatter Play[]   @relation("BatterPlay")
+  playsAsPitcher Play[]  @relation("PitcherPlay")
+
+  // Premios de juego (MVPs)
+  gamesWonAsPitcher Game[] @relation("GameWinningPitcher")
+  gamesMvp1         Game[] @relation("GameMvpBatter1")
+  gamesMvp2         Game[] @relation("GameMvpBatter2")
+
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("players")
+}
+
+model Umpire {
+  id          String   @id @default(uuid())
+  firstName   String   @map("first_name")
+  lastName    String   @map("last_name")
+  
+  leagueId    String   @map("league_id")
+  league      League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  @@map("umpires")
+}
+
+// ==========================================
+// 3. MOTOR DE JUEGOS Y LOGICA
+// ==========================================
+
+model Game {
+  id            String     @id @default(uuid())
+  field         String?
+  scheduledDate DateTime   @map("scheduled_date")
+  startTime     DateTime?  @map("start_time")
+  endTime       DateTime?  @map("end_time")
+  
+  status        String     @default("scheduled") // scheduled, in_progress, finished, canceled
+  
+  homeScore     Int        @default(0) @map("home_score")
+  awayScore     Int        @default(0) @map("away_score")
+  currentInning Int        @default(1) @map("current_inning")
+  half          String     @default("top") // top, bottom
+  
+  tournamentId  String     @map("tournament_id")
+  tournament    Tournament @relation(fields: [tournamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  
+  homeTeamId    String     @map("home_team_id")
+  homeTeam      Team       @relation("HomeTeam", fields: [homeTeamId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  
+  awayTeamId    String     @map("away_team_id")
+  awayTeam      Team       @relation("AwayTeam", fields: [awayTeamId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  
+  lineups       Lineup[]
+  plays         Play[]
+
+  winningPitcherId String? @map("winning_pitcher_id")
+  winningPitcher   Player? @relation("GameWinningPitcher", fields: [winningPitcherId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  mvpBatter1Id     String? @map("mvp_batter1_id")
+  mvpBatter1       Player? @relation("GameMvpBatter1", fields: [mvpBatter1Id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  mvpBatter2Id     String? @map("mvp_batter2_id")
+  mvpBatter2       Player? @relation("GameMvpBatter2", fields: [mvpBatter2Id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  createdAt     DateTime   @default(now()) @map("created_at")
+
+  @@map("games")
+}
+
+model Lineup {
+  id            String   @id @default(uuid())
+  battingOrder  Int      @map("batting_order") // 1-11
+  position      String   // Posicion real en el campo en ese momento
+  isStarter     Boolean  @default(true) @map("is_starter")
+  
+  gameId        String   @map("game_id")
+  game          Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  
+  teamId        String   @map("team_id")
+  team          Team     @relation(fields: [teamId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  
+  playerId      String   @map("player_id")
+  player        Player   @relation(fields: [playerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("lineups")
+}
+
+// Registro histórico de cada acción -> Fundamental para sabermetría y recrear juegos
+model Play {
+  id            String   @id @default(uuid())
+  inning        Int
+  half          String // top, bottom
+  outsBeforePlay Int     @map("outs_before_play")
+  
+  result        String   // Ej. SINGLE, DOUBLE, K_SWINGING, BB, 6-3, E5, HR
+  rbi           Int      @default(0)
+  runsScored    Int      @default(0) @map("runs_scored")
+  outsRecorded  Int      @default(0) @map("outs_recorded")
+  
+  gameId        String   @map("game_id")
+  game          Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  
+  batterId      String   @map("batter_id")
+  batter        Player   @relation("BatterPlay", fields: [batterId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  
+  pitcherId     String   @map("pitcher_id")
+  pitcher       Player   @relation("PitcherPlay", fields: [pitcherId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  timestamp     DateTime @default(now())
+
+  @@map("plays")
+}

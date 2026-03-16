@@ -1,0 +1,149 @@
+"use client";
+
+import Link from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+export default function LoginPage() {
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+    const [loading, setLoading] = useState(false);
+    const router = useRouter();
+
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+
+        try {
+            // Very simple simulated auth using the users endpoint directly
+            const res = await fetch('http://localhost:3001/api/users');
+            if (res.ok) {
+                const users = await res.json();
+                const user = users.find((u: any) => u.email === email);
+
+                if (user) {
+                    localStorage.setItem("userRole", user.role);
+                    localStorage.setItem("userName", user.name);
+                    localStorage.setItem("userEmail", user.email);
+                    localStorage.setItem("userTournamentId", user.tournament_id || "");
+                    localStorage.setItem("userPhone", user.phone || "");
+                    localStorage.setItem("userProfilePicture", user.profilePicture || "");
+
+                    if (user.role === "admin" || user.role === "scorekeeper") {
+                        router.push("/admin/dashboard");
+                        return;
+                    } else {
+                        router.push("/");
+                        return;
+                    }
+                } else {
+                    alert("Usuario no encontrado.");
+                }
+            }
+        } catch (error) {
+            console.error("Login failed:", error);
+            alert("Error de conexión con el servidor.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="min-h-screen bg-background text-foreground flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+            <div className="sm:mx-auto sm:w-full sm:max-w-md">
+                <div className="flex justify-center mb-6">
+                    <div className="w-16 h-16 rounded-2xl bg-surface flex items-center justify-center border border-muted/30 shadow-lg relative overflow-hidden group">
+                        <div className="absolute inset-0 bg-gradient-to-br from-primary/40 to-transparent"></div>
+                        <span className="font-black text-primary text-2xl relative z-10 group-hover:scale-110 transition-transform">TT</span>
+                    </div>
+                </div>
+                <h2 className="text-center text-3xl font-black tracking-tight text-foreground">
+                    Acceso a TourneyTru
+                </h2>
+                <p className="mt-2 text-center text-sm font-medium text-muted-foreground">
+                    Selecciona tu perfil para ingresar.
+                </p>
+            </div>
+
+            <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+                <div className="bg-surface py-8 px-4 shadow-xl sm:rounded-2xl sm:px-10 border border-muted/30">
+
+                    {/* Autenticación Requerida */}
+                    <div className="mb-8 border-b border-muted/20 pb-4 text-center">
+                        <p className="text-sm rounded-lg transition-all text-muted-foreground font-bold">Por favor, ingrese sus credenciales</p>
+                    </div>
+
+                    <form className="space-y-5" onSubmit={handleLogin}>
+                        <div>
+                            <label htmlFor="email" className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                                Correo Electrónico
+                            </label>
+                            <input
+                                id="email" name="email" type="email" required
+                                value={email} onChange={e => setEmail(e.target.value)}
+                                className="block w-full px-4 py-2 bg-background border border-muted/30 rounded-lg shadow-sm placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary sm:text-sm transition-all"
+                                placeholder="tu@correo.com"
+                            />
+                        </div>
+
+                        <div>
+                            <label htmlFor="password" className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                                Contraseña
+                            </label>
+                            <input
+                                id="password" name="password" type="password" required
+                                value={password} onChange={e => setPassword(e.target.value)}
+                                className="block w-full px-4 py-2 bg-background border border-muted/30 rounded-lg shadow-sm placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary sm:text-sm transition-all"
+                                placeholder="••••••••"
+                            />
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2">
+                            <div className="flex items-center">
+                                <input
+                                    id="remember-me" name="remember-me" type="checkbox"
+                                    className="h-4 w-4 text-primary focus:ring-primary border-muted/30 rounded bg-background"
+                                />
+                                <label htmlFor="remember-me" className="ml-2 block text-sm font-medium text-foreground">
+                                    Recordarme
+                                </label>
+                            </div>
+
+                            <div className="text-sm">
+                                <a href="#" className="font-medium text-primary hover:text-primary-light transition-colors">
+                                    ¿Olvidaste tu contraseña?
+                                </a>
+                            </div>
+                        </div>
+
+                        <div className="pt-2">
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className={`w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-lg shadow-primary/20 text-sm font-bold text-white transition-all active:scale-[0.98] ${loading ? 'bg-muted cursor-not-allowed' : 'bg-primary hover:bg-primary-light focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary'}`}
+                            >
+                                {loading ? 'Validando...' : 'Entrar a mi cuenta'}
+                            </button>
+                        </div>
+                    </form>
+
+                    <div className="mt-8">
+                        <div className="relative">
+                            <div className="absolute inset-0 flex items-center">
+                                <div className="w-full border-t border-muted/30" />
+                            </div>
+                            <div className="relative flex justify-center text-sm">
+                                <span className="px-3 bg-surface text-muted-foreground">
+                                    ¿No tienes cuenta? <Link href="/register" className="text-primary hover:text-primary-light font-bold transition-colors">Regístrate</Link> | <Link href="/" className="text-primary hover:text-primary-light font-bold transition-colors">Ver sin iniciar sesión</Link>
+                                </span>
+                            </div>
+                        </div>
+                        <div className="mt-4 text-center">
+                            <Link href="/" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">Volver al inicio</Link>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}

@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  
+  --color-primary: var(--primary);
+  --color-primary-light: var(--primary-light);
+  --color-surface: var(--surface);
+  --color-muted: var(--muted);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+:root {
+  /* Light Mode */
+  --background: #f8fafc; /* Very light slate for contrast */
+  --foreground: #192638; /* Darker blue-grey for text */
+  --surface: #ffffff; /* White for cards */
+  --primary: #4684DB; /* Main TourneyTru Blue */
+  --primary-light: #567CB1; /* Light Blue */
+  --muted: #586B86; /* Muted text/borders */
+}
+
+.dark {
+  /* Dark Mode */
+  --background: #192638; /* TourneyTru Background */
+  --foreground: #ffffff; /* White text */
+  --surface: #212833; /* TourneyTru Card/Surface */
+  --primary: #4684DB; /* Main TourneyTru Blue */
+  --primary-light: #567CB1; /* Light Blue */
+  --muted: #4B525C; /* Muted text/borders */
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
