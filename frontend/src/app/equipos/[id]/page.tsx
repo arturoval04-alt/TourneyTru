@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import Image from "next/image";
 import Link from "next/link";
+import { apiFetch } from '@/lib/auth';
 import { useParams, useRouter } from "next/navigation";
 import {
     Settings, Share2, ArrowLeft, Users, Trophy, Flag, MapPin, ExternalLink, Clock, Star, Activity, X
@@ -73,7 +74,6 @@ export default function TeamProfilePage() {
 
     const [statsType, setStatsType] = useState<"bateo" | "pitcheo">("bateo");
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
     const router = useRouter();
 
     const [userRole, setUserRole] = useState<string | null>(null);
@@ -133,7 +133,7 @@ export default function TeamProfilePage() {
     const handleUpdatePlayer = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const res = await fetch(`${apiUrl}/players/${selectedPlayer?.id}`, {
+            const res = await apiFetch(`/players/${selectedPlayer?.id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -157,17 +157,26 @@ export default function TeamProfilePage() {
     const handleUpdateProfile = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const res = await fetch(`${apiUrl}/teams/${teamId}`, {
+            // Filtrar campos vacíos para evitar errores de UUID en Prisma
+            const body: Record<string, string> = {};
+            if (profileForm.name) body.name = profileForm.name;
+            if (profileForm.shortName !== undefined) body.shortName = profileForm.shortName;
+            if (profileForm.managerName !== undefined) body.managerName = profileForm.managerName;
+            if (profileForm.logoUrl !== undefined) body.logoUrl = profileForm.logoUrl;
+            if (profileForm.homeFieldId) body.homeFieldId = profileForm.homeFieldId;
+
+            const res = await apiFetch(`/teams/${teamId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(profileForm)
+                body: JSON.stringify(body)
             });
             if (res.ok) {
                 alert('Perfil del Equipo Actualizado');
                 setIsEditingProfile(false);
                 window.location.reload();
             } else {
-                alert('Error al actualizar perfil');
+                const err = await res.json().catch(() => ({}));
+                alert('Error al actualizar perfil: ' + (err.message || res.status));
             }
         } catch (error) {
             console.error(error);
@@ -184,14 +193,14 @@ export default function TeamProfilePage() {
     };
 
     useEffect(() => {
-        fetch(`${apiUrl}/teams/${teamId}`)
+        apiFetch(`/teams/${teamId}`)
             .then(res => res.json())
             .then((data: TeamData) => {
                 setTeam(data);
                 setLoading(false);
             })
             .catch(() => setLoading(false));
-    }, [apiUrl, teamId]);
+    }, [teamId]);
 
     const tabs = [
         { id: "resumen", label: "Resumen" },
@@ -840,6 +849,10 @@ export default function TeamProfilePage() {
                                         <div className="bg-background/50 border border-muted/20 rounded-xl p-3 text-center">
                                             <p className="text-[10px] text-muted-foreground font-bold uppercase mb-0.5 tracking-wider">Tira</p>
                                             <p className="font-bold text-foreground text-sm">{selectedPlayer.throws === 'L' ? 'Zurdo' : 'Derecho'}</p>
+                                        </div>
+                                        <div className="bg-background/50 border border-muted/20 rounded-xl p-3  w-112 text-center">
+                                            <p className="text-[10px] text-muted-foreground font-bold uppercase mb-0.5 tracking-wider">Estadisticas AVG-RBI</p>
+                                            <p className="font-bold text-foreground text-sm">{selectedPlayer.stats?.batting.avg} - {selectedPlayer.stats?.batting.rbi}</p>
                                         </div>
                                     </div>
                                 </div>

@@ -6,8 +6,10 @@ import {
   WebSocketServer,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  WsException,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 
 @WebSocketGateway({
@@ -20,7 +22,30 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService, private jwtService: JwtService) { }
+
+
+  private getAuthToken(client: Socket, payloadToken?: string): string | null {
+    if (payloadToken) return payloadToken;
+    const authToken = client.handshake.auth?.token;
+    if (authToken) return authToken as string;
+    const header = client.handshake.headers?.authorization;
+    if (typeof header === 'string' && header.startsWith('Bearer ')) {
+      return header.slice(7);
+    }
+    return null;
+  }
+
+  private verifySocketAuth(client: Socket, payloadToken?: string) {
+    const token = this.getAuthToken(client, payloadToken);
+    if (!token) return null;
+    try {
+      return this.jwtService.verify(token, { secret: process.env.JWT_SECRET });
+    } catch {
+      return null;
+    }
+  }
+
 
   // Mapa temporal en memoria para mantener el último estado de cada juego activo
   private activeGames: Record<string, any> = {};
@@ -56,9 +81,11 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // Permite al scorekeeper inyectar el estado inicial directamente (si refresca o recién crea el juego)
   @SubscribeMessage('syncState')
   handleSyncState(
-    @MessageBody() payload: { gameId: string; fullState: any },
+    @MessageBody() payload: { gameId: string; fullState: any; token?: string },
     @ConnectedSocket() client: Socket,
   ) {
+    const auth = this.verifySocketAuth(client, payload.token);
+    if (!auth) throw new WsException('Unauthorized');
     const { gameId, fullState } = payload;
     this.activeGames[gameId] = fullState;
 
@@ -72,9 +99,11 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // Recibe jugadas del Scorekeeper, guarda en db y difunde a los fans
   @SubscribeMessage('registerPlay')
   async handleRegisterPlay(
-    @MessageBody() payload: { gameId: string; playInfo: any; fullState?: any },
+    @MessageBody() payload: { gameId: string; playInfo: any; fullState?: any; token?: string },
     @ConnectedSocket() client: Socket,
   ) {
+    const auth = this.verifySocketAuth(client, payload.token);
+    if (!auth) throw new WsException('Unauthorized');
     const { gameId, playInfo, fullState } = payload;
 
     // Aquí (en fase 3 completa) se validaría la jugada y se actualizarían bases y Score.

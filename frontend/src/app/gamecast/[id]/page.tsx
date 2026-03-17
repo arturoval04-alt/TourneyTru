@@ -14,6 +14,7 @@ import axios from 'axios';
 import { useRouter } from 'next/navigation';
 import { Users, LayoutDashboard, Radio, ChevronLeft, Trophy, Star, Award } from 'lucide-react';
 import Navbar from '@/components/Navbar';
+import { getApiUrl, getSocketBase } from '@/lib/api';
 
 // Mapa de código numérico a nombre de posición
 const POS_LABEL: Record<string, string> = {
@@ -28,8 +29,18 @@ interface LineupItemPublic {
     teamId: string;
     position: string;
     battingOrder: number;
+    dhForPosition?: string | null;
     player?: { id: string; firstName: string; lastName: string };
 }
+
+const formatPosition = (item: LineupItemPublic) => {
+    const isDh = item.position === 'DH' || item.position === 'BD';
+    if (isDh && item.dhForPosition) {
+        const anchor = POS_LABEL[item.dhForPosition] || item.dhForPosition;
+        return `DH (por ${anchor})`;
+    }
+    return POS_LABEL[item.position] || item.position;
+};
 
 // Instancia de socket local para la vista pública (readonly)
 let socket: Socket;
@@ -67,7 +78,7 @@ export default function PublicGamecast() {
 
     const fetchBoxscore = useCallback(async () => {
         try {
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+            const apiUrl = getApiUrl();
             const response = await axios.get(`${apiUrl}/games/${gameId}/boxscore`);
             setBoxscore(response.data);
         } catch (error) {
@@ -77,7 +88,7 @@ export default function PublicGamecast() {
 
     const fetchGameState = useCallback(async () => {
         try {
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+            const apiUrl = getApiUrl();
             const response = await axios.get(`${apiUrl}/games/${gameId}/state`);
             console.log("Initial state fetched:", response.data);
             setGameState(prev => ({
@@ -92,7 +103,7 @@ export default function PublicGamecast() {
     // Fetch lineups de la API para la pestaña de Alineaciones
     const fetchLineups = useCallback(async () => {
         try {
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+            const apiUrl = getApiUrl();
             const response = await axios.get(`${apiUrl}/games/${gameId}`);
             const data = response.data;
             const homeLp = (data.lineups || [])
@@ -117,8 +128,8 @@ export default function PublicGamecast() {
         fetchLineups();
 
         // Conectar al namespace de juegos en vivo
-        const socketUrl = process.env.NEXT_PUBLIC_API_URL ? process.env.NEXT_PUBLIC_API_URL.replace('/api', '') : 'http://localhost:3001';
-        socket = io(`${socketUrl}/live_games`);
+        const socketBase = getSocketBase();
+        socket = io(`${socketBase}/live_games`);
 
         socket.on('connect', () => {
             setIsConnected(true);
@@ -258,7 +269,7 @@ export default function PublicGamecast() {
                                                             </td>
                                                             <td className="py-2.5 text-center">
                                                                 <span className="bg-primary/10 text-primary font-black text-xs px-2 py-1 rounded">
-                                                                    {POS_LABEL[item.position] || item.position}
+                                                                    {formatPosition(item)}
                                                                 </span>
                                                             </td>
                                                         </tr>

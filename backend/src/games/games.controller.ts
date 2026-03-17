@@ -1,12 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { GamesService } from './games.service';
-import { CreateGameDto, UpdateGameDto, SetGameLineupDto } from './dto/game.dto';
+import { CreateGameDto, UpdateGameDto, SetGameLineupDto, ChangeLineupDto } from './dto/game.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('api/games')
 export class GamesController {
     constructor(private readonly gamesService: GamesService) { }
 
     @Post()
+    @UseGuards(JwtAuthGuard)
     create(@Body() createGameDto: CreateGameDto) {
         return this.gamesService.create(createGameDto);
     }
@@ -22,22 +24,34 @@ export class GamesController {
     }
 
     @Patch(':id')
+    @UseGuards(JwtAuthGuard)
     update(@Param('id') id: string, @Body() updateGameDto: UpdateGameDto) {
         return this.gamesService.update(id, updateGameDto);
     }
 
     @Delete(':id')
+    @UseGuards(JwtAuthGuard)
     remove(@Param('id') id: string) {
         return this.gamesService.remove(id);
     }
 
     @Post(':id/team/:teamId/lineup')
+    @UseGuards(JwtAuthGuard)
     setLineup(
         @Param('id') id: string,
         @Param('teamId') teamId: string,
         @Body() lineupData: SetGameLineupDto
     ) {
         return this.gamesService.setLineup(id, teamId, lineupData);
+    }
+
+    @Post(':id/lineup-change')
+    @UseGuards(JwtAuthGuard)
+    changeLineup(
+        @Param('id') id: string,
+        @Body() change: ChangeLineupDto
+    ) {
+        return this.gamesService.changeLineup(id, change);
     }
 
     @Get(':id/boxscore')

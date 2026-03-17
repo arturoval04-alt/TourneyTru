@@ -11,6 +11,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { GameBoxscoreDto } from '@/types/boxscore';
 import { ScorebookTable } from '@/components/ScorebookTable';
 import axios from 'axios';
+import { apiFetch, getAccessToken } from '@/lib/auth';
+import { getApiUrl, getSocketUrl } from '@/lib/api';
 import { io, Socket } from 'socket.io-client';
 import { Users, LayoutDashboard, Radio, ChevronLeft, Trophy } from 'lucide-react';
 import Navbar from '@/components/Navbar';
@@ -21,6 +23,15 @@ const POS_LABEL: Record<string, string> = {
     '4': '2B', '2B': '2B', '5': '3B', '3B': '3B', '6': 'SS', 'SS': 'SS',
     '7': 'LF', 'LF': 'LF', '8': 'CF', 'CF': 'CF', '9': 'RF', 'RF': 'RF',
     'DH': 'DH', 'BD': 'BD',
+};
+
+const formatPosition = (item: LineupItem) => {
+    const isDh = item.position === 'DH' || item.position === 'BD';
+    if (isDh && item.dhForPosition) {
+        const anchor = POS_LABEL[item.dhForPosition] || item.dhForPosition;
+        return `DH (por ${anchor})`;
+    }
+    return POS_LABEL[item.position] || item.position;
 };
 
 export default function ScorekeeperLivePanel() {
@@ -72,15 +83,18 @@ export default function ScorekeeperLivePanel() {
 
     const submitGameFinalization = async () => {
         try {
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
-            await axios.patch(`${apiUrl}/games/${params.id}`, {
+            const res = await apiFetch(`/games/${params.id}`, {
+                method: 'PATCH',
+                body: JSON.stringify({
                 status: 'finished',
                 homeScore,
                 awayScore,
                 winningPitcherId: selectedPitcherId ? selectedPitcherId : undefined,
                 mvpBatter1Id: selectedBatter1Id ? selectedBatter1Id : undefined,
                 mvpBatter2Id: selectedBatter2Id ? selectedBatter2Id : undefined
+                })
             });
+            if (!res.ok) throw new Error('PATCH failed');
             alert("Juego finalizado exitosamente.");
             router.push(`/torneos`);
         } catch (error) {
@@ -130,8 +144,9 @@ export default function ScorekeeperLivePanel() {
         abortRef.current = new AbortController();
 
         // En lugar de setear error de inmediato, esperamos la promesa para evitar render cascade
+        const apiUrl = getApiUrl();
         axios.get(
-            `http://localhost:3001/api/games/${gameId}/boxscore?t=${Date.now()}`,
+            `${apiUrl}/games/${gameId}/boxscore?t=${Date.now()}`,
             { signal: abortRef.current.signal }
         )
             .then(res => {
@@ -169,7 +184,9 @@ export default function ScorekeeperLivePanel() {
 
         // 3. Socket para tiempo real
         if (!socketRef.current) {
-            socketRef.current = io('http://localhost:3001/live_games', { transports: ['websocket'] });
+            const socketUrl = getSocketUrl();
+            const authToken = getAccessToken();
+            socketRef.current = io(socketUrl, { transports: ['websocket'], auth: authToken ? { token: authToken } : undefined });
             socketRef.current.emit('joinGame', gameId);
             socketRef.current.on('gameStateUpdate', (data: { fullState?: { playbackId?: string } }) => {
                 // Keep local stream state alive if another client broadcasts it
@@ -217,8 +234,10 @@ export default function ScorekeeperLivePanel() {
             if (socketRef.current) {
                 const currentState = { ...useGameStore.getState() };
                 Object.assign(currentState, { playbackId: newStreamInfo.playbackId });
+                const authToken = getAccessToken();
                 socketRef.current.emit('syncState', {
                     gameId: params.id,
+                    token: authToken || undefined,
                     fullState: currentState
                 });
             }
@@ -306,7 +325,7 @@ export default function ScorekeeperLivePanel() {
                                                             </td>
                                                             <td className="py-2.5 text-center">
                                                                 <span className="bg-primary/10 text-primary font-black text-xs px-2 py-1 rounded">
-                                                                    {POS_LABEL[item.position] || item.position}
+                                                                    {formatPosition(item)}
                                                                 </span>
                                                             </td>
                                                         </tr>

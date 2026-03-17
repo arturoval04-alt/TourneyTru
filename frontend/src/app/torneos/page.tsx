@@ -27,8 +27,8 @@ export default function TorneosPage() {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
         fetch(`${apiUrl}/tournaments`)
             .then(res => res.json())
-            .then((data: TournamentItem[]) => {
-                setTournaments(data);
+            .then((data) => {
+                setTournaments(Array.isArray(data) ? data : []);
                 setLoading(false);
             })
             .catch(() => setLoading(false));

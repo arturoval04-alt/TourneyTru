@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { apiFetch } from '@/lib/auth';
 import { useParams, useRouter } from 'next/navigation';
 
 interface Player {
@@ -31,13 +32,13 @@ export default function RosterSetupPage() {
     const [game, setGame] = useState<Game | null>(null);
     const [loading, setLoading] = useState(true);
 
-    const [homeLineup, setHomeLineup] = useState<{ playerId: string, position: string, battingOrder: number }[]>([]);
-    const [awayLineup, setAwayLineup] = useState<{ playerId: string, position: string, battingOrder: number }[]>([]);
+    const [homeLineup, setHomeLineup] = useState<{ playerId: string, position: string, battingOrder: number, dhForPosition?: string }[]>([]);
+    const [awayLineup, setAwayLineup] = useState<{ playerId: string, position: string, battingOrder: number, dhForPosition?: string }[]>([]);
 
     useEffect(() => {
         const fetchGame = async () => {
             try {
-                const response = await fetch(`http://localhost:3001/api/games/${gameId}`);
+                const response = await apiFetch(`/games/${gameId}`);
                 if (response.ok) {
                     const data = await response.json();
                     setGame(data);
@@ -47,14 +48,15 @@ export default function RosterSetupPage() {
                         teamId: string;
                         position: string;
                         battingOrder: number;
+                        dhForPosition?: string | null;
                     }
 
                     // Inicializar lineups si ya existen
                     const homeLp = data.lineups?.filter((l: ApiLineup) => l.teamId === data.homeTeam.id).map((l: ApiLineup) => ({
-                        playerId: l.playerId, position: l.position, battingOrder: l.battingOrder
+                        playerId: l.playerId, position: l.position, battingOrder: l.battingOrder, dhForPosition: l.dhForPosition || ''
                     })) || [];
                     const awayLp = data.lineups?.filter((l: ApiLineup) => l.teamId === data.awayTeam.id).map((l: ApiLineup) => ({
-                        playerId: l.playerId, position: l.position, battingOrder: l.battingOrder
+                        playerId: l.playerId, position: l.position, battingOrder: l.battingOrder, dhForPosition: l.dhForPosition || ''
                     })) || [];
 
                     setHomeLineup(homeLp);
@@ -72,6 +74,24 @@ export default function RosterSetupPage() {
         }
     }, [gameId]);
 
+    const defensivePositions = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
+    const normalizePosition = (pos: string) => {
+        const raw = (pos || '').trim().toUpperCase();
+        const map: Record<string, string> = {
+            '1': 'P', 'P': 'P',
+            '2': 'C', 'C': 'C',
+            '3': '1B', '1B': '1B',
+            '4': '2B', '2B': '2B',
+            '5': '3B', '3B': '3B',
+            '6': 'SS', 'SS': 'SS',
+            '7': 'LF', 'LF': 'LF',
+            '8': 'CF', 'CF': 'CF',
+            '9': 'RF', 'RF': 'RF',
+            'BD': 'DH', 'DH': 'DH',
+        };
+        return map[raw] || raw;
+    };
+
     const handleSaveLineup = async (teamId: string, lineupList: LineupStateItem[]) => {
         try {
             // Filtrar los que no tienen jugador asignado
@@ -85,8 +105,7 @@ export default function RosterSetupPage() {
             }
 
             // Validate duplicate defensive positions
-            const selectedPositions = validLineups.map(l => l.position).filter(Boolean);
-            const defensivePositions = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
+            const selectedPositions = validLineups.map(l => normalizePosition(l.position)).filter(Boolean);
             for (let pos of defensivePositions) {
                 const count = selectedPositions.filter(p => p === pos).length;
                 if (count > 1) {
@@ -95,15 +114,35 @@ export default function RosterSetupPage() {
                 }
             }
 
+            // Validate DH rules
+            const dhEntries = validLineups.filter(l => normalizePosition(l.position) === 'DH');
+            if (dhEntries.length > 1) {
+                alert('Solo se permite un DH estÃ¡ndar por equipo.');
+                return;
+            }
+            if (dhEntries.length === 1) {
+                const dh = dhEntries[0];
+                const anchor = normalizePosition(dh.dhForPosition || '');
+                if (!defensivePositions.includes(anchor)) {
+                    alert('Si se usa DH, debe anclarse a una posiciÃ³n defensiva vÃ¡lida.');
+                    return;
+                }
+                if (!selectedPositions.includes(anchor)) {
+                    alert(`El DH debe anclarse a una posiciÃ³n defensiva presente en el lineup (${anchor}).`);
+                    return;
+                }
+            }
+
             const dataToSubmit = validLineups.map(l => ({
                 battingOrder: l.battingOrder,
                 position: l.position || 'DH',
+                dhForPosition: normalizePosition(l.position) === 'DH' ? (l.dhForPosition || undefined) : undefined,
                 isStarter: true,
                 teamId: teamId,
                 playerId: l.playerId
             }));
 
-            const response = await fetch(`http://localhost:3001/api/games/${gameId}/team/${teamId}/lineup`, {
+            const response = await apiFetch(`/games/${gameId}/team/${teamId}/lineup`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ lineups: dataToSubmit })
@@ -127,6 +166,7 @@ export default function RosterSetupPage() {
         playerId: string;
         position: string;
         battingOrder: number;
+        dhForPosition?: string;
     }
 
     const TeamLineupBuilder = ({
@@ -145,7 +185,7 @@ export default function RosterSetupPage() {
             if (existingIdx >= 0) {
                 newLp[existingIdx].playerId = playerId;
             } else {
-                newLp.push({ playerId, battingOrder: order, position: '' });
+                newLp.push({ playerId, battingOrder: order, position: '', dhForPosition: '' });
             }
             setLineupState(newLp);
         };
@@ -153,10 +193,23 @@ export default function RosterSetupPage() {
         const handlePositionSelect = (position: string, order: number) => {
             const newLp = [...lineupState];
             const existingIdx = newLp.findIndex(l => l.battingOrder === order);
+            const isDh = normalizePosition(position) === 'DH';
             if (existingIdx >= 0) {
                 newLp[existingIdx].position = position;
+                if (!isDh) newLp[existingIdx].dhForPosition = '';
             } else {
-                newLp.push({ playerId: '', battingOrder: order, position });
+                newLp.push({ playerId: '', battingOrder: order, position, dhForPosition: '' });
+            }
+            setLineupState(newLp);
+        };
+
+        const handleDhAnchorSelect = (anchor: string, order: number) => {
+            const newLp = [...lineupState];
+            const existingIdx = newLp.findIndex(l => l.battingOrder === order);
+            if (existingIdx >= 0) {
+                newLp[existingIdx].dhForPosition = anchor;
+            } else {
+                newLp.push({ playerId: '', battingOrder: order, position: 'DH', dhForPosition: anchor });
             }
             setLineupState(newLp);
         };
@@ -217,6 +270,22 @@ export default function RosterSetupPage() {
                                         );
                                     })}
                                 </select>
+
+                                {normalizePosition(currentLp?.position || '') === 'DH' && (
+                                    <select
+                                        className="w-full sm:w-28 bg-background text-foreground text-xs font-bold p-3 rounded-xl border border-muted/40 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all shadow-sm shrink-0"
+                                        value={currentLp?.dhForPosition || ""}
+                                        onChange={(e) => handleDhAnchorSelect(e.target.value, order)}
+                                        disabled={!currentLp?.playerId}
+                                    >
+                                        <option value="">DH por...</option>
+                                        {defensivePositions.map(pos => (
+                                            <option key={pos} value={pos}>
+                                                {pos}
+                                            </option>
+                                        ))}
+                                    </select>
+                                )}
                             </div>
                         )
                     })}

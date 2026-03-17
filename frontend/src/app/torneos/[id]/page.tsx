@@ -5,6 +5,7 @@ import Navbar from "@/components/Navbar";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { apiFetch } from '@/lib/auth';
 import {
     ArrowLeft, MapPin, Calendar, Users, Target, Clock, Settings, Radio, X, CheckCircle2, ShieldAlert, ChevronRight
 } from "lucide-react";
@@ -28,14 +29,13 @@ export default function TournamentProfilePage() {
     const [tournament, setTournament] = useState<TournamentData | null>(null);
     const [loadingTournament, setLoadingTournament] = useState(true);
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
     useEffect(() => {
-        fetch(`${apiUrl}/tournaments/${tournamentId}`)
+        apiFetch(`/tournaments/${tournamentId}`)
             .then(res => res.json())
             .then((data: TournamentData) => { setTournament(data); setLoadingTournament(false); })
             .catch(() => setLoadingTournament(false));
-    }, [apiUrl, tournamentId]);
+    }, [tournamentId]);
 
     // Actions & Modal State
     const [isCreatingGame, setIsCreatingGame] = useState(false);
@@ -48,8 +48,8 @@ export default function TournamentProfilePage() {
         home?: { id: string, name: string, players: any[] },
         away?: { id: string, name: string, players: any[] }
     }>({});
-    const [awayLineupSetup, setAwayLineupSetup] = useState(Array(10).fill({ playerId: '', playerName: '', position: '' }));
-    const [homeLineupSetup, setHomeLineupSetup] = useState(Array(10).fill({ playerId: '', playerName: '', position: '' }));
+    const [awayLineupSetup, setAwayLineupSetup] = useState(Array(10).fill({ playerId: '', playerName: '', position: '', dhForPosition: '' }));
+    const [homeLineupSetup, setHomeLineupSetup] = useState(Array(10).fill({ playerId: '', playerName: '', position: '', dhForPosition: '' }));
 
     const handleCreateGameSubmit = async () => {
         if (!gameForm.homeTeamId || !gameForm.awayTeamId || !gameForm.scheduledDate) {
@@ -59,7 +59,7 @@ export default function TournamentProfilePage() {
 
         try {
             // 1. Create Game
-            const res = await fetch(`${apiUrl}/games`, {
+            const res = await apiFetch(`/games`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -76,8 +76,8 @@ export default function TournamentProfilePage() {
             setCreatedGameId(newGame.id);
 
             // 2. Fetch rosters for the selected teams
-            const homeRes = await fetch(`${apiUrl}/teams/${gameForm.homeTeamId}`);
-            const awayRes = await fetch(`${apiUrl}/teams/${gameForm.awayTeamId}`);
+            const homeRes = await apiFetch(`/teams/${gameForm.homeTeamId}`);
+            const awayRes = await apiFetch(`/teams/${gameForm.awayTeamId}`);
             const homeData = await homeRes.json();
             const awayData = await awayRes.json();
 
@@ -89,13 +89,69 @@ export default function TournamentProfilePage() {
         }
     };
 
+    const defensivePositions = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
+    const normalizePosition = (pos: string) => {
+        const raw = (pos || '').trim().toUpperCase();
+        const map: Record<string, string> = {
+            '1': 'P', 'P': 'P',
+            '2': 'C', 'C': 'C',
+            '3': '1B', '1B': '1B',
+            '4': '2B', '2B': '2B',
+            '5': '3B', '3B': '3B',
+            '6': 'SS', 'SS': 'SS',
+            '7': 'LF', 'LF': 'LF',
+            '8': 'CF', 'CF': 'CF',
+            '9': 'RF', 'RF': 'RF',
+            'BD': 'DH', 'DH': 'DH',
+        };
+        return map[raw] || raw;
+    };
+
+    const validateLineupSetup = (lineupSetup: { playerId: string; position: string; dhForPosition?: string }[], label: string) => {
+        const valid = lineupSetup.filter(item => item.playerId && item.position);
+        if (valid.length === 0) return true;
+
+        const selectedPositions = valid.map(item => normalizePosition(item.position)).filter(Boolean);
+        for (const pos of defensivePositions) {
+            const count = selectedPositions.filter(p => p === pos).length;
+            if (count > 1) {
+                alert(`Error en ${label}: La posiciÃ³n ${pos} fue asignada a mÃºltiples jugadores. Las posiciones defensivas deben ser Ãºnicas.`);
+                return false;
+            }
+        }
+
+        const dhEntries = valid.filter(item => normalizePosition(item.position) === 'DH');
+        if (dhEntries.length > 1) {
+            alert(`Error en ${label}: Solo se permite un DH estÃ¡ndar por equipo.`);
+            return false;
+        }
+        if (dhEntries.length === 1) {
+            const dh = dhEntries[0];
+            const anchor = normalizePosition(dh.dhForPosition || '');
+            if (!defensivePositions.includes(anchor)) {
+                alert(`Error en ${label}: Si se usa DH, debe anclarse a una posiciÃ³n defensiva vÃ¡lida.`);
+                return false;
+            }
+            if (!selectedPositions.includes(anchor)) {
+                alert(`Error en ${label}: El DH debe anclarse a una posiciÃ³n defensiva presente en el lineup (${anchor}).`);
+                return false;
+            }
+        }
+
+        return true;
+    };
+
     const handleConfirmGameLineups = async () => {
         if (!createdGameId) return;
+
+        if (!validateLineupSetup(awayLineupSetup, `Lineup Visitante (${gameTeamsData.away?.name || 'Visitante'})`)) return;
+        if (!validateLineupSetup(homeLineupSetup, `Lineup Local (${gameTeamsData.home?.name || 'Local'})`)) return;
 
         // Cleanup empty spots
         const homeLineup = homeLineupSetup.filter(item => item.playerId && item.position).map((item, index) => ({
             battingOrder: index + 1,
             position: item.position,
+            dhForPosition: normalizePosition(item.position) === 'DH' ? (item.dhForPosition || undefined) : undefined,
             isStarter: true,
             teamId: gameForm.homeTeamId,
             playerId: item.playerId
@@ -104,6 +160,7 @@ export default function TournamentProfilePage() {
         const awayLineup = awayLineupSetup.filter(item => item.playerId && item.position).map((item, index) => ({
             battingOrder: index + 1,
             position: item.position,
+            dhForPosition: normalizePosition(item.position) === 'DH' ? (item.dhForPosition || undefined) : undefined,
             isStarter: true,
             teamId: gameForm.awayTeamId,
             playerId: item.playerId
@@ -116,7 +173,7 @@ export default function TournamentProfilePage() {
         try {
             // Save home lineup if not empty
             if (homeLineup.length > 0) {
-                await fetch(`${apiUrl}/games/${createdGameId}/team/${gameForm.homeTeamId}/lineup`, {
+                await apiFetch(`/games/${createdGameId}/team/${gameForm.homeTeamId}/lineup`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ lineups: homeLineup })
@@ -125,7 +182,7 @@ export default function TournamentProfilePage() {
 
             // Save away lineup if not empty
             if (awayLineup.length > 0) {
-                await fetch(`${apiUrl}/games/${createdGameId}/team/${gameForm.awayTeamId}/lineup`, {
+                await apiFetch(`/games/${createdGameId}/team/${gameForm.awayTeamId}/lineup`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ lineups: awayLineup })
@@ -146,8 +203,8 @@ export default function TournamentProfilePage() {
         setGameForm({ homeTeamId: '', awayTeamId: '', scheduledDate: '', field: '' });
         setCreatedGameId(null);
         setGameTeamsData({});
-        setAwayLineupSetup(Array(10).fill({ playerId: '', playerName: '', position: '' }));
-        setHomeLineupSetup(Array(10).fill({ playerId: '', playerName: '', position: '' }));
+        setAwayLineupSetup(Array(10).fill({ playerId: '', playerName: '', position: '', dhForPosition: '' }));
+        setHomeLineupSetup(Array(10).fill({ playerId: '', playerName: '', position: '', dhForPosition: '' }));
     };
 
     const [isCreatingNews, setIsCreatingNews] = useState(false);
@@ -198,7 +255,7 @@ export default function TournamentProfilePage() {
     const handleRemoveOrganizer = async (organizerId: string) => {
         if (!window.confirm('¿Deseas eliminar a este organizador?')) return;
         try {
-            const res = await fetch(`${apiUrl}/tournaments/${tournamentId}/organizers/${organizerId}`, {
+            const res = await apiFetch(`/tournaments/${tournamentId}/organizers/${organizerId}`, {
                 method: 'DELETE'
             });
             if (res.ok) {
@@ -214,7 +271,7 @@ export default function TournamentProfilePage() {
     const handleRemoveField = async (fieldId: string) => {
         if (!window.confirm('¿Deseas eliminar este campo?')) return;
         try {
-            const res = await fetch(`${apiUrl}/tournaments/${tournamentId}/fields/${fieldId}`, {
+            const res = await apiFetch(`/tournaments/${tournamentId}/fields/${fieldId}`, {
                 method: 'DELETE'
             });
             if (res.ok) {
@@ -230,7 +287,7 @@ export default function TournamentProfilePage() {
     const handleUpdateProfile = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const res = await fetch(`${apiUrl}/tournaments/${tournamentId}`, {
+            const res = await apiFetch(`/tournaments/${tournamentId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(profileForm)
@@ -239,7 +296,7 @@ export default function TournamentProfilePage() {
                 alert('Perfil del Torneo Actualizado');
                 setIsEditingProfile(false);
                 // Refresh data
-                const updatedRes = await fetch(`${apiUrl}/tournaments/${tournamentId}`);
+                const updatedRes = await apiFetch(`/tournaments/${tournamentId}`);
                 const updatedData = await updatedRes.json();
                 setTournament(updatedData);
             } else {
@@ -305,7 +362,7 @@ export default function TournamentProfilePage() {
                 number: p.number ? parseInt(p.number) : undefined
             }));
 
-            const res = await fetch(`http://localhost:3001/api/teams/bulk`, {
+            const res = await apiFetch(`/teams/bulk`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -608,7 +665,7 @@ export default function TournamentProfilePage() {
                                                 onClick={() => {
                                                     const email = window.prompt('Correo del nuevo organizador:');
                                                     if (email) {
-                                                        fetch(`${apiUrl}/tournaments/${tournamentId}/organizers`, {
+                                                        apiFetch(`/tournaments/${tournamentId}/organizers`, {
                                                             method: 'POST',
                                                             headers: { 'Content-Type': 'application/json' },
                                                             body: JSON.stringify({ email })
@@ -990,7 +1047,11 @@ export default function TournamentProfilePage() {
                                                             value={item.position}
                                                             onChange={(e) => {
                                                                 const newSetup = [...awayLineupSetup];
-                                                                newSetup[index].position = e.target.value;
+                                                                const nextPos = e.target.value;
+                                                                newSetup[index].position = nextPos;
+                                                                if (normalizePosition(nextPos) !== 'DH') {
+                                                                    newSetup[index].dhForPosition = '';
+                                                                }
                                                                 setAwayLineupSetup(newSetup);
                                                             }}
                                                         >
@@ -1007,6 +1068,22 @@ export default function TournamentProfilePage() {
                                                             <option value="DH">DH</option>
                                                             <option value="EH">EH</option>
                                                         </select>
+                                                        {normalizePosition(item.position) === 'DH' && (
+                                                            <select
+                                                                className="bg-muted/5 border border-muted/20 text-xs rounded p-2 text-foreground outline-none w-24"
+                                                                value={item.dhForPosition || ''}
+                                                                onChange={(e) => {
+                                                                    const newSetup = [...awayLineupSetup];
+                                                                    newSetup[index].dhForPosition = e.target.value;
+                                                                    setAwayLineupSetup(newSetup);
+                                                                }}
+                                                            >
+                                                                <option value="">DH por...</option>
+                                                                {defensivePositions.map(pos => (
+                                                                    <option key={pos} value={pos}>{pos}</option>
+                                                                ))}
+                                                            </select>
+                                                        )}
                                                     </div>
                                                 ))}
                                             </div>
@@ -1040,7 +1117,11 @@ export default function TournamentProfilePage() {
                                                             value={item.position}
                                                             onChange={(e) => {
                                                                 const newSetup = [...homeLineupSetup];
-                                                                newSetup[index].position = e.target.value;
+                                                                const nextPos = e.target.value;
+                                                                newSetup[index].position = nextPos;
+                                                                if (normalizePosition(nextPos) !== 'DH') {
+                                                                    newSetup[index].dhForPosition = '';
+                                                                }
                                                                 setHomeLineupSetup(newSetup);
                                                             }}
                                                         >
@@ -1057,6 +1138,22 @@ export default function TournamentProfilePage() {
                                                             <option value="DH">DH</option>
                                                             <option value="EH">EH</option>
                                                         </select>
+                                                        {normalizePosition(item.position) === 'DH' && (
+                                                            <select
+                                                                className="bg-muted/5 border border-muted/20 text-xs rounded p-2 text-foreground outline-none w-24"
+                                                                value={item.dhForPosition || ''}
+                                                                onChange={(e) => {
+                                                                    const newSetup = [...homeLineupSetup];
+                                                                    newSetup[index].dhForPosition = e.target.value;
+                                                                    setHomeLineupSetup(newSetup);
+                                                                }}
+                                                            >
+                                                                <option value="">DH por...</option>
+                                                                {defensivePositions.map(pos => (
+                                                                    <option key={pos} value={pos}>{pos}</option>
+                                                                ))}
+                                                            </select>
+                                                        )}
                                                     </div>
                                                 ))}
                                             </div>
@@ -1174,7 +1271,7 @@ export default function TournamentProfilePage() {
                                     className="px-6 py-2.5 rounded-xl font-black bg-primary text-white hover:bg-primary-light transition-colors shadow-lg shadow-primary/20 text-sm"
                                     onClick={async () => {
                                         try {
-                                            const res = await fetch(`${apiUrl}/tournaments/${tournamentId}/fields`, {
+                                            const res = await apiFetch(`/tournaments/${tournamentId}/fields`, {
                                                 method: 'POST',
                                                 headers: { 'Content-Type': 'application/json' },
                                                 body: JSON.stringify({ name: fieldForm.name, location: fieldForm.address })

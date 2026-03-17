@@ -65,6 +65,10 @@ export class CreateLineupDto {
     position: string;
 
     @IsOptional()
+    @IsString()
+    dhForPosition?: string;
+
+    @IsOptional()
     @IsBoolean()
     isStarter?: boolean;
 
@@ -80,5 +84,27 @@ export class SetGameLineupDto {
     @ValidateNested({ each: true })
     @Type(() => CreateLineupDto)
     lineups: CreateLineupDto[];
+}
+
+export class ChangeLineupDto {
+    @IsUUID()
+    teamId: string;
+
+    @IsInt()
+    battingOrder: number;
+
+    @IsUUID()
+    playerInId: string;
+
+    @IsOptional()
+    @IsUUID()
+    playerOutId?: string;
+
+    @IsString()
+    position: string;
+
+    @IsOptional()
+    @IsString()
+    dhForPosition?: string;
 }
 

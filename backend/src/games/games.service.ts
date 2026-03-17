@@ -1,10 +1,65 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateGameDto, UpdateGameDto, SetGameLineupDto } from './dto/game.dto';
+import { ChangeLineupDto, CreateGameDto, UpdateGameDto, SetGameLineupDto } from './dto/game.dto';
 
 @Injectable()
 export class GamesService {
     constructor(private prisma: PrismaService) { }
+
+    private readonly defensivePositions = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF'];
+
+    private normalizePosition(position?: string | null): string | null {
+        if (!position) return null;
+        const raw = position.trim().toUpperCase();
+        if (!raw) return null;
+        const map: Record<string, string> = {
+            '1': 'P', 'P': 'P',
+            '2': 'C', 'C': 'C',
+            '3': '1B', '1B': '1B',
+            '4': '2B', '2B': '2B',
+            '5': '3B', '3B': '3B',
+            '6': 'SS', 'SS': 'SS',
+            '7': 'LF', 'LF': 'LF',
+            '8': 'CF', 'CF': 'CF',
+            '9': 'RF', 'RF': 'RF',
+            'BD': 'DH', 'DH': 'DH',
+        };
+        return map[raw] || raw;
+    }
+
+    private normalizeDefensivePosition(position?: string | null): string | null {
+        const normalized = this.normalizePosition(position);
+        if (!normalized) return null;
+        return this.defensivePositions.includes(normalized) ? normalized : null;
+    }
+
+    private validateLineup(lineups: Array<{ position: string; dhForPosition?: string | null }>) {
+        const defensiveUsed = new Set<string>();
+        for (const lineup of lineups) {
+            const defensivePos = this.normalizeDefensivePosition(lineup.position);
+            if (defensivePos) {
+                if (defensiveUsed.has(defensivePos)) {
+                    throw new BadRequestException(`Posición defensiva duplicada: ${defensivePos}.`);
+                }
+                defensiveUsed.add(defensivePos);
+            }
+        }
+
+        const dhEntries = lineups.filter((l) => this.normalizePosition(l.position) === 'DH');
+        if (dhEntries.length > 1) {
+            throw new BadRequestException('Solo se permite un DH estándar por equipo.');
+        }
+        if (dhEntries.length === 1) {
+            const dh = dhEntries[0];
+            const anchor = this.normalizeDefensivePosition(dh.dhForPosition);
+            if (!anchor) {
+                throw new BadRequestException('Si se usa DH, debe anclarse a una posición defensiva válida.');
+            }
+            if (!defensiveUsed.has(anchor)) {
+                throw new BadRequestException(`El DH debe anclarse a una posición defensiva presente en el lineup (${anchor}).`);
+            }
+        }
+    }
 
     async create(data: CreateGameDto) {
         return this.prisma.game.create({ data });
@@ -77,6 +132,12 @@ export class GamesService {
     async setLineup(gameId: string, teamId: string, lineupData: SetGameLineupDto) {
         const game = await this.findOne(gameId);
 
+        if (teamId !== game.homeTeamId && teamId !== game.awayTeamId) {
+            throw new BadRequestException('El equipo no pertenece a este juego.');
+        }
+
+        this.validateLineup(lineupData.lineups);
+
         // Primero, eliminar todo el lineup existente de este equipo en este juego
         await this.prisma.lineup.deleteMany({
             where: {
@@ -88,10 +149,11 @@ export class GamesService {
         // Ahora insertamos los nuevos
         const dataToInsert = lineupData.lineups.map(l => ({
             gameId: gameId,
-            teamId: l.teamId,
+            teamId: teamId,
             playerId: l.playerId,
             battingOrder: l.battingOrder,
             position: l.position,
+            dhForPosition: this.normalizePosition(l.position) === 'DH' ? this.normalizeDefensivePosition(l.dhForPosition) : null,
             isStarter: l.isStarter !== undefined ? l.isStarter : true,
         }));
 
@@ -103,6 +165,75 @@ export class GamesService {
             status: 'success',
             message: `Lineup guardado. Jugadores insertados: ${result.count}`,
             gameId
+        };
+    }
+
+    async changeLineup(gameId: string, change: ChangeLineupDto) {
+        const game = await this.findOne(gameId);
+
+        if (change.teamId !== game.homeTeamId && change.teamId !== game.awayTeamId) {
+            throw new BadRequestException('El equipo no pertenece a este juego.');
+        }
+
+        const currentLineup = await this.prisma.lineup.findMany({
+            where: { gameId, teamId: change.teamId },
+            orderBy: { battingOrder: 'asc' },
+        });
+
+        if (currentLineup.length === 0) {
+            throw new NotFoundException('No hay lineup registrado para este equipo.');
+        }
+
+        const lineupEntry = currentLineup.find((l) => l.battingOrder === change.battingOrder);
+        if (!lineupEntry) {
+            throw new NotFoundException('No se encontró el turno indicado en el lineup.');
+        }
+
+        const playerIn = await this.prisma.player.findUnique({
+            where: { id: change.playerInId },
+            select: { id: true, teamId: true },
+        });
+        if (!playerIn || playerIn.teamId !== change.teamId) {
+            throw new BadRequestException('El jugador seleccionado no pertenece al equipo.');
+        }
+
+        const normalizedPosition = this.normalizePosition(change.position);
+        const dhAnchor = normalizedPosition === 'DH' ? this.normalizeDefensivePosition(change.dhForPosition) : null;
+
+        const proposedLineup = currentLineup.map((l) => (
+            l.id === lineupEntry.id
+                ? { ...l, playerId: change.playerInId, position: change.position, dhForPosition: dhAnchor }
+                : l
+        ));
+
+        this.validateLineup(proposedLineup);
+
+        const updated = await this.prisma.lineup.update({
+            where: { id: lineupEntry.id },
+            data: {
+                playerId: change.playerInId,
+                position: change.position,
+                dhForPosition: dhAnchor,
+                isStarter: false,
+            },
+        });
+
+        await this.prisma.lineupChange.create({
+            data: {
+                gameId,
+                teamId: change.teamId,
+                battingOrder: change.battingOrder,
+                playerOutId: change.playerOutId ?? lineupEntry.playerId,
+                playerInId: change.playerInId,
+                position: change.position,
+                dhForPosition: dhAnchor,
+            },
+        });
+
+        return {
+            status: 'success',
+            message: 'Lineup actualizado correctamente.',
+            lineupId: updated.id,
         };
     }
 

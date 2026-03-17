@@ -18,7 +18,21 @@ interface TeamItem {
     logoUrl?: string;
     managerName?: string;
     _count?: { players: number };
+    players?: PlayerItem[];
 }
+
+interface PlayerItem {
+    id: string;
+    firstName: string;
+    lastName: string;
+    number?: number;
+    position?: string;
+    bats?: string;
+    throws?: string;
+    photoUrl?: string;
+    team?: { id: string; name: string };
+}
+
 
 export default function EquiposPage() {
     const [tournaments, setTournaments] = useState<TournamentListItem[]>([]);
@@ -33,8 +47,8 @@ export default function EquiposPage() {
     useEffect(() => {
         fetch(`${apiUrl}/tournaments`)
             .then(res => res.json())
-            .then((data: TournamentListItem[]) => {
-                setTournaments(data);
+            .then((data) => {
+                setTournaments(Array.isArray(data) ? data : []);
                 setLoadingT(false);
             })
             .catch(() => setLoadingT(false));
@@ -155,7 +169,7 @@ export default function EquiposPage() {
                                                 <h3 className="font-bold text-[1.1rem] leading-tight text-foreground group-hover:text-primary transition-colors tracking-tight">
                                                     {team.name}
                                                 </h3>
-                                                <p className="text-sm text-muted-foreground mt-1 font-medium">{team._count?.players || 0} jugadores</p>
+                                                <span className="text-sm text-muted-foreground mt-1 font-medium">{(team._count?.players ?? team.players?.length ?? 0)} jugadores</span>
                                             </div>
                                         </div>
 

@@ -44,8 +44,8 @@ export default function JugadoresPage() {
     useEffect(() => {
         fetch(`${apiUrl}/tournaments`)
             .then(res => res.json())
-            .then((data: TournamentListItem[]) => {
-                setTournaments(data);
+            .then((data) => {
+                setTournaments(Array.isArray(data) ? data : []);
                 setLoadingT(false);
             })
             .catch(() => setLoadingT(false));

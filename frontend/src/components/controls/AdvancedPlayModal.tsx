@@ -7,7 +7,7 @@ interface AdvancedPlayModalProps {
 }
 
 export default function AdvancedPlayModal({ isOpen, onClose }: AdvancedPlayModalProps) {
-    const { bases, currentBatter, executeAdvancedPlay } = useGameStore();
+    const { bases, baseIds, currentBatter, currentBatterId, executeAdvancedPlay } = useGameStore();
 
     // Estado local para el formulario del destino de cada jugador
     const [batterDest, setBatterDest] = useState('1B');
@@ -25,26 +25,27 @@ export default function AdvancedPlayModal({ isOpen, onClose }: AdvancedPlayModal
         let runsScored = 0;
         let outsRecorded = 0;
         const newBases = { first: null as string | null, second: null as string | null, third: null as string | null };
+        const newBaseIds = { first: null as string | null, second: null as string | null, third: null as string | null };
 
-        const processRunner = (dest: string, name: string | null) => {
+        const processRunner = (dest: string, name: string | null, id: string | null) => {
             if (!name) return;
             if (dest === 'Home') runsScored++;
             else if (dest === 'Out') outsRecorded++;
-            else if (dest === '1B') newBases.first = name;
-            else if (dest === '2B') newBases.second = name;
-            else if (dest === '3B') newBases.third = name;
+            else if (dest === '1B') { newBases.first = name; newBaseIds.first = id; }
+            else if (dest === '2B') { newBases.second = name; newBaseIds.second = id; }
+            else if (dest === '3B') { newBases.third = name; newBaseIds.third = id; }
         };
 
         // Procesar todos los involucrados (El orden evalúa conflictos de base asumiendo inputs válidos del scorekeeper)
-        processRunner(runner3Dest, bases.third);
-        processRunner(runner2Dest, bases.second);
-        processRunner(runner1Dest, bases.first);
-        processRunner(batterDest, currentBatter);
+        processRunner(runner3Dest, bases.third, baseIds.third);
+        processRunner(runner2Dest, bases.second, baseIds.second);
+        processRunner(runner1Dest, bases.first, baseIds.first);
+        processRunner(batterDest, currentBatter, currentBatterId);
 
         const desc = playDescription || 'Jugada Avanzada / Error';
 
         // 2. Enviar actualización al Store
-        executeAdvancedPlay(newBases, runsScored, outsRecorded, desc);
+        executeAdvancedPlay(newBases, newBaseIds, runsScored, outsRecorded, desc);
 
         // 3. Reset y cerrar
         setPlayDescription('');

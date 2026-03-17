@@ -1,8 +1,6 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ThrottlerGuard } from '@nestjs/throttler';
-import { Reflector } from '@nestjs/core';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -16,10 +14,6 @@ async function bootstrap() {
     forbidNonWhitelisted: true,
     transform: true,
   }));
-
-  // Rate limiting global
-  const reflector = app.get(Reflector);
-  app.useGlobalGuards(new ThrottlerGuard(app.get('THROTTLER:MODULE_OPTIONS'), null as any, reflector));
 
   // Límite de tamaño para imágenes Base64
   const bodyParser = require('body-parser');

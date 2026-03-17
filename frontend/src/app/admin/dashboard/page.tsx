@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { apiFetch } from '@/lib/auth';
 
 export default function AdminDashboard() {
     const router = useRouter();
@@ -141,21 +142,21 @@ export default function AdminDashboard() {
     // --- API Fetchers ---
     const fetchGames = async () => {
         try {
-            const res = await fetch('http://localhost:3001/api/games');
+            const res = await apiFetch('/games');
             if (res.ok) setGames(await res.json());
         } catch { }
     };
 
     const fetchTournaments = async () => {
         try {
-            const res = await fetch('http://localhost:3001/api/tournaments');
+            const res = await apiFetch('/tournaments');
             if (res.ok) setTournaments(await res.json());
         } catch { }
     }
 
     const fetchLeagues = async () => {
         try {
-            const res = await fetch('http://localhost:3001/api/leagues');
+            const res = await apiFetch('/leagues');
             if (res.ok) setLeagues(await res.json());
         } catch { }
     };
@@ -163,7 +164,7 @@ export default function AdminDashboard() {
     const fetchUsers = async () => {
         try {
             // Simulated API call point
-            const res = await fetch('http://localhost:3001/api/users');
+            const res = await apiFetch('/users');
             if (res.ok) setUsers(await res.json());
         } catch { }
     };
@@ -181,7 +182,7 @@ export default function AdminDashboard() {
             setTeams([]);
             return;
         }
-        fetch(`http://localhost:3001/api/tournaments/${selectedTournament}/teams`)
+        apiFetch(`/tournaments/${selectedTournament}/teams`)
             .then(res => res.json())
             .then(data => setTeams(data))
             .catch(() => { });
@@ -194,7 +195,7 @@ export default function AdminDashboard() {
             return;
         }
         // Simulated API call point for when backend handles /teams/:id/players
-        fetch(`http://localhost:3001/api/teams/${selectedTeam}/players`)
+        apiFetch(`/teams/${selectedTeam}/players`)
             .then(res => {
                 if (res.ok) return res.json();
                 return [];
@@ -218,7 +219,7 @@ export default function AdminDashboard() {
 
         setSaving(true);
         try {
-            const res = await fetch('http://localhost:3001/api/games', {
+            const res = await apiFetch('/games', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -253,7 +254,7 @@ export default function AdminDashboard() {
                 return;
             }
 
-            const res = await fetch('http://localhost:3001/api/tournaments', {
+            const res = await apiFetch('/tournaments', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -299,7 +300,7 @@ export default function AdminDashboard() {
         if (!editingTourn) return;
         setSaving(true);
         try {
-            const res = await fetch(`http://localhost:3001/api/tournaments/${editingTourn.id}`, {
+            const res = await apiFetch(`/tournaments/${editingTourn.id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -359,7 +360,7 @@ export default function AdminDashboard() {
         e.preventDefault();
         setSaving(true);
         try {
-            const res = await fetch('http://localhost:3001/api/teams', {
+            const res = await apiFetch('/teams', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -374,7 +375,7 @@ export default function AdminDashboard() {
                 // Force a refresh of the teams array using the existing hook 
                 // indirectly if the tournament being viewed is the one assigned
                 if (selectedTournament === teamForm.tournament_id) {
-                    fetch(`http://localhost:3001/api/tournaments/${selectedTournament}/teams`)
+                    apiFetch(`/tournaments/${selectedTournament}/teams`)
                         .then(res => res.json())
                         .then(data => setTeams(data))
                         .catch(() => { });
@@ -390,7 +391,7 @@ export default function AdminDashboard() {
         e.preventDefault();
         setSaving(true);
         try {
-            const res = await fetch('http://localhost:3001/api/players', {
+            const res = await apiFetch('/players', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -404,7 +405,7 @@ export default function AdminDashboard() {
                 setShowPlayerModal(false);
                 setPlayerForm({ firstName: '', lastName: '', number: '', position: 'INF', photoUrl: '', team_id: '' });
                 if (selectedTeam === playerForm.team_id) {
-                    fetch(`http://localhost:3001/api/teams/${selectedTeam}/players`)
+                    apiFetch(`/teams/${selectedTeam}/players`)
                         .then(res => res.ok ? res.json() : [])
                         .then(data => setPlayers(data))
                         .catch(() => { });
@@ -420,7 +421,7 @@ export default function AdminDashboard() {
         e.preventDefault();
         setSaving(true);
         try {
-            const res = await fetch('http://localhost:3001/api/users', {
+            const res = await apiFetch('/users', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(userForm)
@@ -442,7 +443,7 @@ export default function AdminDashboard() {
         if (!leagueName) return;
         setSaving(true);
         try {
-            const res = await fetch('http://localhost:3001/api/leagues', {
+            const res = await apiFetch('/leagues', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: leagueName, adminId: users.find(u => u.role === 'admin')?.id })
@@ -483,7 +484,7 @@ export default function AdminDashboard() {
         if (!userEmail) return;
         setSaving(true);
         try {
-            const res = await fetch(`http://localhost:3001/api/users/${userEmail}`, {
+            const res = await apiFetch(`/users/${userEmail}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ phone: newPhone })
@@ -511,7 +512,7 @@ export default function AdminDashboard() {
             const base64String = reader.result as string;
             setSaving(true);
             try {
-                const res = await fetch(`http://localhost:3001/api/users/${userEmail}`, {
+                const res = await apiFetch(`/users/${userEmail}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ profilePicture: base64String })

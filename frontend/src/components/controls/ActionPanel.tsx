@@ -3,6 +3,7 @@ import { useGameStore } from '@/store/gameStore';
 import AdvancedPlayModal from './AdvancedPlayModal';
 import PlayLocationModal from './PlayLocationModal';
 import FieldersChoiceModal from './FieldersChoiceModal';
+import LineupChangeModal from './LineupChangeModal';
 
 export default function ActionPanel() {
     const { addBall, addStrike, addFoul, addOut, executeWildPitchOrPassedBall, history, undo } = useGameStore();
@@ -16,6 +17,7 @@ export default function ActionPanel() {
     // Estado de modales especiales
     const [isAdvancedModalOpen, setIsAdvancedModalOpen] = useState(false);
     const [isFieldersChoiceModalOpen, setIsFieldersChoiceModalOpen] = useState(false);
+    const [isLineupChangeOpen, setIsLineupChangeOpen] = useState(false);
 
     const openLocationModal = (type: 'Hit' | 'Out' | 'Error', name: string, hitNum?: number) => {
         setPlayType(type);
@@ -97,8 +99,22 @@ export default function ActionPanel() {
                 </div>
             </div>
 
+            {/* LINEUP */}
+            <div>
+                <h4 className="text-[10px] text-slate-400 font-bold mb-1.5 uppercase tracking-wide">Lineup</h4>
+                <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                        onClick={() => setIsLineupChangeOpen(true)}
+                        className="col-span-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold py-1.5 rounded-md active:scale-95"
+                    >
+                        Cambio de Lineup
+                    </button>
+                </div>
+            </div>
+
             <AdvancedPlayModal isOpen={isAdvancedModalOpen} onClose={() => setIsAdvancedModalOpen(false)} />
             <FieldersChoiceModal isOpen={isFieldersChoiceModalOpen} onClose={() => setIsFieldersChoiceModalOpen(false)} />
+            <LineupChangeModal isOpen={isLineupChangeOpen} onClose={() => setIsLineupChangeOpen(false)} />
 
             {isLocationModalOpen && (
                 <PlayLocationModal

@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlserver"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -22,7 +22,7 @@ model User {
   firstName     String   @map("first_name")
   lastName      String   @map("last_name")
   phone         String?  @map("phone")
-  profilePicture String? @map("profile_picture") @db.NVarChar(Max)
+  profilePicture String? @map("profile_picture")
   
   roleId        String   @map("role_id")
   role          Role     @relation(fields: [roleId], references: [id])
@@ -70,9 +70,9 @@ model Tournament {
   id          String   @id @default(uuid())
   name        String
   season      String
-  description String?  @db.NVarChar(Max)
+  description String?  
   category    String?  // Libre, 1era Fuerza, etc.
-  logoUrl     String?  @map("logo_url") @db.NVarChar(Max)
+  logoUrl     String?  @map("logo_url") 
   rulesType   String   @map("rules_type") @default("baseball_9") // baseball_9, softball_7
   
   adminId       String   @map("admin_id")
@@ -127,7 +127,7 @@ model Team {
   id            String       @id @default(uuid())
   name          String
   shortName     String?      @map("short_name")
-  logoUrl       String?      @map("logo_url") @db.NVarChar(Max)
+  logoUrl       String?      @map("logo_url") 
   managerName   String?      @map("manager_name")
   
   tournamentId  String       @map("tournament_id")
@@ -141,6 +141,7 @@ model Team {
   gamesAsHome   Game[]       @relation("HomeTeam")
   gamesAsAway   Game[]       @relation("AwayTeam")
   lineups       Lineup[]
+  lineupChanges LineupChange[]
 
   createdAt     DateTime     @default(now()) @map("created_at")
 
@@ -153,7 +154,7 @@ model Player {
   lastName      String   @map("last_name")
   number        Int?
   position      String?  // P, C, 1B, 2B, 3B, SS, LF, CF, RF
-  photoUrl      String?  @map("photo_url") @db.NVarChar(Max)
+  photoUrl      String?  @map("photo_url")
   bats          String?  @default("R") // R, L, S
   throws        String?  @default("R") // R, L
   
@@ -161,6 +162,8 @@ model Player {
   team          Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
   
   lineupEntries Lineup[] // En cuantas posiciones de lineup ha estado
+  lineupChangesOut LineupChange[] @relation("LineupChangePlayerOut")
+  lineupChangesIn  LineupChange[] @relation("LineupChangePlayerIn")
 
   // Acciones en el Play-by-play
   playsAsBatter Play[]   @relation("BatterPlay")
@@ -216,6 +219,7 @@ model Game {
   
   lineups       Lineup[]
   plays         Play[]
+  lineupChanges LineupChange[]
 
   winningPitcherId String? @map("winning_pitcher_id")
   winningPitcher   Player? @relation("GameWinningPitcher", fields: [winningPitcherId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -235,6 +239,7 @@ model Lineup {
   id            String   @id @default(uuid())
   battingOrder  Int      @map("batting_order") // 1-11
   position      String   // Posicion real en el campo en ese momento
+  dhForPosition String?  @map("dh_for_position") // Posición defensiva por la que batea el DH
   isStarter     Boolean  @default(true) @map("is_starter")
   
   gameId        String   @map("game_id")
@@ -249,6 +254,29 @@ model Lineup {
   createdAt     DateTime @default(now()) @map("created_at")
 
   @@map("lineups")
+}
+
+model LineupChange {
+  id            String   @id @default(uuid())
+  battingOrder  Int      @map("batting_order")
+  position      String
+  dhForPosition String?  @map("dh_for_position")
+
+  gameId        String   @map("game_id")
+  game          Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  teamId        String   @map("team_id")
+  team          Team     @relation(fields: [teamId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  playerOutId   String?  @map("player_out_id")
+  playerOut     Player?  @relation("LineupChangePlayerOut", fields: [playerOutId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  playerInId    String   @map("player_in_id")
+  playerIn      Player   @relation("LineupChangePlayerIn", fields: [playerInId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("lineup_changes")
 }
 
 // Registro histórico de cada acción -> Fundamental para sabermetría y recrear juegos

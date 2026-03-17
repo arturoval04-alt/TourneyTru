@@ -74,7 +74,8 @@ export class TournamentsService {
     async getTeams(id: string) {
         await this.findOne(id); // Para asegurar que existe
         return this.prisma.team.findMany({
-            where: { tournamentId: id }
+            where: { tournamentId: id },
+            include: { _count: { select: { players: true } } },
         });
     }
 

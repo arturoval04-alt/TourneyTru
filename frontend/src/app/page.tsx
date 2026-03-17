@@ -149,7 +149,7 @@ export default function LobbyPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {!recentGames.length ? (
+            {loading ? (
               [1, 2, 3].map((i) => (
                 <div key={i} className="h-64 bg-surface border border-muted/30 rounded-2xl animate-pulse shadow-sm"></div>
               ))

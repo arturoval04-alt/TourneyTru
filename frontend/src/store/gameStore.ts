@@ -1,8 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { io } from 'socket.io-client';
+import { getAccessToken } from '@/lib/auth';
+import { getApiUrl, getSocketUrl } from '@/lib/api';
 
-const socket = io('http://localhost:3001/live_games', {
+const socket = io(getSocketUrl(), {
     autoConnect: false,
 });
 
@@ -23,6 +25,7 @@ export interface LineupItem {
     teamId: string;
     position: string;
     battingOrder: number;
+    dhForPosition?: string | null;
     player?: Player;
 }
 
@@ -57,6 +60,8 @@ type BaseState = {
 
 export interface GameState extends BaseState {
     gameId: string | null;
+    homeTeamId: string | null;
+    awayTeamId: string | null;
 
     // Conexión
     setGameId: (id: string) => void;
@@ -70,7 +75,7 @@ export interface GameState extends BaseState {
     addFoul: () => void;
     addOut: (customLogText?: string, isGroundout?: boolean, emitPlay?: boolean) => void;
     registerHit: (basesAdvanced: number, customLogText?: string) => void;
-    executeAdvancedPlay: (newBases: { first: string | null, second: string | null, third: string | null }, runsScored: number, outsRecorded: number, desc: string) => void;
+    executeAdvancedPlay: (newBases: { first: string | null, second: string | null, third: string | null }, newBaseIds: { first: string | null, second: string | null, third: string | null }, runsScored: number, outsRecorded: number, desc: string) => void;
     executeBaseAction: (origin: 'first' | 'second' | 'third', dest: 'second' | 'third' | 'home' | null, isOut: boolean, desc: string) => void;
     executeWildPitchOrPassedBall: (desc: string) => void;
     executeFieldersChoice: (outRunnerId: 'first' | 'second' | 'third') => void;
@@ -120,8 +125,14 @@ const emitPlayToBackend = (get: () => GameState, resultStr: string, runsScored: 
         const state = get();
         if (!state.gameId) return;
 
+        const authToken = getAccessToken();
+        if (!authToken) {
+            console.warn('No auth token, skipping play emit');
+            return;
+        }
         socket.emit('registerPlay', {
             gameId: state.gameId,
+            token: authToken || undefined,
             playInfo: {
                 inning: payloadInning,
                 half: payloadHalf,
@@ -179,6 +190,8 @@ export const useGameStore = create<GameState>()(
             currentBatter: "Esperando Lineup",
             currentBatterId: null,
             gameId: null,
+            homeTeamId: null,
+            awayTeamId: null,
             playLogs: [{ text: "Inicio del partido", inningString: "▲ 1" }],
             homeLineup: [],
             awayLineup: [],
@@ -193,6 +206,8 @@ export const useGameStore = create<GameState>()(
                 // Siempre resetear el estado completo al cargar un juego NUEVO o DIFERENTE.
                 set({
                     gameId: id,
+                    homeTeamId: null,
+                    awayTeamId: null,
                     inning: 1,
                     half: 'top',
                     outs: 0,
@@ -252,7 +267,7 @@ export const useGameStore = create<GameState>()(
                 const { gameId } = get();
                 if (!gameId) return;
                 try {
-                    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+                    const apiUrl = getApiUrl();
                     const response = await fetch(`${apiUrl}/games/${gameId}`);
                     if (response.ok) {
                         const data = await response.json();
@@ -263,7 +278,11 @@ export const useGameStore = create<GameState>()(
                         set({
                             homeLineup: homeLp,
                             awayLineup: awayLp,
+                            homeTeamId: data.homeTeam?.id ?? null,
+                            awayTeamId: data.awayTeam?.id ?? null,
                         });
+
+                        let restoredState: any | null = null;
 
                         // Fetch full game state from DB to restore after page refresh
                         const stateRes = await fetch(`${apiUrl}/games/${gameId}/state`);
@@ -272,6 +291,7 @@ export const useGameStore = create<GameState>()(
 
                             // Only restore if there are actual plays (game has started)
                             if (gs.playLogs && gs.playLogs.length > 0) {
+                                restoredState = gs;
                                 set({
                                     inning: gs.inning || 1,
                                     half: gs.half || 'top',
@@ -286,8 +306,8 @@ export const useGameStore = create<GameState>()(
                                     balls: 0,
                                     strikes: 0,
                                     bases: { first: null, second: null, third: null },
+                                    baseIds: { first: null, second: null, third: null },
                                 });
-                                return; // State fully restored from DB, skip manual batter calculation below
                             }
                         }
 
@@ -296,8 +316,8 @@ export const useGameStore = create<GameState>()(
                         const plays: ApiPlay[] = data.plays || [];
                         const awayPA = plays.filter((p: ApiPlay) => p.half === 'top').length;
                         const homePA = plays.filter((p: ApiPlay) => p.half === 'bottom').length;
-                        const awayIdx = awayLp.length > 0 ? awayPA % awayLp.length : 0;
-                        const homeIdx = homeLp.length > 0 ? homePA % homeLp.length : 0;
+                        const awayIdx = restoredState ? (restoredState.awayBatterIndex || 0) : (awayLp.length > 0 ? awayPA % awayLp.length : 0);
+                        const homeIdx = restoredState ? (restoredState.homeBatterIndex || 0) : (homeLp.length > 0 ? homePA % homeLp.length : 0);
 
                         set({
                             awayBatterIndex: awayIdx,
@@ -305,9 +325,9 @@ export const useGameStore = create<GameState>()(
                         });
 
                         // Establecer el bateador actual según el inning actual
-                        const { half } = get();
-                        const currentLineup = half === 'top' ? awayLp : homeLp;
-                        const index = half === 'top' ? awayIdx : homeIdx;
+                        const activeHalf = restoredState?.half || get().half;
+                        const currentLineup = activeHalf === 'top' ? awayLp : homeLp;
+                        const index = activeHalf === 'top' ? awayIdx : homeIdx;
 
                         if (currentLineup.length > 0) {
                             const lineupItem = currentLineup[index];
@@ -329,14 +349,24 @@ export const useGameStore = create<GameState>()(
                 const { gameId } = get();
                 if (!gameId) return;
 
+                const authToken = getAccessToken();
+                if (authToken) {
+                    socket.auth = { token: authToken };
+                }
+
                 // Si ya está conectado, unirse al room directamente
                 if (socket.connected) {
                     socket.emit('joinGame', gameId);
                     const state = get();
                     const defLineup0 = state.half === 'top' ? state.homeLineup : state.awayLineup;
                     const pitcher0 = defLineup0.find((item: LineupItem) => item.position === '1' || item.position === 'P');
+                    if (!authToken) {
+                        console.warn('No auth token, skipping syncState');
+                        return;
+                    }
                     socket.emit('syncState', {
                         gameId,
+                        token: authToken || undefined,
                         fullState: {
                             inning: state.inning, half: state.half, outs: state.outs,
                             balls: state.balls, strikes: state.strikes,
@@ -359,8 +389,13 @@ export const useGameStore = create<GameState>()(
                     const state = get();
                     const defLineup2 = state.half === 'top' ? state.homeLineup : state.awayLineup;
                     const pitcher2 = defLineup2.find((item: LineupItem) => item.position === '1' || item.position === 'P');
+                    if (!authToken) {
+                        console.warn('No auth token, skipping syncState');
+                        return;
+                    }
                     socket.emit('syncState', {
                         gameId,
+                        token: authToken || undefined,
                         fullState: {
                             inning: state.inning, half: state.half, outs: state.outs,
                             balls: state.balls, strikes: state.strikes,
@@ -387,7 +422,7 @@ export const useGameStore = create<GameState>()(
 
             resetCount: () => set({ balls: 0, strikes: 0 }),
 
-            clearBases: () => set({ bases: { first: null, second: null, third: null } }),
+            clearBases: () => set({ bases: { first: null, second: null, third: null }, baseIds: { first: null, second: null, third: null } }),
 
             cycleBatter: () => {
                 const state = get();
@@ -456,6 +491,7 @@ export const useGameStore = create<GameState>()(
                     balls: 0,
                     strikes: 0,
                     bases: { first: null, second: null, third: null },
+                    baseIds: { first: null, second: null, third: null },
                     half: newHalf,
                     inning: newInning,
                     currentBatter: nextBatterName,
@@ -762,7 +798,7 @@ export const useGameStore = create<GameState>()(
                 emitPlayToBackend(get, description, 0, 0, get().currentBatterId, get().inning, get().half);
             },
 
-            executeAdvancedPlay: (newBases, runsScored, outsRecorded, desc) => {
+            executeAdvancedPlay: (newBases, newBaseIds, runsScored, outsRecorded, desc) => {
                 get().saveHistory();
                 const captureInning = get().inning;
                 const captureHalf = get().half;
@@ -777,6 +813,7 @@ export const useGameStore = create<GameState>()(
                     set((state) => ({
                         outs: totalOuts,
                         bases: newBases,
+                        baseIds: newBaseIds,
                         homeScore: state.half === 'bottom' ? state.homeScore + runsScored : state.homeScore,
                         awayScore: state.half === 'top' ? state.awayScore + runsScored : state.awayScore,
                     }));
@@ -803,17 +840,24 @@ export const useGameStore = create<GameState>()(
                 } else {
                     set((state) => {
                         const newBases = { ...state.bases };
+                        const newBaseIds = { ...state.baseIds };
                         const runnerNode = newBases[origin];
+                        const runnerId = newBaseIds[origin];
                         newBases[origin] = null; // Quita al corredor original
+                        newBaseIds[origin] = null;
 
                         if (dest && !isOut) {
                             if (dest === 'home') runs++;
-                            else newBases[dest] = runnerNode;
+                            else {
+                                newBases[dest] = runnerNode;
+                                newBaseIds[dest] = runnerId;
+                            }
                         }
 
                         return {
                             outs: totalOuts,
                             bases: newBases,
+                            baseIds: newBaseIds,
                             homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore,
                             awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore,
                         };

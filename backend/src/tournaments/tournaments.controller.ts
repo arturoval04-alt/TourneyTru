@@ -1,12 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { TournamentsService } from './tournaments.service';
 import { CreateTournamentDto, UpdateTournamentDto } from './dto/tournament.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('api/tournaments')
 export class TournamentsController {
     constructor(private readonly tournamentsService: TournamentsService) { }
 
     @Post()
+    @UseGuards(JwtAuthGuard)
     create(@Body() createTournamentDto: CreateTournamentDto) {
         return this.tournamentsService.create(createTournamentDto);
     }
@@ -22,11 +24,13 @@ export class TournamentsController {
     }
 
     @Patch(':id')
+    @UseGuards(JwtAuthGuard)
     update(@Param('id') id: string, @Body() updateTournamentDto: UpdateTournamentDto) {
         return this.tournamentsService.update(id, updateTournamentDto);
     }
 
     @Delete(':id')
+    @UseGuards(JwtAuthGuard)
     remove(@Param('id') id: string) {
         return this.tournamentsService.remove(id);
     }
@@ -37,21 +41,25 @@ export class TournamentsController {
     }
 
     @Post(':id/organizers')
+    @UseGuards(JwtAuthGuard)
     addOrganizer(@Param('id') id: string, @Body('email') email: string) {
         return this.tournamentsService.addOrganizer(id, email);
     }
 
     @Delete(':id/organizers/:organizerId')
+    @UseGuards(JwtAuthGuard)
     removeOrganizer(@Param('id') id: string, @Param('organizerId') organizerId: string) {
         return this.tournamentsService.removeOrganizer(id, organizerId);
     }
 
     @Post(':id/fields')
+    @UseGuards(JwtAuthGuard)
     addField(@Param('id') id: string, @Body('name') name: string, @Body('location') location?: string) {
         return this.tournamentsService.addField(id, name, location);
     }
 
     @Delete(':id/fields/:fieldId')
+    @UseGuards(JwtAuthGuard)
     removeField(@Param('id') id: string, @Param('fieldId') fieldId: string) {
         return this.tournamentsService.removeField(id, fieldId);
     }
