@@ -7,6 +7,13 @@ dotenv.config();
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.enableCors({
+    origin: [
+      'https://tourneytru.vercel.app', // Pon aquí TU enlace real de Vercel
+      'http://localhost:3000',         // Para cuando pruebes en tu laptop
+    ],
+    credentials: true,
+  });
 
   // Validación global de DTOs
   app.useGlobalPipes(new ValidationPipe({
@@ -23,12 +30,11 @@ async function bootstrap() {
   // CORS — en producción reemplazar origin con el dominio real
   const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',')
-    : ['http://localhost:3000'];
+    : ['http://localhost:3000', 'https://tourneytru.vercel.app'];
 
   app.enableCors({
-    origin: allowedOrigins,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    origin: true, // Esto acepta automáticamente la URL que lo esté llamando (Vercel)
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
 
