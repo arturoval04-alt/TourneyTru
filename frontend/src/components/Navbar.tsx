@@ -5,26 +5,26 @@ import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useEffect, useState } from "react";
+import { clearSession, getUser, AuthUser } from "@/lib/auth";
 
 export default function Navbar() {
     const router = useRouter();
     const pathname = usePathname();
-    const [userRole, setUserRole] = useState<string | null>(null);
+    const [user, setUser] = useState<AuthUser | null>(null);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
 
     useEffect(() => {
         if (typeof window !== "undefined") {
-            const role = localStorage.getItem("userRole");
             setTimeout(() => {
-                setUserRole(role);
+                setUser(getUser());
             }, 0);
         }
     }, [pathname]);
 
     const handleLogout = () => {
         if (typeof window !== "undefined") {
-            localStorage.removeItem("userRole");
-            setUserRole(null);
+            clearSession();
+            setUser(null);
             setIsMenuOpen(false);
             router.push("/");
         }
@@ -62,23 +62,23 @@ export default function Navbar() {
                     })}
                     <ThemeToggle />
 
-                    {userRole ? (
+                    {user?.role ? (
                         <div className="relative">
                             <button
                                 onClick={() => setIsMenuOpen(!isMenuOpen)}
                                 className="w-9 h-9 flex items-center justify-center bg-primary/10 hover:bg-primary/20 text-primary rounded-full transition-colors font-bold uppercase cursor-pointer"
                             >
-                                {userRole.substring(0, 1)}
+                                {user.role.substring(0, 1)}
                             </button>
 
                             {isMenuOpen && (
                                 <div className="absolute right-0 mt-3 w-48 bg-surface border border-muted/30 rounded-xl shadow-xl overflow-hidden animate-fade-in-up origin-top-right">
                                     <div className="p-3 border-b border-muted/20 bg-muted/5">
                                         <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Rol Actual</p>
-                                        <p className="text-sm font-black text-foreground">{userRole}</p>
+                                        <p className="text-sm font-black text-foreground">{user.role}</p>
                                     </div>
                                     <div className="p-1">
-                                        {(userRole === 'admin' || userRole === 'scorekeeper') && (
+                                        {(user.role === 'admin' || user.role === 'scorekeeper') && (
                                             <Link href="/admin/dashboard" onClick={() => setIsMenuOpen(false)} className="block px-4 py-2 text-sm text-foreground hover:bg-muted/10 font-medium transition-colors rounded-lg">
                                                 Dashboard
                                             </Link>

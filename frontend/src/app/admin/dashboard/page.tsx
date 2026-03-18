@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiFetch } from '@/lib/auth';
+import { apiFetch, getUser, AuthUser } from '@/lib/auth';
 
 export default function AdminDashboard() {
     const router = useRouter();
@@ -82,19 +82,52 @@ export default function AdminDashboard() {
     const [userTournamentId, setUserTournamentId] = useState<string | null>(null);
     const [userPhone, setUserPhone] = useState<string>('');
     const [userProfilePicture, setUserProfilePicture] = useState<string | null>(null);
+    const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
 
     // -- Profile Editing State --
     const [isEditingPhone, setIsEditingPhone] = useState(false);
     const [newPhone, setNewPhone] = useState('');
 
     useEffect(() => {
-        setUserRole(localStorage.getItem('userRole') || 'general');
-        setUserName(localStorage.getItem('userName') || 'Usuario Invitado');
-        setUserEmail(localStorage.getItem('userEmail') || '');
-        setUserTournamentId(localStorage.getItem('userTournamentId') || null);
-        setUserPhone(localStorage.getItem('userPhone') || '');
-        setUserProfilePicture(localStorage.getItem('userProfilePicture') || null);
+        const storedUser = getUser();
+        if (storedUser) setCurrentUser(storedUser);
+        if (typeof window !== 'undefined') {
+            setUserTournamentId(localStorage.getItem('userTournamentId') || null);
+        }
     }, []);
+
+    useEffect(() => {
+        const loadCurrentUser = async () => {
+            try {
+                const res = await apiFetch('/auth/me');
+                if (res.ok) {
+                    const data = await res.json();
+                    const merged = { ...(getUser() || {}), ...data } as AuthUser;
+                    localStorage.setItem('user', JSON.stringify(merged));
+                    setCurrentUser(merged);
+                }
+            } catch { }
+        };
+        loadCurrentUser();
+    }, []);
+
+    useEffect(() => {
+        if (!currentUser) {
+            setUserRole('general');
+            setUserName('Usuario Invitado');
+            setUserEmail('');
+            setUserPhone('');
+            setUserProfilePicture(null);
+            return;
+        }
+
+        const fullName = [currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ').trim();
+        setUserRole(currentUser.role || 'general');
+        setUserName(fullName || currentUser.email);
+        setUserEmail(currentUser.email);
+        setUserPhone(currentUser.phone ?? '');
+        setUserProfilePicture(currentUser.profilePicture ?? null);
+    }, [currentUser]);
 
     // -- Data Stores --
     const [games, setGames] = useState<GameData[]>([]);
@@ -173,8 +206,13 @@ export default function AdminDashboard() {
         fetchGames();
         fetchTournaments();
         fetchLeagues();
-        fetchUsers();
     }, []);
+
+    useEffect(() => {
+        if (userRole === 'admin') {
+            fetchUsers();
+        }
+    }, [userRole]);
 
     // Fetch Teams when Game Creation Tournament changes
     useEffect(() => {
@@ -206,6 +244,14 @@ export default function AdminDashboard() {
 
 
     // --- Handlers ---
+    const updateStoredUser = (patch: Partial<AuthUser>) => {
+        const base = getUser();
+        if (!base) return;
+        const updated = { ...base, ...patch } as AuthUser;
+        localStorage.setItem('user', JSON.stringify(updated));
+        setCurrentUser(updated);
+    };
+
     const handleCreateGame = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedTournament || !homeTeamId || !awayTeamId) {
@@ -247,7 +293,6 @@ export default function AdminDashboard() {
         e.preventDefault();
         setSaving(true);
         try {
-            const currentUser = users.find(u => u.email === userEmail);
             if (!currentUser) {
                 alert('Sesión no válida o usuario no encontrado');
                 setSaving(false);
@@ -443,10 +488,15 @@ export default function AdminDashboard() {
         if (!leagueName) return;
         setSaving(true);
         try {
+            if (!currentUser || currentUser.role !== 'admin') {
+                alert('Solo los administradores pueden crear ligas.');
+                setSaving(false);
+                return;
+            }
             const res = await apiFetch('/leagues', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: leagueName, adminId: users.find(u => u.role === 'admin')?.id })
+                body: JSON.stringify({ name: leagueName, adminId: currentUser.id })
             });
             if (res.ok) {
                 alert('Liga Creada');
@@ -481,17 +531,17 @@ export default function AdminDashboard() {
     };
 
     const handlePhoneUpdate = async () => {
-        if (!userEmail) return;
+        if (!currentUser) return;
         setSaving(true);
         try {
-            const res = await apiFetch(`/users/${userEmail}`, {
+            const res = await apiFetch('/users/profile', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ phone: newPhone })
             });
             if (res.ok) {
                 setUserPhone(newPhone);
-                localStorage.setItem('userPhone', newPhone);
+                updateStoredUser({ phone: newPhone });
                 setIsEditingPhone(false);
             } else {
                 alert('Error al actualizar teléfono');
@@ -505,21 +555,21 @@ export default function AdminDashboard() {
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (!file || !userEmail) return;
+        if (!file || !currentUser) return;
 
         const reader = new FileReader();
         reader.onloadend = async () => {
             const base64String = reader.result as string;
             setSaving(true);
             try {
-                const res = await apiFetch(`/users/${userEmail}`, {
+                const res = await apiFetch('/users/profile', {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ profilePicture: base64String })
                 });
                 if (res.ok) {
                     setUserProfilePicture(base64String);
-                    localStorage.setItem('userProfilePicture', base64String);
+                    updateStoredUser({ profilePicture: base64String });
                 } else {
                     alert('Error al actualizar la foto de perfil');
                 }

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import Image from "next/image";
 import Link from "next/link";
-import { apiFetch } from '@/lib/auth';
+import { apiFetch, getUser } from '@/lib/auth';
 import { useParams, useRouter } from "next/navigation";
 import {
     Settings, Share2, ArrowLeft, Users, Trophy, Flag, MapPin, ExternalLink, Clock, Star, Activity, X
@@ -101,7 +101,8 @@ export default function TeamProfilePage() {
     });
 
     useEffect(() => {
-        setUserRole(localStorage.getItem('userRole') || 'general');
+        const user = getUser();
+        setUserRole(user?.role || 'general');
     }, []);
 
     useEffect(() => {

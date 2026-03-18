@@ -5,7 +5,7 @@ import Navbar from "@/components/Navbar";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { apiFetch } from '@/lib/auth';
+import { apiFetch, getUser } from '@/lib/auth';
 import {
     ArrowLeft, MapPin, Calendar, Users, Target, Clock, Settings, Radio, X, CheckCircle2, ShieldAlert, ChevronRight
 } from "lucide-react";
@@ -397,7 +397,8 @@ export default function TournamentProfilePage() {
 
     // Fetch Role on Mount
     useEffect(() => {
-        setUserRole(localStorage.getItem('userRole') || 'general');
+        const user = getUser();
+        setUserRole(user?.role || 'general');
     }, []);
 
     const tabs = [
