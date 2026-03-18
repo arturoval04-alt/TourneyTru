@@ -24,7 +24,7 @@ export default function LobbyPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const apiUrl = process.env.NODE_ENV === 'production' ? 'https://tourneytru-backend.onrender.com/api' : 'http://localhost:3001/api';
+    const apiUrl = `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api`;
     fetch(`${apiUrl}/games`)
       .then(res => res.json())
       .then((data: GameItem[]) => {
