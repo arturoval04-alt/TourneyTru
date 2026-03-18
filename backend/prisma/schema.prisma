@@ -26,11 +26,14 @@ model User {
   
   roleId        String   @map("role_id")
   role          Role     @relation(fields: [roleId], references: [id])
-  
+
+  passwordResetToken  String?   @map("password_reset_token")
+  passwordResetExpiry DateTime? @map("password_reset_expiry")
+
   leaguesAdmin  League[] @relation("LeagueAdmin")
   tournamentsAdmin Tournament[] @relation("TournamentAdmin")
   tournamentOrganizers TournamentOrganizer[]
-  
+
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -183,11 +186,29 @@ model Umpire {
   id          String   @id @default(uuid())
   firstName   String   @map("first_name")
   lastName    String   @map("last_name")
-  
+
   leagueId    String   @map("league_id")
   league      League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
 
+  gameUmpires GameUmpire[]
+
   @@map("umpires")
+}
+
+model GameUmpire {
+  id       String @id @default(uuid())
+  role     String @default("plate") // plate, base1, base2, base3
+
+  gameId   String @map("game_id")
+  game     Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  umpireId String @map("umpire_id")
+  umpire   Umpire @relation(fields: [umpireId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([gameId, umpireId])
+  @@map("game_umpires")
 }
 
 // ==========================================
@@ -220,6 +241,7 @@ model Game {
   lineups       Lineup[]
   plays         Play[]
   lineupChanges LineupChange[]
+  gameUmpires   GameUmpire[]
 
   winningPitcherId String? @map("winning_pitcher_id")
   winningPitcher   Player? @relation("GameWinningPitcher", fields: [winningPitcherId], references: [id], onDelete: NoAction, onUpdate: NoAction)

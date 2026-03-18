@@ -51,6 +51,22 @@ export default function TournamentProfilePage() {
     const [awayLineupSetup, setAwayLineupSetup] = useState(Array(10).fill({ playerId: '', playerName: '', position: '', dhForPosition: '' }));
     const [homeLineupSetup, setHomeLineupSetup] = useState(Array(10).fill({ playerId: '', playerName: '', position: '', dhForPosition: '' }));
 
+    // Umpire assignment state
+    interface UmpireOption { id: string; firstName: string; lastName: string }
+    const [leagueUmpires, setLeagueUmpires] = useState<UmpireOption[]>([]);
+    const [umpireAssignment, setUmpireAssignment] = useState({ plate: '', base1: '', base2: '', base3: '' });
+
+    useEffect(() => {
+        if (isCreatingGame && tournament?.league) {
+            apiFetch(`/umpires`)
+                .then(r => r.json())
+                .then((all: (UmpireOption & { leagueId: string })[]) => {
+                    setLeagueUmpires(all.filter(u => u.leagueId === (tournament as any).league?.id));
+                })
+                .catch(() => {});
+        }
+    }, [isCreatingGame, tournament]);
+
     const handleCreateGameSubmit = async () => {
         if (!gameForm.homeTeamId || !gameForm.awayTeamId || !gameForm.scheduledDate) {
             alert('Por favor selecciona los equipos y la fecha.');
@@ -75,7 +91,19 @@ export default function TournamentProfilePage() {
             const newGame = await res.json();
             setCreatedGameId(newGame.id);
 
-            // 2. Fetch rosters for the selected teams
+            // 2. Assign umpires (fire-and-forget, non-blocking)
+            const roles = ['plate', 'base1', 'base2', 'base3'] as const;
+            for (const role of roles) {
+                const umpireId = umpireAssignment[role];
+                if (umpireId) {
+                    apiFetch(`/games/${newGame.id}/umpires`, {
+                        method: 'POST',
+                        body: JSON.stringify({ umpireId, role }),
+                    }).catch(() => {});
+                }
+            }
+
+            // 3. Fetch rosters for the selected teams
             const homeRes = await apiFetch(`/teams/${gameForm.homeTeamId}`);
             const awayRes = await apiFetch(`/teams/${gameForm.awayTeamId}`);
             const homeData = await homeRes.json();
@@ -393,7 +421,42 @@ export default function TournamentProfilePage() {
     }
 
     // Tab state
-    const [activeTab, setActiveTab] = useState<"informacion" | "equipos" | "juegos" | "posiciones">("informacion");
+    const [activeTab, setActiveTab] = useState<"informacion" | "equipos" | "juegos" | "posiciones" | "estadisticas">("informacion");
+
+    // Standings state
+    interface StandingRow { teamId: string; name: string; shortName: string; logoUrl?: string | null; w: number; l: number; t: number; pct: string; gb: string | number; rs: number; ra: number; gp: number }
+    const [standings, setStandings] = useState<StandingRow[] | null>(null);
+    const [standingsLoaded, setStandingsLoaded] = useState(false);
+
+    useEffect(() => {
+        if (activeTab === 'posiciones' && !standingsLoaded) {
+            apiFetch(`/tournaments/${tournamentId}/standings`)
+                .then(r => r.json())
+                .then((data: StandingRow[]) => { setStandings(data); setStandingsLoaded(true); })
+                .catch(() => setStandingsLoaded(true));
+        }
+    }, [activeTab, standingsLoaded, tournamentId]);
+
+    // Stats state
+    interface BattingRow { playerId: string; firstName: string; lastName: string; teamName: string; gp: number; ab: number; h: number; avg: string; hr: number; rbi: number; bb: number; so: number }
+    interface PitchingRow { playerId: string; firstName: string; lastName: string; teamName: string; gp: number; ip: string; h: number; r: number; bb: number; so: number; era: string }
+    const [battingStats, setBattingStats] = useState<BattingRow[] | null>(null);
+    const [pitchingStats, setPitchingStats] = useState<PitchingRow[] | null>(null);
+    const [statsLoaded, setStatsLoaded] = useState(false);
+    const [statsView, setStatsView] = useState<'batting' | 'pitching'>('batting');
+
+    useEffect(() => {
+        if (activeTab === 'estadisticas' && !statsLoaded) {
+            Promise.all([
+                apiFetch(`/tournaments/${tournamentId}/stats/batting`).then(r => r.json()),
+                apiFetch(`/tournaments/${tournamentId}/stats/pitching`).then(r => r.json()),
+            ]).then(([batting, pitching]) => {
+                setBattingStats(batting);
+                setPitchingStats(pitching);
+                setStatsLoaded(true);
+            }).catch(() => setStatsLoaded(true));
+        }
+    }, [activeTab, statsLoaded, tournamentId]);
 
     // Fetch Role on Mount
     useEffect(() => {
@@ -405,7 +468,8 @@ export default function TournamentProfilePage() {
         { id: "informacion", label: "Información" },
         { id: "equipos", label: "Equipos" },
         { id: "juegos", label: "Juegos" },
-        { id: "posiciones", label: "Posiciones" }
+        { id: "posiciones", label: "Posiciones" },
+        { id: "estadisticas", label: "Estadísticas" },
     ] as const;
 
     return (
@@ -861,72 +925,162 @@ export default function TournamentProfilePage() {
                         </div>
                     )}
 
-                    {activeTab === 'posiciones' && (() => {
-                        // Compute standings from finished games
-                        const standings: Record<string, { name: string; shortName: string; w: number; l: number }> = {};
-                        for (const team of tournament?.teams || []) {
-                            standings[team.id] = { name: team.name, shortName: team.shortName || team.name.substring(0, 2).toUpperCase(), w: 0, l: 0 };
-                        }
-                        for (const g of tournament?.games?.filter(g => g.status === 'finished') || []) {
-                            if (g.homeScore > g.awayScore) {
-                                if (standings[g.homeTeam.id]) standings[g.homeTeam.id].w += 1;
-                                if (standings[g.awayTeam.id]) standings[g.awayTeam.id].l += 1;
-                            } else if (g.awayScore > g.homeScore) {
-                                if (standings[g.awayTeam.id]) standings[g.awayTeam.id].w += 1;
-                                if (standings[g.homeTeam.id]) standings[g.homeTeam.id].l += 1;
-                            }
-                        }
-                        const sorted = Object.values(standings).sort((a, b) => {
-                            const pctA = a.w + a.l > 0 ? a.w / (a.w + a.l) : 0;
-                            const pctB = b.w + b.l > 0 ? b.w / (b.w + b.l) : 0;
-                            return pctB - pctA;
-                        });
-                        return (
-                            <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm animate-fade-in-up">
-                                <div className="p-6 border-b border-muted/20">
-                                    <h3 className="text-lg font-bold text-foreground">Tabla de Posiciones</h3>
+                    {activeTab === 'posiciones' && (
+                        <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm animate-fade-in-up">
+                            <div className="p-6 border-b border-muted/20">
+                                <h3 className="text-lg font-bold text-foreground">Tabla de Posiciones</h3>
+                            </div>
+                            {!standingsLoaded ? (
+                                <div className="p-12 text-center text-muted-foreground text-sm">Cargando...</div>
+                            ) : !standings || standings.length === 0 ? (
+                                <div className="p-6 text-center">
+                                    <Target className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+                                    <p className="text-muted-foreground">No hay equipos registrados.</p>
                                 </div>
-                                {sorted.length === 0 ? (
-                                    <div className="p-6 text-center">
-                                        <Target className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-                                        <p className="text-muted-foreground">No hay equipos registrados.</p>
-                                    </div>
-                                ) : (
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-left">
-                                            <thead className="bg-muted/5">
-                                                <tr>
-                                                    <th className="px-6 py-4 font-bold text-muted-foreground text-xs uppercase tracking-wider">#</th>
-                                                    <th className="px-6 py-4 font-bold text-muted-foreground text-xs uppercase tracking-wider">Equipo</th>
-                                                    <th className="px-6 py-4 font-bold text-center text-muted-foreground text-xs uppercase tracking-wider">JJ</th>
-                                                    <th className="px-6 py-4 font-bold text-center text-muted-foreground text-xs uppercase tracking-wider">JG</th>
-                                                    <th className="px-6 py-4 font-bold text-center text-muted-foreground text-xs uppercase tracking-wider">JP</th>
-                                                    <th className="px-6 py-4 font-bold text-center text-muted-foreground text-xs uppercase tracking-wider">PCT</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-muted/10">
-                                                {sorted.map((s, i) => (
-                                                    <tr key={s.name} className="hover:bg-muted/5 transition-colors">
-                                                        <td className="px-6 py-4 font-black text-foreground">{i + 1}</td>
-                                                        <td className="px-6 py-4">
-                                                            <div className="flex items-center gap-3">
-                                                                <div className="w-8 h-8 rounded-lg bg-primary text-white font-bold flex items-center justify-center text-xs">{s.shortName}</div>
-                                                                <span className="font-bold text-foreground">{s.name}</span>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left">
+                                        <thead className="bg-muted/5">
+                                            <tr>
+                                                <th className="px-6 py-4 font-bold text-muted-foreground text-xs uppercase tracking-wider">#</th>
+                                                <th className="px-6 py-4 font-bold text-muted-foreground text-xs uppercase tracking-wider">Equipo</th>
+                                                <th className="px-6 py-4 font-bold text-center text-muted-foreground text-xs uppercase tracking-wider">JJ</th>
+                                                <th className="px-6 py-4 font-bold text-center text-muted-foreground text-xs uppercase tracking-wider">JG</th>
+                                                <th className="px-6 py-4 font-bold text-center text-muted-foreground text-xs uppercase tracking-wider">JP</th>
+                                                <th className="px-6 py-4 font-bold text-center text-muted-foreground text-xs uppercase tracking-wider">PCT</th>
+                                                <th className="px-6 py-4 font-bold text-center text-muted-foreground text-xs uppercase tracking-wider">GB</th>
+                                                <th className="px-6 py-4 font-bold text-center text-muted-foreground text-xs uppercase tracking-wider">CE</th>
+                                                <th className="px-6 py-4 font-bold text-center text-muted-foreground text-xs uppercase tracking-wider">CA</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-muted/10">
+                                            {standings.map((s, i) => (
+                                                <tr key={s.teamId} className={`hover:bg-muted/5 transition-colors ${i === 0 ? 'bg-primary/5' : ''}`}>
+                                                    <td className="px-6 py-4 font-black text-foreground">{i + 1}</td>
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-8 h-8 rounded-lg bg-primary text-white font-bold flex items-center justify-center text-xs overflow-hidden shrink-0">
+                                                                {s.logoUrl ? <img src={s.logoUrl} alt={s.name} className="w-full h-full object-contain" /> : s.shortName}
                                                             </div>
-                                                        </td>
-                                                        <td className="px-6 py-4 text-center font-bold text-muted-foreground">{s.w + s.l}</td>
-                                                        <td className="px-6 py-4 text-center font-bold text-emerald-600 dark:text-emerald-400">{s.w}</td>
-                                                        <td className="px-6 py-4 text-center font-bold text-red-600 dark:text-red-400">{s.l}</td>
-                                                        <td className="px-6 py-4 text-center font-black text-foreground">{(s.w + s.l > 0) ? (s.w / (s.w + s.l)).toFixed(3) : '.000'}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                                                            <span className="font-bold text-foreground">{s.name}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-center font-bold text-muted-foreground">{s.gp}</td>
+                                                    <td className="px-6 py-4 text-center font-bold text-emerald-600 dark:text-emerald-400">{s.w}</td>
+                                                    <td className="px-6 py-4 text-center font-bold text-red-600 dark:text-red-400">{s.l}</td>
+                                                    <td className="px-6 py-4 text-center font-black text-foreground">{s.pct}</td>
+                                                    <td className="px-6 py-4 text-center font-bold text-muted-foreground">{i === 0 ? '-' : s.gb}</td>
+                                                    <td className="px-6 py-4 text-center font-bold text-muted-foreground">{s.rs}</td>
+                                                    <td className="px-6 py-4 text-center font-bold text-muted-foreground">{s.ra}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    {activeTab === 'estadisticas' && (
+                        <div className="animate-fade-in-up space-y-4">
+                            {/* Sub-tab toggle */}
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setStatsView('batting')}
+                                    className={`px-5 py-2 text-sm font-bold rounded-full transition-all ${statsView === 'batting' ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:text-foreground bg-muted/10 border border-muted/20'}`}
+                                >
+                                    Bateo
+                                </button>
+                                <button
+                                    onClick={() => setStatsView('pitching')}
+                                    className={`px-5 py-2 text-sm font-bold rounded-full transition-all ${statsView === 'pitching' ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:text-foreground bg-muted/10 border border-muted/20'}`}
+                                >
+                                    Pitcheo
+                                </button>
+                            </div>
+
+                            <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm">
+                                {!statsLoaded ? (
+                                    <div className="p-12 text-center text-muted-foreground text-sm">Cargando estadísticas...</div>
+                                ) : statsView === 'batting' ? (
+                                    <>
+                                        <div className="p-6 border-b border-muted/20">
+                                            <h3 className="text-lg font-bold text-foreground">Líderes de Bateo</h3>
+                                        </div>
+                                        {!battingStats || battingStats.length === 0 ? (
+                                            <div className="p-8 text-center text-muted-foreground text-sm">No hay datos de bateo disponibles.</div>
+                                        ) : (
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left">
+                                                    <thead className="bg-muted/5">
+                                                        <tr>
+                                                            {['#','Jugador','Equipo','JJ','AB','H','AVG','HR','RBI','BB','SO'].map(h => (
+                                                                <th key={h} className="px-4 py-3 font-bold text-muted-foreground text-xs uppercase tracking-wider text-center first:text-left">{h}</th>
+                                                            ))}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-muted/10">
+                                                        {battingStats.map((p, i) => (
+                                                            <tr key={p.playerId} className="hover:bg-muted/5 transition-colors">
+                                                                <td className="px-4 py-3 font-black text-muted-foreground text-sm">{i + 1}</td>
+                                                                <td className="px-4 py-3 font-bold text-foreground text-sm whitespace-nowrap">{p.firstName} {p.lastName}</td>
+                                                                <td className="px-4 py-3 text-sm text-muted-foreground text-center">{p.teamName}</td>
+                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.gp}</td>
+                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.ab}</td>
+                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.h}</td>
+                                                                <td className="px-4 py-3 text-sm text-center font-black text-foreground">{p.avg}</td>
+                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.hr}</td>
+                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.rbi}</td>
+                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.bb}</td>
+                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.so}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="p-6 border-b border-muted/20">
+                                            <h3 className="text-lg font-bold text-foreground">Líderes de Pitcheo</h3>
+                                        </div>
+                                        {!pitchingStats || pitchingStats.length === 0 ? (
+                                            <div className="p-8 text-center text-muted-foreground text-sm">No hay datos de pitcheo disponibles.</div>
+                                        ) : (
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left">
+                                                    <thead className="bg-muted/5">
+                                                        <tr>
+                                                            {['#','Jugador','Equipo','JJ','IP','H','CE','BB','K','ERA'].map(h => (
+                                                                <th key={h} className="px-4 py-3 font-bold text-muted-foreground text-xs uppercase tracking-wider text-center first:text-left">{h}</th>
+                                                            ))}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-muted/10">
+                                                        {pitchingStats.map((p, i) => (
+                                                            <tr key={p.playerId} className="hover:bg-muted/5 transition-colors">
+                                                                <td className="px-4 py-3 font-black text-muted-foreground text-sm">{i + 1}</td>
+                                                                <td className="px-4 py-3 font-bold text-foreground text-sm whitespace-nowrap">{p.firstName} {p.lastName}</td>
+                                                                <td className="px-4 py-3 text-sm text-muted-foreground text-center">{p.teamName}</td>
+                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.gp}</td>
+                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.ip}</td>
+                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.h}</td>
+                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.r}</td>
+                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.bb}</td>
+                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.so}</td>
+                                                                <td className="px-4 py-3 text-sm text-center font-black text-foreground">{p.era}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </>
                                 )}
                             </div>
-                        );
-                    })()}
+                        </div>
+                    )}
+
                 </div>
             </main>
 
@@ -1004,11 +1158,33 @@ export default function TournamentProfilePage() {
                                         </div>
                                     </div>
 
-                                    <div className="space-y-2">
+                                    <div className="space-y-3">
                                         <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                                             <ShieldAlert className="w-4 h-4" /> Asignación de Umpires
                                         </label>
-                                        <input type="text" placeholder="Ej. Juan Pérez (Principal), Carlos Gómez (Bases)" className="w-full bg-muted/10 border border-muted/20 text-foreground text-sm rounded-xl p-3 outline-none focus:border-primary transition-colors font-bold" />
+                                        {leagueUmpires.length === 0 ? (
+                                            <p className="text-xs text-muted-foreground italic">No hay umpires registrados en esta liga.</p>
+                                        ) : (
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {(['plate', 'base1', 'base2', 'base3'] as const).map(role => (
+                                                    <div key={role} className="space-y-1">
+                                                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                                                            {role === 'plate' ? 'Plato' : role === 'base1' ? '1ra Base' : role === 'base2' ? '2da Base' : '3ra Base'}
+                                                        </label>
+                                                        <select
+                                                            className="w-full bg-muted/10 border border-muted/20 text-foreground text-sm rounded-xl p-2.5 outline-none focus:border-primary transition-colors"
+                                                            value={umpireAssignment[role]}
+                                                            onChange={e => setUmpireAssignment(prev => ({ ...prev, [role]: e.target.value }))}
+                                                        >
+                                                            <option value="">— Sin asignar —</option>
+                                                            {leagueUmpires.map(u => (
+                                                                <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             ) : (

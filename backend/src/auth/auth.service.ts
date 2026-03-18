@@ -3,12 +3,14 @@ import {
     ConflictException,
     UnauthorizedException,
     InternalServerErrorException,
+    BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -113,6 +115,56 @@ export class AuthService {
         } catch {
             throw new UnauthorizedException('Token de refresco inválido o expirado');
         }
+    }
+
+    async forgotPassword(email: string): Promise<{ token: string; message: string }> {
+        const user = await this.prisma.user.findUnique({
+            where: { email: email.toLowerCase() },
+        });
+
+        const message = 'Si el correo está registrado, recibirás las instrucciones.';
+
+        if (!user) {
+            return { token: '', message };
+        }
+
+        const token = crypto.randomBytes(32).toString('hex');
+        const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
+
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: { passwordResetToken: token, passwordResetExpiry: expiry },
+        });
+
+        console.log(`[DEV] Reset token para ${email}: ${token}`);
+
+        return { token, message };
+    }
+
+    async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+        const user = await this.prisma.user.findFirst({
+            where: {
+                passwordResetToken: token,
+                passwordResetExpiry: { gt: new Date() },
+            },
+        });
+
+        if (!user) {
+            throw new BadRequestException('Token inválido o expirado.');
+        }
+
+        const passwordHash = await bcrypt.hash(newPassword, 12);
+
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: {
+                passwordHash,
+                passwordResetToken: null,
+                passwordResetExpiry: null,
+            },
+        });
+
+        return { message: 'Contraseña actualizada correctamente.' };
     }
 
     private generateTokens(userId: string, email: string, role: string) {

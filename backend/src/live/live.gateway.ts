@@ -14,7 +14,8 @@ import { PrismaService } from '../prisma/prisma.service';
 
 @WebSocketGateway({
   cors: {
-    origin: '*',
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    credentials: true,
   },
   namespace: '/live_games',
 })

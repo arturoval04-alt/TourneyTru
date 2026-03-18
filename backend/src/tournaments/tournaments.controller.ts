@@ -63,4 +63,9 @@ export class TournamentsController {
     removeField(@Param('id') id: string, @Param('fieldId') fieldId: string) {
         return this.tournamentsService.removeField(id, fieldId);
     }
+
+    @Get(':id/standings')
+    getStandings(@Param('id') id: string) {
+        return this.tournamentsService.getStandings(id);
+    }
 }

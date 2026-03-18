@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ChangeLineupDto, CreateGameDto, UpdateGameDto, SetGameLineupDto } from './dto/game.dto';
+import { AssignUmpireDto, ChangeLineupDto, CreateGameDto, UpdateGameDto, SetGameLineupDto } from './dto/game.dto';
 
 @Injectable()
 export class GamesService {
@@ -435,6 +435,29 @@ export class GamesService {
             balls: 0,
             strikes: 0,
         };
+    }
+
+    async getGameUmpires(gameId: string) {
+        await this.findOne(gameId);
+        return this.prisma.gameUmpire.findMany({
+            where: { gameId },
+            include: { umpire: true },
+        });
+    }
+
+    async assignUmpire(gameId: string, dto: AssignUmpireDto) {
+        await this.findOne(gameId);
+        return this.prisma.gameUmpire.upsert({
+            where: { gameId_umpireId: { gameId, umpireId: dto.umpireId } },
+            create: { gameId, umpireId: dto.umpireId, role: dto.role ?? 'plate' },
+            update: { role: dto.role ?? 'plate' },
+            include: { umpire: true },
+        });
+    }
+
+    async removeUmpire(gameId: string, umpireId: string) {
+        await this.findOne(gameId);
+        return this.prisma.gameUmpire.deleteMany({ where: { gameId, umpireId } });
     }
 
     private classifyPlayResult(result: string): string {

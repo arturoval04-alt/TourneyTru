@@ -120,4 +120,74 @@ export class TournamentsService {
             where: { id: fieldId }
         });
     }
+
+    async getStandings(id: string) {
+        const tournament = await this.findOne(id);
+
+        const finishedGames = await this.prisma.game.findMany({
+            where: { tournamentId: id, status: 'finished' },
+            select: {
+                homeTeamId: true,
+                awayTeamId: true,
+                homeScore: true,
+                awayScore: true,
+            },
+        });
+
+        // Initialize record map for each team
+        const map: Record<string, { teamId: string; name: string; shortName: string; logoUrl: string | null; w: number; l: number; t: number; rs: number; ra: number }> = {};
+        for (const team of tournament.teams) {
+            map[team.id] = {
+                teamId: team.id,
+                name: team.name,
+                shortName: team.shortName || team.name.substring(0, 2).toUpperCase(),
+                logoUrl: team.logoUrl ?? null,
+                w: 0, l: 0, t: 0, rs: 0, ra: 0,
+            };
+        }
+
+        for (const g of finishedGames) {
+            const home = map[g.homeTeamId];
+            const away = map[g.awayTeamId];
+            if (!home || !away) continue;
+
+            home.rs += g.homeScore;
+            home.ra += g.awayScore;
+            away.rs += g.awayScore;
+            away.ra += g.homeScore;
+
+            if (g.homeScore > g.awayScore) {
+                home.w += 1;
+                away.l += 1;
+            } else if (g.awayScore > g.homeScore) {
+                away.w += 1;
+                home.l += 1;
+            } else {
+                home.t += 1;
+                away.t += 1;
+            }
+        }
+
+        const rows = Object.values(map).sort((a, b) => {
+            const gA = a.w + a.l + a.t;
+            const gB = b.w + b.l + b.t;
+            const pctA = gA > 0 ? a.w / gA : 0;
+            const pctB = gB > 0 ? b.w / gB : 0;
+            if (pctB !== pctA) return pctB - pctA;
+            return (b.rs - b.ra) - (a.rs - a.ra);
+        });
+
+        // Compute PCT and GB relative to first place
+        const leader = rows[0];
+        return rows.map((r, i) => {
+            const g = r.w + r.l + r.t;
+            const pct = g > 0 ? (r.w / g).toFixed(3) : '.000';
+            let gb: string | number = '-';
+            if (i > 0 && leader) {
+                const diff = ((leader.w - r.w) + (r.l - leader.l)) / 2;
+                gb = diff > 0 ? diff : 0;
+            }
+            return { ...r, pct, gb, gp: g };
+        });
+    }
 }

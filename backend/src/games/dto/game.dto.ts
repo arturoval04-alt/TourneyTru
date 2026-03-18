@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt, IsUUID, IsDateString, IsArray, ValidateNested, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsUUID, IsDateString, IsArray, ValidateNested, IsBoolean, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateGameDto {
@@ -108,3 +108,11 @@ export class ChangeLineupDto {
     dhForPosition?: string;
 }
 
+export class AssignUmpireDto {
+    @IsUUID()
+    umpireId: string;
+
+    @IsOptional()
+    @IsIn(['plate', 'base1', 'base2', 'base3'])
+    role?: string;
+}

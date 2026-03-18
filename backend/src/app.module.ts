@@ -12,6 +12,7 @@ import { UmpiresModule } from './umpires/umpires.module';
 import { GamesModule } from './games/games.module';
 import { LiveModule } from './live/live.module';
 import { UsersModule } from './users/users.module';
+import { StatsModule } from './stats/stats.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { UsersModule } from './users/users.module';
     GamesModule,
     LiveModule,
     UsersModule,
+    StatsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

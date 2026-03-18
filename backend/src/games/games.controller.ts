@@ -1,6 +1,6 @@
 import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { GamesService } from './games.service';
-import { CreateGameDto, UpdateGameDto, SetGameLineupDto, ChangeLineupDto } from './dto/game.dto';
+import { AssignUmpireDto, CreateGameDto, UpdateGameDto, SetGameLineupDto, ChangeLineupDto } from './dto/game.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('api/games')
@@ -62,5 +62,22 @@ export class GamesController {
     @Get(':id/state')
     getState(@Param('id') id: string) {
         return this.gamesService.getGameState(id);
+    }
+
+    @Get(':id/umpires')
+    getGameUmpires(@Param('id') id: string) {
+        return this.gamesService.getGameUmpires(id);
+    }
+
+    @Post(':id/umpires')
+    @UseGuards(JwtAuthGuard)
+    assignUmpire(@Param('id') id: string, @Body() dto: AssignUmpireDto) {
+        return this.gamesService.assignUmpire(id, dto);
+    }
+
+    @Delete(':id/umpires/:umpireId')
+    @UseGuards(JwtAuthGuard)
+    removeUmpire(@Param('id') id: string, @Param('umpireId') umpireId: string) {
+        return this.gamesService.removeUmpire(id, umpireId);
     }
 }
