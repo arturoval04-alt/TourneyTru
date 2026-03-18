@@ -39,7 +39,10 @@ export default function JugadoresPage() {
     const [loadingT, setLoadingT] = useState(true);
     const [loadingPlayers, setLoadingPlayers] = useState(false);
 
-    const apiUrl = process.env.NODE_ENV === 'production' ? 'https://tourneytru-backend.onrender.com/api' : 'http://localhost:3001/api' 'http://localhost:3001/api';
+    const apiUrl =
+        process.env.NODE_ENV === 'production'
+            ? 'https://tourneytru-backend.onrender.com/api'
+            : 'http://localhost:3001/api';
 
     useEffect(() => {
         fetch(`${apiUrl}/tournaments`)

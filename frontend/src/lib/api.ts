@@ -1,5 +1,7 @@
 export const getApiUrl = () =>
-  process.env.NODE_ENV === 'production' ? 'https://tourneytru-backend.onrender.com/api' : 'http://localhost:3001/api' 'http://localhost:3001/api';
+  process.env.NODE_ENV === 'production'
+    ? 'https://tourneytru-backend.onrender.com/api'
+    : 'http://localhost:3001/api';
 
 export const getSocketUrl = () => {
   const apiUrl = getApiUrl();
