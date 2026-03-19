@@ -1,4 +1,4 @@
-const API_URL = `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api`;
+const API_URL = `${process.env.NEXT_PUBLIC_API_URL || ''}/api`;
 
 export interface AuthUser {
     id: string;
@@ -52,6 +52,12 @@ export function isLoggedIn(): boolean {
 }
 
 export async function apiFetch(path: string, options: RequestInit = {}) {
+    // Deprecated: This project now uses Supabase SDK directly.
+    // If NEXT_PUBLIC_API_URL is not set, this will fail gracefully.
+    if (!API_URL.startsWith('http')) {
+        console.warn('apiFetch called but NEXT_PUBLIC_API_URL is not configured.');
+        return new Response(JSON.stringify({ error: 'Legacy API not configured' }), { status: 503 });
+    }
     const token = getAccessToken();
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',

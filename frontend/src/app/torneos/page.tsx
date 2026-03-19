@@ -73,8 +73,8 @@ export default function TorneosPage() {
         return 'Próximo';
     };
 
-    const getSportIcon = (rulesType: string) => rulesType.includes('softball') ? '🥎' : '⚾';
-    const getSportName = (rulesType: string) => rulesType.includes('softball') ? 'Softbol' : 'Béisbol';
+    const getSportIcon = (rulesType?: string) => (rulesType || '').includes('softball') ? '🥎' : '⚾';
+    const getSportName = (rulesType?: string) => (rulesType || '').includes('softball') ? 'Softbol' : 'Béisbol';
 
     return (
         <div className="min-h-screen bg-background text-foreground font-sans transition-colors duration-300 pb-20">
