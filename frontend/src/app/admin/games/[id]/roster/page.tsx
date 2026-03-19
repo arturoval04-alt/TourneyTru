@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { apiFetch } from '@/lib/auth';
+import { supabase } from '@/lib/supabaseClient';
 import { useParams, useRouter } from 'next/navigation';
 
 interface Player {
@@ -22,6 +22,8 @@ interface Game {
     id: string;
     homeTeam: Team;
     awayTeam: Team;
+    home_team_id: string;
+    away_team_id: string;
 }
 
 export default function RosterSetupPage() {
@@ -38,25 +40,55 @@ export default function RosterSetupPage() {
     useEffect(() => {
         const fetchGame = async () => {
             try {
-                const response = await apiFetch(`/games/${gameId}`);
-                if (response.ok) {
-                    const data = await response.json();
-                    setGame(data);
+                const { data, error } = await supabase
+                    .from('games')
+                    .select(`
+                        id,
+                        home_team_id,
+                        away_team_id,
+                        homeTeam:teams!home_team_id (
+                            id, 
+                            name, 
+                            players (
+                                id, 
+                                firstName:first_name, 
+                                lastName:last_name, 
+                                position, 
+                                number
+                            )
+                        ),
+                        awayTeam:teams!away_team_id (
+                            id, 
+                            name, 
+                            players (
+                                id, 
+                                firstName:first_name, 
+                                lastName:last_name, 
+                                position, 
+                                number
+                            )
+                        ),
+                        lineups (*)
+                    `)
+                    .eq('id', gameId)
+                    .single();
 
-                    interface ApiLineup {
-                        playerId: string;
-                        teamId: string;
-                        position: string;
-                        battingOrder: number;
-                        dhForPosition?: string | null;
-                    }
+                if (error) throw error;
+                if (data) {
+                    setGame(data as any);
 
                     // Inicializar lineups si ya existen
-                    const homeLp = data.lineups?.filter((l: ApiLineup) => l.teamId === data.homeTeam.id).map((l: ApiLineup) => ({
-                        playerId: l.playerId, position: l.position, battingOrder: l.battingOrder, dhForPosition: l.dhForPosition || ''
+                    const homeLp = data.lineups?.filter((l: any) => l.team_id === data.home_team_id).map((l: any) => ({
+                        playerId: l.player_id, 
+                        position: l.position, 
+                        battingOrder: l.batting_order, 
+                        dhForPosition: l.dh_for_position || ''
                     })) || [];
-                    const awayLp = data.lineups?.filter((l: ApiLineup) => l.teamId === data.awayTeam.id).map((l: ApiLineup) => ({
-                        playerId: l.playerId, position: l.position, battingOrder: l.battingOrder, dhForPosition: l.dhForPosition || ''
+                    const awayLp = data.lineups?.filter((l: any) => l.team_id === data.away_team_id).map((l: any) => ({
+                        playerId: l.player_id, 
+                        position: l.position, 
+                        battingOrder: l.batting_order, 
+                        dhForPosition: l.dh_for_position || ''
                     })) || [];
 
                     setHomeLineup(homeLp);
@@ -117,46 +149,54 @@ export default function RosterSetupPage() {
             // Validate DH rules
             const dhEntries = validLineups.filter(l => normalizePosition(l.position) === 'DH');
             if (dhEntries.length > 1) {
-                alert('Solo se permite un DH estÃ¡ndar por equipo.');
+                alert('Solo se permite un DH estándar por equipo.');
                 return;
             }
             if (dhEntries.length === 1) {
                 const dh = dhEntries[0];
                 const anchor = normalizePosition(dh.dhForPosition || '');
                 if (!defensivePositions.includes(anchor)) {
-                    alert('Si se usa DH, debe anclarse a una posiciÃ³n defensiva vÃ¡lida.');
+                    alert('Si se usa DH, debe anclarse a una posición defensiva válida.');
                     return;
                 }
                 if (!selectedPositions.includes(anchor)) {
-                    alert(`El DH debe anclarse a una posiciÃ³n defensiva presente en el lineup (${anchor}).`);
+                    alert(`El DH debe anclarse a una posición defensiva presente en el lineup (${anchor}).`);
                     return;
                 }
             }
 
             const dataToSubmit = validLineups.map(l => ({
-                battingOrder: l.battingOrder,
+                batting_order: l.battingOrder,
                 position: l.position || 'DH',
-                dhForPosition: normalizePosition(l.position) === 'DH' ? (l.dhForPosition || undefined) : undefined,
-                isStarter: true,
-                teamId: teamId,
-                playerId: l.playerId
+                dh_for_position: normalizePosition(l.position) === 'DH' ? (l.dhForPosition || null) : null,
+                is_starter: true,
+                team_id: teamId,
+                player_id: l.playerId,
+                game_id: gameId
             }));
 
-            const response = await apiFetch(`/games/${gameId}/team/${teamId}/lineup`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ lineups: dataToSubmit })
-            });
+            // 1. Eliminar todo el lineup existente de este equipo en este juego
+            const { error: deleteError } = await supabase
+                .from('lineups')
+                .delete()
+                .eq('game_id', gameId)
+                .eq('team_id', teamId);
 
-            if (response.ok) {
-                alert('Lineup guardado con éxito');
-            } else {
-                alert('Error al guardar Lineup');
-            }
+            if (deleteError) throw deleteError;
+
+            // 2. Insertar los nuevos
+            const { error: insertError } = await supabase
+                .from('lineups')
+                .insert(dataToSubmit);
+
+            if (insertError) throw insertError;
+
+            alert('Lineup guardado con éxito');
         } catch (err) {
             console.error(err);
+            alert('Error al guardar Lineup');
         }
-    };
+    };    
 
     if (loading) return <div className="p-8 text-center text-slate-400">Cargando Roster...</div>;
     if (!game) return <div className="p-8 text-center text-red-400">Juego no encontrado</div>;

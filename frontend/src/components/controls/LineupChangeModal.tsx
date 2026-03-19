@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { apiFetch } from '@/lib/auth';
+import { supabase } from "@/lib/supabaseClient";
 import { LineupItem, useGameStore } from '@/store/gameStore';
 
 interface LineupChangeModalProps {
@@ -9,8 +9,8 @@ interface LineupChangeModalProps {
 
 interface TeamPlayer {
     id: string;
-    firstName: string;
-    lastName: string;
+    first_name: string;
+    last_name: string;
     number?: number;
 }
 
@@ -96,12 +96,17 @@ export default function LineupChangeModal({ isOpen, onClose }: LineupChangeModal
         const loadRoster = async (teamId: string | null) => {
             if (!teamId || rosters[teamId]) return;
             try {
-                const res = await apiFetch(`/teams/${teamId}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    setRosters((prev) => ({ ...prev, [teamId]: data.players || [] }));
+                const { data, error } = await supabase
+                    .from('players')
+                    .select('*')
+                    .eq('team_id', teamId);
+                
+                if (error) throw error;
+                if (data) {
+                    setRosters((prev) => ({ ...prev, [teamId]: data || [] }));
                 }
-            } catch {
+            } catch (err) {
+                console.error("Error loading roster:", err);
                 setRosters((prev) => ({ ...prev, [teamId]: [] }));
             }
         };
@@ -141,31 +146,42 @@ export default function LineupChangeModal({ isOpen, onClose }: LineupChangeModal
 
         setLoading(true);
         try {
-            const res = await apiFetch(`/games/${gameId}/lineup-change`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    teamId: selectedTeamId,
-                    battingOrder,
-                    playerInId,
-                    playerOutId: currentSlot?.playerId || undefined,
-                    position,
-                    dhForPosition: isDh ? dhForPosition : undefined,
-                }),
-            });
+            // 1. Update Lineup record
+            const { error: updateError } = await supabase
+                .from('lineups')
+                .update({
+                    player_id: playerInId,
+                    position: position,
+                    dh_for_position: normalizePosition(position) === 'DH' ? dhForPosition : null,
+                    is_starter: false
+                })
+                .eq('game_id', gameId)
+                .eq('team_id', selectedTeamId)
+                .eq('batting_order', battingOrder);
 
-            if (!res.ok) {
-                const text = await res.text();
-                setError(text || 'No se pudo actualizar el lineup.');
-                return;
-            }
+            if (updateError) throw updateError;
+
+            // 2. Insert into LineupChange history
+            const { error: insertError } = await supabase
+                .from('lineup_changes')
+                .insert({
+                    game_id: gameId,
+                    team_id: selectedTeamId,
+                    batting_order: battingOrder,
+                    player_out_id: currentSlot?.playerId || null,
+                    player_in_id: playerInId,
+                    position: position,
+                    dh_for_position: normalizePosition(position) === 'DH' ? dhForPosition : null
+                });
+
+            if (insertError) throw insertError;
 
             await fetchGameConfig();
             connectSocket();
             onClose();
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            setError('No se pudo actualizar el lineup.');
+            setError(err.message || 'No se pudo actualizar el lineup.');
         } finally {
             setLoading(false);
         }
@@ -223,7 +239,7 @@ export default function LineupChangeModal({ isOpen, onClose }: LineupChangeModal
                                 <option value="">Selecciona jugador</option>
                                 {availablePlayers.map((p) => (
                                     <option key={p.id} value={p.id}>
-                                        {p.number ? `#${p.number} - ` : ''}{p.firstName} {p.lastName}
+                                        {p.number ? `#${p.number} - ` : ''}{p.first_name} {p.last_name}
                                     </option>
                                 ))}
                             </select>

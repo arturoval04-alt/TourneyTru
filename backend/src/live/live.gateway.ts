@@ -111,7 +111,7 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // Por ahora, simulamos el motor de juego guardando el log básico y difundiéndolo.
 
     // 2. Guardar en DB
-    let play = null;
+    let play: any = null;
     try {
       if (!playInfo.batterId) {
         console.warn("⚠️ Advertencia: playInfo.batterId no fue proporcionado. Asignando jugada a bateador por defecto.");
@@ -145,7 +145,7 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
           pitcherId: validPitcherId,
         }
       });
-      console.log(`[DB] Jugada guardada en SQLite (Play ID: ${play.id})`);
+      console.log(`[DB] Jugada guardada en SQLite (Play ID: ${play?.id})`);
     } catch (e) {
       console.error("Error guardando play en DB:", e);
     }

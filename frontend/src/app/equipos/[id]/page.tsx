@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import Image from "next/image";
 import Link from "next/link";
-import { apiFetch, getUser } from '@/lib/auth';
+import { getUser } from '@/lib/auth';
+import { supabase } from "@/lib/supabaseClient";
 import { useParams, useRouter } from "next/navigation";
 import {
     Settings, Share2, ArrowLeft, Users, Trophy, Flag, MapPin, ExternalLink, Clock, Star, Activity, X
@@ -134,53 +135,53 @@ export default function TeamProfilePage() {
     const handleUpdatePlayer = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const res = await apiFetch(`/players/${selectedPlayer?.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    ...playerForm,
-                    number: playerForm.number ? parseInt(playerForm.number) : null
+            const { error } = await supabase
+                .from('players')
+                .update({
+                    first_name: playerForm.firstName,
+                    last_name: playerForm.lastName,
+                    number: playerForm.number ? parseInt(playerForm.number) : null,
+                    position: playerForm.position,
+                    bats: playerForm.bats,
+                    throws: playerForm.throws,
+                    photo_url: playerForm.photoUrl
                 })
-            });
-            if (res.ok) {
-                alert('Información del Jugador Actualizada');
-                setIsEditingPlayer(false);
-                setSelectedPlayer(null);
-                window.location.reload();
-            } else {
-                alert('Error al actualizar jugador');
-            }
+                .eq('id', selectedPlayer?.id);
+
+            if (error) throw error;
+            
+            alert('Información del Jugador Actualizada');
+            setIsEditingPlayer(false);
+            setSelectedPlayer(null);
+            window.location.reload();
         } catch (error) {
             console.error(error);
+            alert('Error al actualizar jugador');
         }
     };
 
     const handleUpdateProfile = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            // Filtrar campos vacíos para evitar errores de UUID en Prisma
-            const body: Record<string, string> = {};
-            if (profileForm.name) body.name = profileForm.name;
-            if (profileForm.shortName !== undefined) body.shortName = profileForm.shortName;
-            if (profileForm.managerName !== undefined) body.managerName = profileForm.managerName;
-            if (profileForm.logoUrl !== undefined) body.logoUrl = profileForm.logoUrl;
-            if (profileForm.homeFieldId) body.homeFieldId = profileForm.homeFieldId;
+            const { error } = await supabase
+                .from('teams')
+                .update({
+                    name: profileForm.name,
+                    short_name: profileForm.shortName,
+                    manager_name: profileForm.managerName,
+                    logo_url: profileForm.logoUrl,
+                    home_field_id: profileForm.homeFieldId || null
+                })
+                .eq('id', teamId);
 
-            const res = await apiFetch(`/teams/${teamId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
-            if (res.ok) {
-                alert('Perfil del Equipo Actualizado');
-                setIsEditingProfile(false);
-                window.location.reload();
-            } else {
-                const err = await res.json().catch(() => ({}));
-                alert('Error al actualizar perfil: ' + (err.message || res.status));
-            }
+            if (error) throw error;
+
+            alert('Perfil del Equipo Actualizado');
+            setIsEditingProfile(false);
+            window.location.reload();
         } catch (error) {
             console.error(error);
+            alert('Error al actualizar perfil');
         }
     };
 
@@ -194,13 +195,56 @@ export default function TeamProfilePage() {
     };
 
     useEffect(() => {
-        apiFetch(`/teams/${teamId}`)
-            .then(res => res.json())
-            .then((data: TeamData) => {
-                setTeam(data);
+        const fetchTeamData = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('teams')
+                    .select(`
+                        *,
+                        tournament:tournaments(id, name, category),
+                        players(*),
+                        gamesAsHome:games!home_team_id(*, homeTeam:teams!home_team_id(id, name), awayTeam:teams!away_team_id(id, name)),
+                        gamesAsAway:games!away_team_id(*, homeTeam:teams!home_team_id(id, name), awayTeam:teams!away_team_id(id, name))
+                    `)
+                    .eq('id', teamId)
+                    .single();
+
+                if (error) throw error;
+
+                // Simple record calculation
+                const games = [...(data.gamesAsHome || []), ...(data.gamesAsAway || [])].filter(g => g.status === 'finished');
+                let wins = 0;
+                let losses = 0;
+                games.forEach(g => {
+                    const isHome = g.home_team_id === teamId;
+                    const won = isHome ? (g.home_score > g.away_score) : (g.away_score > g.home_score);
+                    if (won) wins++; else losses++;
+                });
+
+                setTeam({
+                    ...data,
+                    name: data.name,
+                    shortName: data.short_name,
+                    logoUrl: data.logo_url,
+                    managerName: data.manager_name,
+                    homeFieldId: data.home_field_id,
+                    wins,
+                    losses,
+                    gamesPlayed: games.length,
+                    players: data.players.map((p: any) => ({
+                        ...p,
+                        firstName: p.first_name,
+                        lastName: p.last_name,
+                        photoUrl: p.photo_url
+                    }))
+                } as any);
                 setLoading(false);
-            })
-            .catch(() => setLoading(false));
+            } catch (err) {
+                console.error(err);
+                setLoading(false);
+            }
+        };
+        fetchTeamData();
     }, [teamId]);
 
     const tabs = [

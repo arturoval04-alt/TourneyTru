@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiFetch, getUser, AuthUser } from '@/lib/auth';
+import { getUser, AuthUser } from '@/lib/auth';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function AdminDashboard() {
     const router = useRouter();
@@ -99,14 +100,28 @@ export default function AdminDashboard() {
     useEffect(() => {
         const loadCurrentUser = async () => {
             try {
-                const res = await apiFetch('/auth/me');
-                if (res.ok) {
-                    const data = await res.json();
-                    const merged = { ...(getUser() || {}), ...data } as AuthUser;
+                const { data, error } = await supabase.auth.getSession();
+                if (error) throw error;
+                if (data?.session) {
+                    const { data: userProfile, error: profileError } = await supabase
+                        .from('users')
+                        .select('*, roles(name)')
+                        .eq('id', data.session.user.id)
+                        .single();
+
+                    if (profileError) throw profileError;
+
+                    const merged = {
+                        ...data.session.user,
+                        ...userProfile,
+                        role: userProfile.roles?.name || 'general'
+                    } as AuthUser;
                     localStorage.setItem('user', JSON.stringify(merged));
                     setCurrentUser(merged);
                 }
-            } catch { }
+            } catch (err) {
+                console.error("Error loading current user:", err);
+            }
         };
         loadCurrentUser();
     }, []);
@@ -175,31 +190,57 @@ export default function AdminDashboard() {
     // --- API Fetchers ---
     const fetchGames = async () => {
         try {
-            const res = await apiFetch('/games');
-            if (res.ok) setGames(await res.json());
-        } catch { }
+            const { data, error } = await supabase
+                .from('games')
+                .select('*, homeTeam:teams!home_team_id(name), awayTeam:teams!away_team_id(name)')
+                .order('created_at', { ascending: false });
+            
+            if (error) throw error;
+            setGames(data as any);
+        } catch (err) { console.error("Error fetching games:", err); }
     };
 
     const fetchTournaments = async () => {
         try {
-            const res = await apiFetch('/tournaments');
-            if (res.ok) setTournaments(await res.json());
-        } catch { }
+            const { data, error } = await supabase
+                .from('tournaments')
+                .select('*, league:leagues(id, name), _count:teams(count), _count_games:games(count)');
+            
+            if (error) throw error;
+            // Map the count structure to match previous expectation if necessary
+            const formatted = data.map((t: any) => ({
+                ...t,
+                _count: {
+                    teams: t._count?.[0]?.count || 0,
+                    games: t._count_games?.[0]?.count || 0
+                }
+            }));
+            setTournaments(formatted);
+        } catch (err) { console.error("Error fetching tournaments:", err); }
     }
 
     const fetchLeagues = async () => {
         try {
-            const res = await apiFetch('/leagues');
-            if (res.ok) setLeagues(await res.json());
-        } catch { }
+            const { data, error } = await supabase
+                .from('leagues')
+                .select('*');
+            if (error) throw error;
+            setLeagues(data);
+        } catch (err) { console.error("Error fetching leagues:", err); }
     };
 
     const fetchUsers = async () => {
         try {
-            // Simulated API call point
-            const res = await apiFetch('/users');
-            if (res.ok) setUsers(await res.json());
-        } catch { }
+            const { data, error } = await supabase
+                .from('users')
+                .select('*, roles(name)');
+            if (error) throw error;
+            const formatted = data.map((u: any) => ({
+                ...u,
+                role: u.roles?.name || 'public'
+            }));
+            setUsers(formatted);
+        } catch (err) { console.error("Error fetching users:", err); }
     };
 
     useEffect(() => {
@@ -220,10 +261,13 @@ export default function AdminDashboard() {
             setTeams([]);
             return;
         }
-        apiFetch(`/tournaments/${selectedTournament}/teams`)
-            .then(res => res.json())
-            .then(data => setTeams(data))
-            .catch(() => { });
+        supabase
+            .from('teams')
+            .select('*')
+            .eq('tournament_id', selectedTournament)
+            .then(({ data, error }) => {
+                if (!error) setTeams(data || []);
+            });
     }, [selectedTournament]);
 
     // Fetch Players when Selected Team changes
@@ -232,14 +276,13 @@ export default function AdminDashboard() {
             setPlayers([]);
             return;
         }
-        // Simulated API call point for when backend handles /teams/:id/players
-        apiFetch(`/teams/${selectedTeam}/players`)
-            .then(res => {
-                if (res.ok) return res.json();
-                return [];
-            })
-            .then(data => setPlayers(data))
-            .catch(() => { });
+        supabase
+            .from('players')
+            .select('*')
+            .eq('team_id', selectedTeam)
+            .then(({ data, error }) => {
+                if (!error) setPlayers(data || []);
+            });
     }, [selectedTeam]);
 
 
@@ -251,7 +294,6 @@ export default function AdminDashboard() {
         localStorage.setItem('user', JSON.stringify(updated));
         setCurrentUser(updated);
     };
-
     const handleCreateGame = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedTournament || !homeTeamId || !awayTeamId) {
@@ -265,28 +307,32 @@ export default function AdminDashboard() {
 
         setSaving(true);
         try {
-            const res = await apiFetch('/games', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    tournamentId: selectedTournament,
-                    homeTeamId: homeTeamId,
-                    awayTeamId: awayTeamId,
-                    scheduledDate: new Date().toISOString()
+            const now = new Date().toISOString();
+            const { data: newGame, error } = await supabase
+                .from('games')
+                .insert({
+                    tournament_id: selectedTournament,
+                    home_team_id: homeTeamId,
+                    away_team_id: awayTeamId,
+                    scheduled_date: now,
+                    status: 'scheduled',
+                    created_at: now,
+                    updated_at: now
                 })
-            });
+                .select()
+                .single();
 
-            if (res.ok) {
-                const newGame = await res.json();
+            if (error) throw error;
+            if (newGame) {
                 alert('Partido Creado');
                 setShowGameModal(false);
                 fetchGames();
                 router.push(`/admin/games/${newGame.id}/roster`);
-            } else {
-                alert('Error al crear partido');
             }
-        } catch (err) { console.error(err); }
-        finally { setSaving(false); }
+        } catch (err) { 
+            console.error(err);
+            alert('Error al crear partido');
+        } finally { setSaving(false); }
     };
 
     const handleCreateTournament = async (e: React.FormEvent) => {
@@ -299,24 +345,28 @@ export default function AdminDashboard() {
                 return;
             }
 
-            const res = await apiFetch('/tournaments', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+            const now = new Date().toISOString();
+            const { data: newTourn, error } = await supabase
+                .from('tournaments')
+                .insert({
                     name: tournForm.name,
                     season: tournForm.season,
-                    rulesType: tournForm.sport === 'Softbol' ? 'softball_7' : 'baseball_9',
+                    rules_type: tournForm.sport === 'Softbol' ? 'softball_7' : 'baseball_9',
                     category: tournForm.category,
-                    adminId: currentUser.id,
-                    leagueId: tournForm.leagueId,
-                    locationCity: tournForm.location_city,
-                    locationState: tournForm.location_state,
+                    admin_id: currentUser.id,
+                    league_id: tournForm.leagueId || null,
+                    location_city: tournForm.location_city,
+                    location_state: tournForm.location_state,
                     description: tournForm.description,
-                    logoUrl: tournForm.logoUrl
+                    logo_url: tournForm.logoUrl,
+                    created_at: now,
+                    updated_at: now
                 })
-            });
-            if (res.ok) {
-                const newTourn = await res.json();
+                .select()
+                .single();
+
+            if (error) throw error;
+            if (newTourn) {
                 alert('Torneo Creado Satisfactoriamente');
                 setShowTournamentModal(false);
                 setTournForm({ 
@@ -333,11 +383,11 @@ export default function AdminDashboard() {
                 });
                 fetchTournaments();
                 router.push(`/torneos/${newTourn.id}`);
-            } else {
-                alert('Error al crear torneo');
             }
-        } catch (err) { console.error(err); }
-        finally { setSaving(false); }
+        } catch (err) { 
+            console.error(err);
+            alert('Error al crear torneo');
+        } finally { setSaving(false); }
     };
 
     const handleUpdateTournament = async (e: React.FormEvent) => {
@@ -345,43 +395,43 @@ export default function AdminDashboard() {
         if (!editingTourn) return;
         setSaving(true);
         try {
-            const res = await apiFetch(`/tournaments/${editingTourn.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+            const { error } = await supabase
+                .from('tournaments')
+                .update({
                     name: tournForm.name,
                     season: tournForm.season,
-                    rulesType: tournForm.sport === 'Softbol' ? 'softball_7' : 'baseball_9',
+                    rules_type: tournForm.sport === 'Softbol' ? 'softball_7' : 'baseball_9',
                     category: tournForm.category,
-                    leagueId: tournForm.leagueId,
-                    locationCity: tournForm.location_city,
-                    locationState: tournForm.location_state,
+                    league_id: tournForm.leagueId || null,
+                    location_city: tournForm.location_city,
+                    location_state: tournForm.location_state,
                     description: tournForm.description,
-                    logoUrl: tournForm.logoUrl
+                    logo_url: tournForm.logoUrl,
+                    updated_at: new Date().toISOString()
                 })
+                .eq('id', editingTourn.id);
+
+            if (error) throw error;
+            alert('Torneo Actualizado');
+            setShowEditTournModal(false);
+            setEditingTourn(null);
+            setTournForm({ 
+                name: '', 
+                season: '', 
+                location_city: '', 
+                location_state: '', 
+                sport: 'Béisbol', 
+                branch: 'Varonil', 
+                category: 'Libre',
+                description: '',
+                logoUrl: '',
+                leagueId: ''
             });
-            if (res.ok) {
-                alert('Torneo Actualizado');
-                setShowEditTournModal(false);
-                setEditingTourn(null);
-                setTournForm({ 
-                    name: '', 
-                    season: '', 
-                    location_city: '', 
-                    location_state: '', 
-                    sport: 'Béisbol', 
-                    branch: 'Varonil', 
-                    category: 'Libre',
-                    description: '',
-                    logoUrl: '',
-                    leagueId: ''
-                });
-                fetchTournaments();
-            } else {
-                alert('Error al actualizar torneo');
-            }
-        } catch (err) { console.error(err); }
-        finally { setSaving(false); }
+            fetchTournaments();
+        } catch (err) { 
+            console.error(err);
+            alert('Error al actualizar torneo');
+        } finally { setSaving(false); }
     };
 
     const handleEditTourn = (tourn: TournamentData) => {
@@ -405,82 +455,106 @@ export default function AdminDashboard() {
         e.preventDefault();
         setSaving(true);
         try {
-            const res = await apiFetch('/teams', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    ...teamForm,
-                    tournamentId: teamForm.tournament_id
-                })
-            });
-            if (res.ok) {
-                alert('Equipo Creado y Asignado Satisfactoriamente');
-                setShowTeamModal(false);
-                setTeamForm({ name: '', manager: '', logoUrl: '', tournament_id: '' });
-                // Force a refresh of the teams array using the existing hook 
-                // indirectly if the tournament being viewed is the one assigned
-                if (selectedTournament === teamForm.tournament_id) {
-                    apiFetch(`/tournaments/${selectedTournament}/teams`)
-                        .then(res => res.json())
-                        .then(data => setTeams(data))
-                        .catch(() => { });
-                }
-            } else {
-                alert('Error al crear equipo');
+            const now = new Date().toISOString();
+            const { error } = await supabase
+                .from('teams')
+                .insert({
+                    name: teamForm.name,
+                    tournament_id: teamForm.tournament_id,
+                    created_at: now,
+                    updated_at: now
+                });
+            
+            if (error) throw error;
+            alert('Equipo Creado y Asignado Satisfactoriamente');
+            setShowTeamModal(false);
+            setTeamForm({ name: '', manager: '', logoUrl: '', tournament_id: '' });
+            if (selectedTournament === teamForm.tournament_id) {
+                supabase
+                    .from('teams')
+                    .select('*')
+                    .eq('tournament_id', selectedTournament)
+                    .then(({ data, error }) => {
+                        if (!error) setTeams(data || []);
+                    });
             }
-        } catch (err) { console.error(err); }
-        finally { setSaving(false); }
+        } catch (err) { 
+            console.error(err);
+            alert('Error al crear equipo'); 
+        } finally { setSaving(false); }
     };
 
     const handleCreatePlayer = async (e: React.FormEvent) => {
         e.preventDefault();
         setSaving(true);
         try {
-            const res = await apiFetch('/players', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    ...playerForm,
+            const now = new Date().toISOString();
+            const { error } = await supabase
+                .from('players')
+                .insert({
+                    first_name: playerForm.firstName,
+                    last_name: playerForm.lastName,
                     number: playerForm.number ? parseInt(playerForm.number) : null,
-                    teamId: playerForm.team_id
-                })
-            });
-            if (res.ok) {
-                alert('Jugador Registrado Satisfactoriamente');
-                setShowPlayerModal(false);
-                setPlayerForm({ firstName: '', lastName: '', number: '', position: 'INF', photoUrl: '', team_id: '' });
-                if (selectedTeam === playerForm.team_id) {
-                    apiFetch(`/teams/${selectedTeam}/players`)
-                        .then(res => res.ok ? res.json() : [])
-                        .then(data => setPlayers(data))
-                        .catch(() => { });
-                }
-            } else {
-                alert('Error al crear jugador');
+                    team_id: playerForm.team_id,
+                    position: playerForm.position,
+                    created_at: now,
+                    updated_at: now
+                });
+
+            if (error) throw error;
+            alert('Jugador Registrado Satisfactoriamente');
+            setShowPlayerModal(false);
+            setPlayerForm({ firstName: '', lastName: '', number: '', position: 'INF', photoUrl: '', team_id: '' });
+            if (selectedTeam === playerForm.team_id) {
+                supabase
+                    .from('players')
+                    .select('*')
+                    .eq('team_id', selectedTeam)
+                    .then(({ data, error }) => {
+                        if (!error) setPlayers(data || []);
+                    });
             }
-        } catch (err) { console.error(err); }
-        finally { setSaving(false); }
+        } catch (err) { 
+            console.error(err);
+            alert('Error al crear jugador'); 
+        } finally { setSaving(false); }
     };
 
     const handleCreateUser = async (e: React.FormEvent) => {
         e.preventDefault();
         setSaving(true);
         try {
-            const res = await apiFetch('/users', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(userForm)
+            const { data, error: authError } = await supabase.auth.signUp({
+                email: userForm.email,
+                password: userForm.password,
             });
-            if (res.ok) {
-                alert('Cuenta Registrada Satisfactoriamente');
-                setShowUserModal(false);
-                setUserForm({ name: '', email: '', password: '', role: 'general', tournament_id: '' });
-                fetchUsers();
-            } else {
-                alert('Error al crear cuenta');
+
+            if (authError) throw authError;
+
+            if (data.user) {
+                const now = new Date().toISOString();
+                const { error: profileError } = await supabase
+                    .from('users')
+                    .insert({
+                        id: data.user.id,
+                        email: userForm.email,
+                        first_name: userForm.name.split(' ')[0] || '',
+                        last_name: userForm.name.split(' ').slice(1).join(' ') || '',
+                        role_id: (await supabase.from('roles').select('id').eq('name', userForm.role).single()).data?.id,
+                        created_at: now,
+                        updated_at: now
+                    });
+                if (profileError) throw profileError;
             }
-        } catch (err) { console.error(err); }
-        finally { setSaving(false); }
+
+            alert('Cuenta Registrada Satisfactoriamente');
+            setShowUserModal(false);
+            setUserForm({ name: '', email: '', password: '', role: 'general', tournament_id: '' });
+            fetchUsers();
+        } catch (err) {
+            console.error(err);
+            alert('Error al crear cuenta');
+        } finally { setSaving(false); }
     };
 
     const handleCreateLeague = async (e: React.FormEvent) => {
@@ -493,26 +567,30 @@ export default function AdminDashboard() {
                 setSaving(false);
                 return;
             }
-            const res = await apiFetch('/leagues', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: leagueName, adminId: currentUser.id })
-            });
-            if (res.ok) {
-                alert('Liga Creada');
-                setLeagueName('');
-                setShowLeagueModal(false);
-                fetchLeagues();
-            } else {
-                alert('Error al crear liga');
-            }
-        } catch (err) { console.error(err); }
-        finally { setSaving(false); }
+            const now = new Date().toISOString();
+            const { error } = await supabase
+                .from('leagues')
+                .insert({
+                    name: leagueName,
+                    admin_id: currentUser.id,
+                    created_at: now,
+                    updated_at: now
+                });
+
+            if (error) throw error;
+            alert('Liga Creada');
+            setLeagueName('');
+            setShowLeagueModal(false);
+            fetchLeagues();
+        } catch (err) { 
+            console.error(err);
+            alert('Error al crear liga');
+        } finally { setSaving(false); }
     };
 
     const handleImageChange = (
-        e: React.ChangeEvent<HTMLInputElement>, 
-        form: any, 
+        e: React.ChangeEvent<HTMLInputElement>,
+        form: any,
         setForm: (val: any) => void, 
         field: string
     ) => {
@@ -534,25 +612,25 @@ export default function AdminDashboard() {
         if (!currentUser) return;
         setSaving(true);
         try {
-            const res = await apiFetch('/users/profile', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phone: newPhone })
-            });
-            if (res.ok) {
-                setUserPhone(newPhone);
-                updateStoredUser({ phone: newPhone });
-                setIsEditingPhone(false);
-            } else {
-                alert('Error al actualizar teléfono');
-            }
-        } catch (error) {
-            console.error(error);
+            const { error } = await supabase
+                .from('users')
+                .update({ 
+                    phone: newPhone,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', currentUser.id);
+
+            if (error) throw error;
+            setUserPhone(newPhone);
+            updateStoredUser({ phone: newPhone });
+            setIsEditingPhone(false);
+        } catch (err) {
+            console.error(err);
+            alert('Error al actualizar teléfono');
         } finally {
             setSaving(false);
         }
     };
-
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !currentUser) return;
@@ -562,19 +640,20 @@ export default function AdminDashboard() {
             const base64String = reader.result as string;
             setSaving(true);
             try {
-                const res = await apiFetch('/users/profile', {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ profilePicture: base64String })
-                });
-                if (res.ok) {
-                    setUserProfilePicture(base64String);
-                    updateStoredUser({ profilePicture: base64String });
-                } else {
-                    alert('Error al actualizar la foto de perfil');
-                }
+                const { error } = await supabase
+                    .from('users')
+                    .update({ 
+                        profile_picture: base64String,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', currentUser.id);
+
+                if (error) throw error;
+                setUserProfilePicture(base64String);
+                updateStoredUser({ profilePicture: base64String });
             } catch (error) {
                 console.error(error);
+                alert('Error al actualizar la foto de perfil');
             } finally {
                 setSaving(false);
             }

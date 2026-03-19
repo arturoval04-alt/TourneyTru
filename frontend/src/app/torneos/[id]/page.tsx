@@ -5,10 +5,10 @@ import Navbar from "@/components/Navbar";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { apiFetch, getUser } from '@/lib/auth';
-import {
-    ArrowLeft, MapPin, Calendar, Users, Target, Clock, Settings, Radio, X, CheckCircle2, ShieldAlert, ChevronRight
-} from "lucide-react";
+import { getUser } from '@/lib/auth';
+import { ArrowLeft, MapPin, Calendar, Users, Target, Clock, Settings, Radio, X, CheckCircle2, ShieldAlert, ChevronRight } from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
+import { calculateBoxscore } from "@/lib/boxscore";
 
 export default function TournamentProfilePage() {
     const params = useParams();
@@ -18,8 +18,12 @@ export default function TournamentProfilePage() {
     // Tournament data from API
     interface TournamentData {
         id: string; name: string; season: string; category?: string; rulesType: string;
+        rules_type?: string; 
         description?: string;
         logoUrl?: string;
+        logo_url?: string;
+        leagueId?: string;
+        league_id?: string;
         league?: { name: string };
         teams: { id: string; name: string; shortName?: string; logoUrl?: string; managerName?: string; _count?: { players: number } }[];
         games: { id: string; homeTeam: { id: string; name: string; shortName?: string }; awayTeam: { id: string; name: string; shortName?: string }; homeScore: number; awayScore: number; currentInning: number; half: string; status: string; scheduledDate: string }[];
@@ -31,10 +35,31 @@ export default function TournamentProfilePage() {
 
 
     useEffect(() => {
-        apiFetch(`/tournaments/${tournamentId}`)
-            .then(res => res.json())
-            .then((data: TournamentData) => { setTournament(data); setLoadingTournament(false); })
-            .catch(() => setLoadingTournament(false));
+        const fetchTournament = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('tournaments')
+                    .select(`
+                        *,
+                        league:leagues(*),
+                        teams:teams(*, _count:players(count)),
+                        games:games(*, homeTeam:teams!home_team_id(*), awayTeam:teams!away_team_id(*)),
+                        fields:tournament_fields(id, name, location),
+                        organizers:tournament_organizers(*, user:users(*))
+                    `)
+                    .eq('id', tournamentId)
+                    .single();
+
+                if (error) throw error;
+                // Transform snake_case to camelCase if necessary, or update interface
+                setTournament(data as any);
+                setLoadingTournament(false);
+            } catch (err) {
+                console.error("Error fetching tournament:", err);
+                setLoadingTournament(false);
+            }
+        };
+        fetchTournament();
     }, [tournamentId]);
 
     // Actions & Modal State
@@ -57,14 +82,22 @@ export default function TournamentProfilePage() {
     const [umpireAssignment, setUmpireAssignment] = useState({ plate: '', base1: '', base2: '', base3: '' });
 
     useEffect(() => {
-        if (isCreatingGame && tournament?.league) {
-            apiFetch(`/umpires`)
-                .then(r => r.json())
-                .then((all: (UmpireOption & { leagueId: string })[]) => {
-                    setLeagueUmpires(all.filter(u => u.leagueId === (tournament as any).league?.id));
-                })
-                .catch(() => {});
-        }
+        const fetchUmpires = async () => {
+            const lId = tournament?.league_id || tournament?.leagueId;
+            if (isCreatingGame && lId) {
+                try {
+                    const { data, error } = await supabase
+                        .from('umpires')
+                        .select('*')
+                        .eq('league_id', lId);
+                    if (error) throw error;
+                    setLeagueUmpires(data || []);
+                } catch (err) {
+                    console.error("Error fetching umpires:", err);
+                }
+            }
+        };
+        fetchUmpires();
     }, [isCreatingGame, tournament]);
 
     const handleCreateGameSubmit = async () => {
@@ -75,41 +108,43 @@ export default function TournamentProfilePage() {
 
         try {
             // 1. Create Game
-            const res = await apiFetch(`/games`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    tournamentId,
-                    homeTeamId: gameForm.homeTeamId,
-                    awayTeamId: gameForm.awayTeamId,
-                    scheduledDate: new Date(gameForm.scheduledDate).toISOString(),
-                    field: gameForm.field || undefined
+            const { data: newGame, error: gameError } = await supabase
+                .from('games')
+                .insert({
+                    tournament_id: tournamentId,
+                    home_team_id: gameForm.homeTeamId,
+                    away_team_id: gameForm.awayTeamId,
+                    scheduled_date: new Date(gameForm.scheduledDate).toISOString(),
+                    field: gameForm.field || null,
+                    status: 'scheduled',
+                    updated_at: new Date().toISOString()
                 })
-            });
+                .select()
+                .single();
 
-            if (!res.ok) throw new Error('Error al crear juego');
-            const newGame = await res.json();
+            if (gameError) throw gameError;
             setCreatedGameId(newGame.id);
 
-            // 2. Assign umpires (fire-and-forget, non-blocking)
+            // 2. Assign umpires
             const roles = ['plate', 'base1', 'base2', 'base3'] as const;
             for (const role of roles) {
                 const umpireId = umpireAssignment[role];
                 if (umpireId) {
-                    apiFetch(`/games/${newGame.id}/umpires`, {
-                        method: 'POST',
-                        body: JSON.stringify({ umpireId, role }),
-                    }).catch(() => {});
+                    await supabase.from('game_umpires').insert({
+                        game_id: newGame.id,
+                        umpire_id: umpireId,
+                        role: role
+                    });
                 }
             }
 
-            // 3. Fetch rosters for the selected teams
-            const homeRes = await apiFetch(`/teams/${gameForm.homeTeamId}`);
-            const awayRes = await apiFetch(`/teams/${gameForm.awayTeamId}`);
-            const homeData = await homeRes.json();
-            const awayData = await awayRes.json();
+            // 3. Fetch rosters
+            const { data: homeData, error: homeError } = await supabase.from('teams').select('*, players(*)').eq('id', gameForm.homeTeamId).single();
+            const { data: awayData, error: awayError } = await supabase.from('teams').select('*, players(*)').eq('id', gameForm.awayTeamId).single();
 
-            setGameTeamsData({ home: homeData, away: awayData });
+            if (homeError || awayError) throw (homeError || awayError);
+
+            setGameTeamsData({ home: homeData as any, away: awayData as any });
             setCreateStep(2);
         } catch (error) {
             console.error(error);
@@ -175,23 +210,24 @@ export default function TournamentProfilePage() {
         if (!validateLineupSetup(awayLineupSetup, `Lineup Visitante (${gameTeamsData.away?.name || 'Visitante'})`)) return;
         if (!validateLineupSetup(homeLineupSetup, `Lineup Local (${gameTeamsData.home?.name || 'Local'})`)) return;
 
-        // Cleanup empty spots
         const homeLineup = homeLineupSetup.filter(item => item.playerId && item.position).map((item, index) => ({
-            battingOrder: index + 1,
+            game_id: createdGameId,
+            batting_order: index + 1,
             position: item.position,
-            dhForPosition: normalizePosition(item.position) === 'DH' ? (item.dhForPosition || undefined) : undefined,
-            isStarter: true,
-            teamId: gameForm.homeTeamId,
-            playerId: item.playerId
+            dh_for_position: normalizePosition(item.position) === 'DH' ? (item.dhForPosition || null) : null,
+            is_starter: true,
+            team_id: gameForm.homeTeamId,
+            player_id: item.playerId
         }));
 
         const awayLineup = awayLineupSetup.filter(item => item.playerId && item.position).map((item, index) => ({
-            battingOrder: index + 1,
+            game_id: createdGameId,
+            batting_order: index + 1,
             position: item.position,
-            dhForPosition: normalizePosition(item.position) === 'DH' ? (item.dhForPosition || undefined) : undefined,
-            isStarter: true,
-            teamId: gameForm.awayTeamId,
-            playerId: item.playerId
+            dh_for_position: normalizePosition(item.position) === 'DH' ? (item.dhForPosition || null) : null,
+            is_starter: true,
+            team_id: gameForm.awayTeamId,
+            player_id: item.playerId
         }));
 
         const confirmMsg = `¿Desea empezar el juego?\nEquipo Visitante (${gameTeamsData.away?.name}) jugará con ${awayLineup.length} jugadores.\nEquipo Local (${gameTeamsData.home?.name}) jugará con ${homeLineup.length} jugadores.`;
@@ -199,25 +235,17 @@ export default function TournamentProfilePage() {
         if (!window.confirm(confirmMsg)) return;
 
         try {
-            // Save home lineup if not empty
+            // Save lineups
             if (homeLineup.length > 0) {
-                await apiFetch(`/games/${createdGameId}/team/${gameForm.homeTeamId}/lineup`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ lineups: homeLineup })
-                });
+                const { error } = await supabase.from('lineups').insert(homeLineup);
+                if (error) throw error;
             }
 
-            // Save away lineup if not empty
             if (awayLineup.length > 0) {
-                await apiFetch(`/games/${createdGameId}/team/${gameForm.awayTeamId}/lineup`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ lineups: awayLineup })
-                });
+                const { error } = await supabase.from('lineups').insert(awayLineup);
+                if (error) throw error;
             }
 
-            // Redirect to Game scoring page
             router.push(`/game/${createdGameId}`);
         } catch (error) {
             console.error(error);
@@ -283,55 +311,56 @@ export default function TournamentProfilePage() {
     const handleRemoveOrganizer = async (organizerId: string) => {
         if (!window.confirm('¿Deseas eliminar a este organizador?')) return;
         try {
-            const res = await apiFetch(`/tournaments/${tournamentId}/organizers/${organizerId}`, {
-                method: 'DELETE'
-            });
-            if (res.ok) {
+            const { error } = await supabase.from('tournament_organizers').delete().eq('id', organizerId);
+            if (!error) {
                 setTournament(prev => prev ? { ...prev, organizers: prev.organizers.filter(o => o.id !== organizerId) } : null);
             } else {
-                alert('Error al eliminar organizador');
+                throw error;
             }
         } catch (error) {
             console.error(error);
+            alert('Error al eliminar organizador');
         }
     };
 
     const handleRemoveField = async (fieldId: string) => {
         if (!window.confirm('¿Deseas eliminar este campo?')) return;
         try {
-            const res = await apiFetch(`/tournaments/${tournamentId}/fields/${fieldId}`, {
-                method: 'DELETE'
-            });
-            if (res.ok) {
+            const { error } = await supabase.from('fields').delete().eq('id', fieldId);
+            if (!error) {
                 setTournament(prev => prev ? { ...prev, fields: prev.fields.filter(f => f.id !== fieldId) } : null);
             } else {
-                alert('Error al eliminar campo');
+                throw error;
             }
         } catch (error) {
             console.error(error);
+            alert('Error al eliminar campo');
         }
     };
 
     const handleUpdateProfile = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const res = await apiFetch(`/tournaments/${tournamentId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(profileForm)
-            });
-            if (res.ok) {
-                alert('Perfil del Torneo Actualizado');
-                setIsEditingProfile(false);
-                // Refresh data
-                const updatedRes = await apiFetch(`/tournaments/${tournamentId}`);
-                const updatedData = await updatedRes.json();
-                setTournament(updatedData);
-            } else {
-                alert('Error al actualizar perfil');
-            }
+            const { error } = await supabase
+                .from('tournaments')
+                .update({
+                    name: profileForm.name,
+                    season: profileForm.season,
+                    description: profileForm.description,
+                    rules_type: profileForm.rulesType,
+                    category: profileForm.category,
+                    logo_url: profileForm.logoUrl
+                })
+                .eq('id', tournamentId);
+
+            if (error) throw error;
+            
+            alert('Perfil del Torneo Actualizado');
+            setIsEditingProfile(false);
+            window.location.reload();
         } catch (error) {
             console.error(error);
+            alert('Error al actualizar perfil');
         }
     };
 
@@ -385,38 +414,50 @@ export default function TournamentProfilePage() {
                 return;
             }
 
-            const formattedPlayers = validPlayers.map(p => ({
-                ...p,
-                number: p.number ? parseInt(p.number) : undefined
+            // 1. Create Team
+            const { data: teamData, error: teamError } = await supabase
+                .from('teams')
+                .insert({
+                    name: teamForm.name,
+                    short_name: teamForm.shortName,
+                    manager_name: teamForm.managerName,
+                    home_field_id: teamForm.homeFieldId || null,
+                    logo_url: teamForm.logoUrl || null,
+                    tournament_id: tournamentId,
+                    created_at: new Date().toISOString()
+                })
+                .select()
+                .single();
+
+            if (teamError) throw teamError;
+
+            // 2. Create Players
+            const playersToInsert = validPlayers.map(p => ({
+                first_name: p.firstName,
+                last_name: p.lastName,
+                number: p.number ? parseInt(p.number) : null,
+                position: p.position,
+                team_id: teamData.id,
+                created_at: new Date().toISOString()
             }));
 
-            const res = await apiFetch(`/teams/bulk`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    ...teamForm,
-                    tournamentId,
-                    players: formattedPlayers
-                })
-            });
+            const { error: playersError } = await supabase.from('players').insert(playersToInsert);
+            if (playersError) throw playersError;
 
-            if (res.ok) {
-                alert('Equipo Registrado y Creado Satisfactoriamente');
-                setIsAddingTeam(false);
-                setTeamForm({
-                    name: '',
-                    shortName: '',
-                    managerName: '',
-                    homeFieldId: '',
-                    logoUrl: '',
-                    players: Array(9).fill({ firstName: '', lastName: '', number: '', position: 'INF' })
-                });
-                // TODO: Refresh teams list
-            } else {
-                alert('Hubo un error al registrar el equipo');
-            }
+            alert('Equipo Registrado y Creado Satisfactoriamente');
+            setIsAddingTeam(false);
+            setTeamForm({
+                name: '',
+                shortName: '',
+                managerName: '',
+                homeFieldId: '',
+                logoUrl: '',
+                players: Array(9).fill({ firstName: '', lastName: '', number: '', position: 'INF' })
+            });
+            window.location.reload();
         } catch (error) {
             console.error(error);
+            alert('Hubo un error al registrar el equipo');
         }
     }
 
@@ -429,12 +470,81 @@ export default function TournamentProfilePage() {
     const [standingsLoaded, setStandingsLoaded] = useState(false);
 
     useEffect(() => {
-        if (activeTab === 'posiciones' && !standingsLoaded) {
-            apiFetch(`/tournaments/${tournamentId}/standings`)
-                .then(r => r.json())
-                .then((data: StandingRow[]) => { setStandings(data); setStandingsLoaded(true); })
-                .catch(() => setStandingsLoaded(true));
-        }
+        const fetchStandings = async () => {
+            if (activeTab === 'posiciones' && !standingsLoaded) {
+                try {
+                    // 1. Fetch all games of the tournament
+                    const { data: games, error: gamesError } = await supabase
+                        .from('games')
+                        .select('*, homeTeam:teams!home_team_id(id, name, short_name, logo_url), awayTeam:teams!away_team_id(id, name, short_name, logo_url)')
+                        .eq('tournament_id', tournamentId)
+                        .eq('status', 'finished');
+
+                    if (gamesError) throw gamesError;
+
+                    // 2. Fetch all teams of the tournament
+                    const { data: teams, error: teamsError } = await supabase
+                        .from('teams')
+                        .select('*')
+                        .eq('tournament_id', tournamentId);
+
+                    if (teamsError) throw teamsError;
+
+                    // 3. Simple Standing Calculation
+                    const statsMap: Record<string, StandingRow> = {};
+                    teams.forEach(t => {
+                        statsMap[t.id] = {
+                            teamId: t.id,
+                            name: t.name,
+                            shortName: t.short_name || t.name,
+                            logoUrl: t.logo_url,
+                            w: 0, l: 0, t: 0, pct: '.000', gb: '-', rs: 0, ra: 0, gp: 0
+                        };
+                    });
+
+                    games.forEach(g => {
+                        const home = statsMap[g.home_team_id];
+                        const away = statsMap[g.away_team_id];
+                        if (!home || !away) return;
+
+                        home.gp++;
+                        away.gp++;
+                        home.rs += g.home_score;
+                        home.ra += g.away_score;
+                        away.rs += g.away_score;
+                        away.ra += g.home_score;
+
+                        if (g.home_score > g.away_score) {
+                            home.w++;
+                            away.l++;
+                        } else if (g.away_score > g.home_score) {
+                            away.w++;
+                            home.l++;
+                        } else {
+                            home.t++;
+                            away.t++;
+                        }
+                    });
+
+                    const standingsArray = Object.values(statsMap).sort((a,b) => (b.w - b.l) - (a.w - a.l) || (b.rs - b.ra) - (a.rs - a.ra));
+                    if (standingsArray.length > 0) {
+                        const top = standingsArray[0];
+                        standingsArray.forEach(s => {
+                            s.pct = s.gp > 0 ? (s.w / s.gp).toFixed(3) : '.000';
+                            const diff = (top.w - top.l) - (s.w - s.l);
+                            s.gb = diff === 0 ? '-' : (diff / 2).toString();
+                        });
+                    }
+
+                    setStandings(standingsArray);
+                    setStandingsLoaded(true);
+                } catch (err) {
+                    console.error("Error calculating standings:", err);
+                    setStandingsLoaded(true);
+                }
+            }
+        };
+        fetchStandings();
     }, [activeTab, standingsLoaded, tournamentId]);
 
     // Stats state
@@ -447,14 +557,10 @@ export default function TournamentProfilePage() {
 
     useEffect(() => {
         if (activeTab === 'estadisticas' && !statsLoaded) {
-            Promise.all([
-                apiFetch(`/tournaments/${tournamentId}/stats/batting`).then(r => r.json()),
-                apiFetch(`/tournaments/${tournamentId}/stats/pitching`).then(r => r.json()),
-            ]).then(([batting, pitching]) => {
-                setBattingStats(batting);
-                setPitchingStats(pitching);
-                setStatsLoaded(true);
-            }).catch(() => setStatsLoaded(true));
+            // Stats calculation is currently disabled or needs client-side implementation
+            setBattingStats([]);
+            setPitchingStats([]);
+            setStatsLoaded(true);
         }
     }, [activeTab, statsLoaded, tournamentId]);
 
@@ -727,21 +833,26 @@ export default function TournamentProfilePage() {
                                         <h3 className="text-lg font-bold text-foreground">Organizadores</h3>
                                         {(userRole === 'admin' || userRole === 'scorekeeper') && (
                                             <button
-                                                onClick={() => {
+                                                onClick={async () => {
                                                     const email = window.prompt('Correo del nuevo organizador:');
                                                     if (email) {
-                                                        apiFetch(`/tournaments/${tournamentId}/organizers`, {
-                                                            method: 'POST',
-                                                            headers: { 'Content-Type': 'application/json' },
-                                                            body: JSON.stringify({ email })
-                                                        }).then(res => {
-                                                            if (res.ok) {
-                                                                alert('Organizador añadido');
-                                                                window.location.reload();
-                                                            } else {
+                                                        try {
+                                                            const { data: userData, error: userError } = await supabase.from('users').select('id').eq('email', email).single();
+                                                            if (userError || !userData) {
                                                                 alert('Usuario no encontrado');
+                                                                return;
                                                             }
-                                                        });
+                                                            const { error: orgError } = await supabase.from('tournament_organizers').insert({
+                                                                tournament_id: tournamentId,
+                                                                user_id: userData.id
+                                                            });
+                                                            if (orgError) throw orgError;
+                                                            alert('Organizador añadido');
+                                                            window.location.reload();
+                                                        } catch (err) {
+                                                            console.error(err);
+                                                            alert('Error al añadir organizador');
+                                                        }
                                                     }
                                                 }}
                                                 className="text-[10px] font-bold text-primary hover:underline"
@@ -1448,20 +1559,22 @@ export default function TournamentProfilePage() {
                                     className="px-6 py-2.5 rounded-xl font-black bg-primary text-white hover:bg-primary-light transition-colors shadow-lg shadow-primary/20 text-sm"
                                     onClick={async () => {
                                         try {
-                                            const res = await apiFetch(`/tournaments/${tournamentId}/fields`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ name: fieldForm.name, location: fieldForm.address })
-                                            });
-                                            if (res.ok) {
-                                                alert('Campo Registrado');
-                                                setIsAddingField(false);
-                                                window.location.reload();
-                                            } else {
-                                                alert('Error al registrar campo');
-                                            }
+                                            const { error } = await supabase
+                                                .from('fields')
+                                                .insert({
+                                                    name: fieldForm.name,
+                                                    location: fieldForm.address,
+                                                    tournament_id: tournamentId
+                                                });
+                                            
+                                            if (error) throw error;
+
+                                            alert('Campo Registrado');
+                                            setIsAddingField(false);
+                                            window.location.reload();
                                         } catch (error) {
                                             console.error(error);
+                                            alert('Error al registrar campo');
                                         }
                                     }}
                                 >
