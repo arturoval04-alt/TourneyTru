@@ -44,7 +44,7 @@ export default function TournamentProfilePage() {
                         league:leagues(*),
                         teams:teams(*, _count:players(count)),
                         games:games(*, homeTeam:teams!home_team_id(*), awayTeam:teams!away_team_id(*)),
-                        fields:tournament_fields(id, name, location),
+                        fields:fields(id, name, location),
                         organizers:tournament_organizers(*, user:users(*))
                     `)
                     .eq('id', tournamentId)
