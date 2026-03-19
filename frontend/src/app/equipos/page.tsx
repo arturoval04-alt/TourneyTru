@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import { supabase } from "@/lib/supabaseClient";
 
 interface TournamentListItem {
     id: string;
@@ -33,7 +34,6 @@ interface PlayerItem {
     team?: { id: string; name: string };
 }
 
-
 export default function EquiposPage() {
     const [tournaments, setTournaments] = useState<TournamentListItem[]>([]);
     const [selectedTournament, setSelectedTournament] = useState<TournamentListItem | null>(null);
@@ -42,28 +42,60 @@ export default function EquiposPage() {
     const [loadingT, setLoadingT] = useState(true);
     const [loadingTeams, setLoadingTeams] = useState(false);
 
-    const apiUrl = `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api`;
-
     useEffect(() => {
-        fetch(`${apiUrl}/tournaments`)
-            .then(res => res.json())
-            .then((data) => {
-                setTournaments(Array.isArray(data) ? data : []);
-                setLoadingT(false);
-            })
-            .catch(() => setLoadingT(false));
-    }, [apiUrl]);
+        const fetchTournaments = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('tournaments')
+                    .select('*, teams(id), games(id)')
+                    .order('created_at', { ascending: false });
 
-    const handleSelectTournament = (t: TournamentListItem) => {
+                if (error) throw error;
+
+                const mapped = (data || []).map((t: any) => ({
+                    ...t,
+                    _count: {
+                        teams: t.teams?.length || 0,
+                        games: t.games?.length || 0
+                    }
+                }));
+
+                setTournaments(mapped);
+                setLoadingT(false);
+            } catch (err) {
+                console.error(err);
+                setLoadingT(false);
+            }
+        };
+        fetchTournaments();
+    }, []);
+
+    const handleSelectTournament = async (t: TournamentListItem) => {
         setSelectedTournament(t);
         setLoadingTeams(true);
-        fetch(`${apiUrl}/tournaments/${t.id}/teams`)
-            .then(res => res.json())
-            .then((data: TeamItem[]) => {
-                setTeams(data);
-                setLoadingTeams(false);
-            })
-            .catch(() => setLoadingTeams(false));
+        try {
+            const { data, error } = await supabase
+                .from('teams')
+                .select('*, players(id)')
+                .eq('tournament_id', t.id)
+                .order('name', { ascending: true });
+
+            if (error) throw error;
+
+            const mapped = (data || []).map((team: any) => ({
+                ...team,
+                shortName: team.short_name,
+                logoUrl: team.logo_url,
+                managerName: team.manager_name,
+                _count: { players: team.players?.length || 0 }
+            }));
+
+            setTeams(mapped);
+            setLoadingTeams(false);
+        } catch (err) {
+            console.error(err);
+            setLoadingTeams(false);
+        }
     };
 
     const handleBack = () => {

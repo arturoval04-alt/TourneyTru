@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import { supabase } from "@/lib/supabaseClient";
 import { Search, Filter, MapPin, Calendar, Users, Trophy, ChevronRight } from "lucide-react";
 
 interface TournamentItem {
@@ -24,14 +25,38 @@ export default function TorneosPage() {
     const [searchQuery, setSearchQuery] = useState("");
 
     useEffect(() => {
-        const apiUrl = `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api`;
-        fetch(`${apiUrl}/tournaments`)
-            .then(res => res.json())
-            .then((data) => {
-                setTournaments(Array.isArray(data) ? data : []);
+        const fetchTournaments = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('tournaments')
+                    .select(`
+                        *,
+                        league:leagues(name),
+                        teams:teams(id),
+                        games:games(status)
+                    `)
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+
+                const mappedData = (data || []).map((t: any) => ({
+                    ...t,
+                    rulesType: t.rules_type,
+                    logoUrl: t.logo_url,
+                    _count: {
+                        teams: t.teams?.length || 0,
+                        games: t.games?.length || 0
+                    }
+                }));
+
+                setTournaments(mappedData);
                 setLoading(false);
-            })
-            .catch(() => setLoading(false));
+            } catch (err) {
+                console.error("Error fetching tournaments:", err);
+                setLoading(false);
+            }
+        };
+        fetchTournaments();
     }, []);
 
     const filtered = tournaments.filter(t =>

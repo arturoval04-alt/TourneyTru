@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import Image from "next/image";
 
+import { supabase } from "@/lib/supabaseClient";
+
 interface TournamentListItem {
     id: string;
     name: string;
@@ -39,37 +41,68 @@ export default function JugadoresPage() {
     const [loadingT, setLoadingT] = useState(true);
     const [loadingPlayers, setLoadingPlayers] = useState(false);
 
-    const apiUrl = `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api`;
-
     useEffect(() => {
-        fetch(`${apiUrl}/tournaments`)
-            .then(res => res.json())
-            .then((data) => {
-                setTournaments(Array.isArray(data) ? data : []);
-                setLoadingT(false);
-            })
-            .catch(() => setLoadingT(false));
-    }, [apiUrl]);
+        const fetchTournaments = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('tournaments')
+                    .select('*, teams(id), games(id)')
+                    .order('created_at', { ascending: false });
 
-    const handleSelectTournament = (t: TournamentListItem) => {
+                if (error) throw error;
+
+                const mappedData = (data || []).map((t: any) => ({
+                    ...t,
+                    _count: {
+                        teams: t.teams?.length || 0,
+                        games: t.games?.length || 0
+                    }
+                }));
+
+                setTournaments(mappedData);
+                setLoadingT(false);
+            } catch (err) {
+                console.error(err);
+                setLoadingT(false);
+            }
+        };
+        fetchTournaments();
+    }, []);
+
+    const handleSelectTournament = async (t: TournamentListItem) => {
         setSelectedTournament(t);
         setActiveTab("roster");
         setLoadingPlayers(true);
 
-        // Fetch tournament detail which includes teams with players
-        fetch(`${apiUrl}/tournaments/${t.id}`)
-            .then(res => res.json())
-            .then((data: { teams: TeamItem[] }) => {
-                const allPlayers: PlayerItem[] = [];
-                for (const team of data.teams || []) {
-                    for (const p of team.players || []) {
-                        allPlayers.push({ ...p, team: { id: team.id, name: team.name } });
-                    }
+        try {
+            const { data, error } = await supabase
+                .from('teams')
+                .select(`
+                    id, name,
+                    players(*)
+                `)
+                .eq('tournament_id', t.id);
+
+            if (error) throw error;
+
+            const allPlayers: PlayerItem[] = [];
+            for (const team of data || []) {
+                for (const p of (team as any).players || []) {
+                    allPlayers.push({ 
+                        ...p, 
+                        firstName: p.first_name,
+                        lastName: p.last_name,
+                        photoUrl: p.photo_url,
+                        team: { id: team.id, name: team.name } 
+                    });
                 }
-                setPlayers(allPlayers);
-                setLoadingPlayers(false);
-            })
-            .catch(() => setLoadingPlayers(false));
+            }
+            setPlayers(allPlayers);
+            setLoadingPlayers(false);
+        } catch (err) {
+            console.error(err);
+            setLoadingPlayers(false);
+        }
     };
 
     const handleBack = () => {

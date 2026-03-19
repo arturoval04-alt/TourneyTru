@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import { Trophy, PlayCircle, BarChart3, Share2, Search } from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient';
 
 interface GameItem {
   id: string;
@@ -24,14 +25,38 @@ export default function LobbyPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const apiUrl = `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api`;
-    fetch(`${apiUrl}/games`)
-      .then(res => res.json())
-      .then((data: GameItem[]) => {
-        setRecentGames(data.slice(0, 6));
+    const fetchRecentGames = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('games')
+          .select(`
+            *,
+            homeTeam:teams!home_team_id(name, short_name),
+            awayTeam:teams!away_team_id(name, short_name),
+            tournament:tournaments(name, id)
+          `)
+          .order('created_at', { ascending: false })
+          .limit(6);
+
+        if (error) throw error;
+
+        const mapped = (data || []).map((g: any) => ({
+          ...g,
+          homeTeam: { name: g.homeTeam?.name, shortName: g.homeTeam?.short_name },
+          awayTeam: { name: g.awayTeam?.name, shortName: g.awayTeam?.short_name },
+          homeScore: g.home_score,
+          awayScore: g.away_score,
+          currentInning: g.current_inning
+        }));
+
+        setRecentGames(mapped);
         setLoading(false);
-      })
-      .catch(() => setLoading(false));
+      } catch (err) {
+        console.error(err);
+        setLoading(false);
+      }
+    };
+    fetchRecentGames();
   }, []);
 
   return (

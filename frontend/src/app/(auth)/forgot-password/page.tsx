@@ -3,13 +3,12 @@
 import Link from "next/link";
 import { useState } from "react";
 
-const API_URL = `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api`;
+import { supabase } from "@/lib/supabaseClient";
 
 export default function ForgotPasswordPage() {
     const [email, setEmail] = useState("");
     const [loading, setLoading] = useState(false);
     const [submitted, setSubmitted] = useState(false);
-    const [devToken, setDevToken] = useState("");
     const [error, setError] = useState("");
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -18,22 +17,17 @@ export default function ForgotPasswordPage() {
         setLoading(true);
 
         try {
-            const res = await fetch(`${API_URL}/auth/forgot-password`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email: email.trim().toLowerCase() }),
+            const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+                redirectTo: `${window.location.origin}/reset-password`,
             });
 
-            const data = await res.json();
-
-            if (!res.ok) {
-                setError(data.message || "Ocurrió un error.");
+            if (error) {
+                setError(error.message || "Ocurrió un error.");
                 return;
             }
 
-            setDevToken(data.token || "");
             setSubmitted(true);
-        } catch {
+        } catch (err) {
             setError("Error de conexión con el servidor.");
         } finally {
             setLoading(false);
@@ -66,18 +60,9 @@ export default function ForgotPasswordPage() {
                                 Si el correo está registrado, recibirás las instrucciones.
                             </div>
 
-                            {devToken && (
-                                <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-1">
-                                    <p className="text-xs font-bold text-amber-400 uppercase tracking-wider">Token de desarrollo</p>
-                                    <code className="block text-xs text-amber-300 break-all font-mono">{devToken}</code>
-                                    <Link
-                                        href={`/reset-password?token=${devToken}`}
-                                        className="inline-block mt-2 text-xs font-bold text-primary hover:underline"
-                                    >
-                                        → Ir a restablecer contraseña
-                                    </Link>
-                                </div>
-                            )}
+                            <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-sm font-medium text-center">
+                                Si el correo está registrado, recibirás un enlace para restablecer tu contraseña en unos momentos. Por favor revisa tu bandeja de entrada.
+                            </div>
 
                             <div className="text-center pt-2">
                                 <Link href="/login" className="text-sm font-medium text-primary hover:text-primary-light transition-colors">

@@ -4,13 +4,12 @@ import Link from "next/link";
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-const API_URL = `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api`;
+import { supabase } from "@/lib/supabaseClient";
 
 function ResetPasswordForm() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const token = searchParams.get("token") ?? "";
-
+    
     const [newPassword, setNewPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [loading, setLoading] = useState(false);
@@ -31,34 +30,22 @@ function ResetPasswordForm() {
 
         setLoading(true);
         try {
-            const res = await fetch(`${API_URL}/auth/reset-password`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ token, newPassword }),
+            const { error } = await supabase.auth.updateUser({
+                password: newPassword
             });
 
-            const data = await res.json();
-
-            if (!res.ok) {
-                setError(data.message || "Token inválido o expirado.");
+            if (error) {
+                setError(error.message || "No se pudo actualizar la contraseña.");
                 return;
             }
 
             router.push("/login?reset=true");
-        } catch {
+        } catch (err) {
             setError("Error de conexión con el servidor.");
         } finally {
             setLoading(false);
         }
     };
-
-    if (!token) {
-        return (
-            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm font-medium text-center">
-                Token no encontrado. <Link href="/forgot-password" className="font-bold underline">Solicita uno nuevo</Link>.
-            </div>
-        );
-    }
 
     return (
         <>
