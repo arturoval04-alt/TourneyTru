@@ -62,8 +62,8 @@ Para que la aplicación funcione correctamente, debes ejecutar **tanto el backen
    ```bash
    npm run dev
    ```
-4. Al final del proceso, la consola te mostrará en qué URL está corriendo el frontend (usualmente es `http://localhost:3000` o `http://localhost:3001` dependiendo si el puerto 3000 estaba ocupado por el backend).
+4.
 
 ### Paso 3: Abrir la Aplicación
 
-Dirígete a tu navegador de preferencia y visita la URL proporcionada por la terminal del frontend (ejemplo: [http://localhost:3000](http://localhost:3000) o [http://localhost:3001](http://localhost:3001)).
+
