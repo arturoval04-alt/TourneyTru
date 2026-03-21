@@ -103,18 +103,52 @@ export default function AdminDashboard() {
                 const { data, error } = await supabase.auth.getSession();
                 if (error) throw error;
                 if (data?.session) {
-                    const { data: userProfile, error: profileError } = await supabase
+                    let { data: userProfile, error: profileError } = await supabase
                         .from('users')
                         .select('*, roles(name)')
                         .eq('id', data.session.user.id)
                         .single();
 
-                    if (profileError) throw profileError;
+                    // Si el perfil no existe (PGRST116), lo creamos automáticamente (Fallback Frontend)
+                    if (profileError && (profileError.code === 'PGRST116')) {
+                        console.log("Perfil no encontrado en DB, creando uno nuevo...");
+                        
+                        // Buscamos el ID del rol public para asignarlo
+                        const { data: publicRole } = await supabase.from('roles').select('id').eq('name', 'public').single();
+                        
+                        const { data: newProfile, error: insertError } = await supabase
+                            .from('users')
+                            .insert({
+                                id: data.session.user.id,
+                                email: data.session.user.email,
+                                first_name: data.session.user.user_metadata?.first_name || data.session.user.user_metadata?.full_name?.split(' ')[0] || '',
+                                last_name: data.session.user.user_metadata?.last_name || data.session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '',
+                                role_id: publicRole?.id,
+                                created_at: new Date().toISOString(),
+                                updated_at: new Date().toISOString()
+                            })
+                            .select('*, roles(name)')
+                            .single();
+                        
+                        if (insertError) {
+                            console.error("Error creando perfil automático:", insertError);
+                            // Si falla por RLS, al menos intentamos seguir con los datos de Auth
+                            userProfile = {
+                                id: data.session.user.id,
+                                email: data.session.user.email,
+                                roles: { name: 'public' }
+                            };
+                        } else {
+                            userProfile = newProfile;
+                        }
+                    } else if (profileError) {
+                        throw profileError;
+                    }
 
                     const merged = {
                         ...data.session.user,
                         ...userProfile,
-                        role: userProfile.roles?.name || 'general'
+                        role: userProfile?.roles?.name || 'public'
                     } as AuthUser;
                     localStorage.setItem('user', JSON.stringify(merged));
                     setCurrentUser(merged);
