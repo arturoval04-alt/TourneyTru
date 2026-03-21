@@ -142,7 +142,7 @@ export default function PublicGamecast() {
             <div className="max-w-[1400px] mx-auto p-4 flex flex-col gap-6">
                 {/* Scoreboard */}
                 {/* We pass internal state to components since we don't have the store in Public view */}
-                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl overflow-hidden relative">
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-3 sm:p-6 shadow-2xl overflow-hidden relative">
                      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-sky-500 via-purple-500 to-emerald-500" />
                      {/* Mocking the props for ScoreCard since it usually uses store */}
                      {/* In a real scenario, we might want to pass props to ScoreCard instead of it being a connected component */}
@@ -151,7 +151,7 @@ export default function PublicGamecast() {
 
                 {/* Tabs */}
                 <div className="flex justify-center border-b border-slate-800 pb-4">
-                    <div className="bg-slate-900/50 p-1 rounded-2xl border border-slate-800 flex gap-2">
+                    <div className="bg-slate-900/50 p-1 w-full sm:w-auto rounded-2xl border border-slate-800 flex overflow-x-auto scrollbar-hide gap-1 sm:gap-2">
                         {[
                             { id: 'scorekeeper', label: 'En Vivo', icon: Radio },
                             { id: 'alineaciones', label: 'Alineaciones', icon: Users },
@@ -160,7 +160,7 @@ export default function PublicGamecast() {
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id as any)}
-                                className={`flex items-center gap-2 px-8 py-3 rounded-xl font-bold transition-all ${activeTab === tab.id ? 'bg-sky-600 text-white shadow-lg shadow-sky-900/40' : 'text-slate-400 hover:text-white'}`}
+                                className={`flex items-center whitespace-nowrap gap-1.5 sm:gap-2 px-4 sm:px-8 py-2.5 sm:py-3 rounded-xl text-sm sm:text-base font-bold transition-all ${activeTab === tab.id ? 'bg-sky-600 text-white shadow-lg shadow-sky-900/40' : 'text-slate-400 hover:text-white'}`}
                             >
                                 <tab.icon className="w-4 h-4" /> {tab.label}
                             </button>
@@ -172,12 +172,12 @@ export default function PublicGamecast() {
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         {/* Field Section */}
                         <div className="lg:col-span-2 flex flex-col gap-6">
-                            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-xl relative overflow-hidden group">
+                            <div className="bg-slate-900 border border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-8 shadow-xl relative overflow-hidden group">
                                 <Field />
                             </div>
 
                             {/* Boxscore Table */}
-                            <div className="bg-slate-950 border border-slate-800 rounded-3xl p-6 shadow-xl">
+                            <div className="bg-slate-950 border border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl overflow-x-auto scrollbar-hide">
                                 <h3 className="text-xl font-black text-white mb-6 flex items-center gap-3">
                                     <Trophy className="w-6 h-6 text-amber-500" /> RESUMEN OFICIAL
                                 </h3>
@@ -218,22 +218,22 @@ export default function PublicGamecast() {
                 )}
 
                 {activeTab === 'alineaciones' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8">
                         {[{ label: 'VISITANTE', lineup: gameState.awayLineup }, { label: 'LOCAL', lineup: gameState.homeLineup }].map(t => (
-                            <div key={t.label} className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-xl hover:border-slate-700 transition-colors">
-                                <h3 className="text-2xl font-black text-sky-400 mb-6 flex items-center gap-3 border-b border-slate-800 pb-4">
-                                    <Users className="w-7 h-7" /> {t.label}
+                            <div key={t.label} className="bg-slate-900 border border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-8 shadow-xl hover:border-slate-700 transition-colors">
+                                <h3 className="text-xl sm:text-2xl font-black text-sky-400 mb-4 sm:mb-6 flex items-center gap-2 sm:gap-3 border-b border-slate-800 pb-2 sm:pb-4">
+                                    <Users className="w-6 h-6 sm:w-7 sm:h-7" /> {t.label}
                                 </h3>
                                 <div className="space-y-4">
                                     {t.lineup.map((item: any) => (
                                         <div key={item.playerId} className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-800/50 transition-all border border-transparent hover:border-slate-800">
-                                            <div className="flex items-center gap-4">
-                                                <span className="text-slate-500 font-mono font-bold w-6">{item.battingOrder}</span>
-                                                <span className="font-bold text-lg text-slate-200">
+                                            <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                                                <span className="text-slate-500 font-mono font-bold w-5 sm:w-6 shrink-0">{item.battingOrder}</span>
+                                                <span className="font-bold text-base sm:text-lg text-slate-200 truncate">
                                                     {item.player ? `${item.player.firstName} ${item.player.lastName}` : 'Desconocido'}
                                                 </span>
                                             </div>
-                                            <span className="bg-sky-500/10 text-sky-400 font-black text-xs px-3 py-1.5 rounded-lg border border-sky-500/20">
+                                            <span className="bg-sky-500/10 text-sky-400 font-black text-[10px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg border border-sky-500/20 shrink-0 ml-2">
                                                 {formatPosition(item)}
                                             </span>
                                         </div>
@@ -245,7 +245,7 @@ export default function PublicGamecast() {
                 )}
 
                 {activeTab === 'stream' && (
-                    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center shadow-2xl min-h-[500px] flex flex-col items-center justify-center relative overflow-hidden">
+                    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-12 text-center shadow-2xl min-h-[300px] sm:min-h-[500px] flex flex-col items-center justify-center relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-sky-500/5 via-transparent to-transparent pointer-events-none" />
                         <Radio className="w-20 h-20 text-sky-500/20 mb-6" />
                         <h2 className="text-3xl font-black text-white mb-4">Streaming en Vivo</h2>

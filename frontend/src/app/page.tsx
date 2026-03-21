@@ -71,19 +71,19 @@ export default function LobbyPage() {
 
       <main className="relative z-10">
         {/* Hero Section */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-32 text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-bold uppercase tracking-wider mb-8 animate-fade-in-up">
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-20 md:py-32 text-center">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-6 sm:mb-8 animate-fade-in-up">
             <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
             Plataforma Oficial
           </div>
-          <h2 className="text-4xl md:text-5xl font-black text-foreground tracking-tighter mb-6 animate-fade-in-up animation-delay-100">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-black text-foreground tracking-tighter mb-4 sm:mb-6 animate-fade-in-up animation-delay-100 px-2">
             Sigue Cada <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-primary-light drop-shadow-sm">Jugada</span>.
           </h2>
-          <p className="text-muted-foreground text-base md:text-lg max-w-2xl mx-auto mb-10 animate-fade-in-up animation-delay-200">
-            Resultados en vivo, estadísticas detalladas y gestión completa de torneos de béisbol y softbol en una sola plataforma de nueva generación.
+          <p className="text-muted-foreground text-sm sm:text-base md:text-lg max-w-2xl mx-auto mb-8 sm:mb-10 animate-fade-in-up animation-delay-200 px-4">
+            Resultados en vivo, estadísticas detalladas y gestión completa de torneos de béisbol y softbol en una sola plataforma que llevará la emoción del juego a un nuevo nivel
           </p>
 
-          <div className="flex justify-center mb-8 w-full max-w-xl mx-auto animate-fade-in-up animation-delay-300">
+          <div className="flex justify-center mb-6 sm:mb-8 w-full max-w-xl mx-auto animate-fade-in-up animation-delay-300 px-2 sm:px-0">
             <div className="relative flex-1 group w-full">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
               <input
@@ -105,11 +105,11 @@ export default function LobbyPage() {
         </section>
 
         {/* Features Section - Todo lo que necesitas */}
-        <section className="bg-surface/30 border-y border-muted/10 py-24 mb-16">
+        <section className="bg-surface/30 border-y border-muted/10 py-16 sm:py-24 mb-12 sm:mb-16">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-12 animate-fade-in-up">
-              <h2 className="text-2xl md:text-3xl font-black text-foreground mb-3">Todo lo que necesitas</h2>
-              <p className="text-muted-foreground text-base">Herramientas completas para organizar, gestionar y seguir torneos de béisbol y softbol</p>
+            <div className="text-center mb-10 sm:mb-12 animate-fade-in-up px-2">
+              <h2 className="text-2xl md:text-3xl font-black text-foreground mb-3 sm:mb-4">Todo lo que necesitas está aquí</h2>
+              <p className="text-muted-foreground text-sm sm:text-base">Herramientas completas para organizar, gestionar y seguir torneos de béisbol y softbol</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -162,14 +162,14 @@ export default function LobbyPage() {
 
         {/* Live Games Section */}
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">
-          <div className="flex items-center justify-between mb-8">
-            <h3 className="text-xl font-bold flex items-center gap-3 text-foreground">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 sm:mb-8">
+            <h3 className="text-lg sm:text-xl font-bold flex items-center gap-3 text-foreground">
               <span className="w-1.5 h-5 bg-primary rounded-full"></span>
               Juegos Recientes
             </h3>
-            <div className="flex bg-surface rounded-lg p-1 border border-muted/30 shadow-sm">
-              <button className="px-3 py-1 text-xs font-bold text-white bg-primary rounded shadow cursor-pointer">En Vivo</button>
-              <button className="px-3 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer">Terminados</button>
+            <div className="flex bg-surface rounded-lg p-1 border border-muted/30 shadow-sm w-full sm:w-auto">
+              <button className="flex-1 sm:flex-none px-3 py-2 sm:py-1 text-xs font-bold text-white bg-primary rounded shadow cursor-pointer text-center">En Vivo</button>
+              <button className="flex-1 sm:flex-none px-3 py-2 sm:py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer text-center">Terminados</button>
             </div>
           </div>
 
@@ -186,67 +186,67 @@ export default function LobbyPage() {
               recentGames.map((game) => {
                 const inningLabel = game.status === 'scheduled' ? 'Pre-Game'
                   : game.status === 'finished' ? 'Final'
-                  : `${game.half === 'top' ? '▲' : '▼'}${game.currentInning}`;
+                    : `${game.half === 'top' ? '▲' : '▼'}${game.currentInning}`;
                 return (
-                <div key={game.id} className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 group cursor-pointer flex flex-col transform hover:-translate-y-1">
-                  {/* Game Status Header */}
-                  <div className="bg-muted/5 px-6 py-4 border-b border-muted/20 flex justify-between items-center group-hover:bg-primary/5 transition-colors">
-                    <span className={`text-xs font-black tracking-widest uppercase ${game.status === 'in_progress' ? 'text-primary animate-pulse' : 'text-muted-foreground'}`}>
-                      {game.status === 'scheduled' ? 'Programado' : game.status === 'finished' ? 'Finalizado' : 'En Curso'}
-                    </span>
-                    <span className={`text-sm font-bold px-2 py-0.5 rounded border border-muted/30 ${game.status === 'finished' ? 'bg-amber-500/10 text-amber-500 border-amber-500/30' : 'bg-surface text-foreground'}`}>
-                      {inningLabel}
-                    </span>
-                  </div>
+                  <div key={game.id} className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 group cursor-pointer flex flex-col transform hover:-translate-y-1">
+                    {/* Game Status Header */}
+                    <div className="bg-muted/5 px-6 py-4 border-b border-muted/20 flex justify-between items-center group-hover:bg-primary/5 transition-colors">
+                      <span className={`text-xs font-black tracking-widest uppercase ${game.status === 'in_progress' ? 'text-primary animate-pulse' : 'text-muted-foreground'}`}>
+                        {game.status === 'scheduled' ? 'Programado' : game.status === 'finished' ? 'Finalizado' : 'En Curso'}
+                      </span>
+                      <span className={`text-sm font-bold px-2 py-0.5 rounded border border-muted/30 ${game.status === 'finished' ? 'bg-amber-500/10 text-amber-500 border-amber-500/30' : 'bg-surface text-foreground'}`}>
+                        {inningLabel}
+                      </span>
+                    </div>
 
-                  {/* Score Area */}
-                  <div className="p-6 flex-1 flex flex-col justify-center gap-6">
-                    {/* Away Team */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-muted/10 rounded-full flex items-center justify-center font-black text-primary text-lg border border-primary/20 shadow-inner group-hover:bg-primary/20 transition-colors">
-                          {game.awayTeam.name.substring(0, 1)}
+                    {/* Score Area */}
+                    <div className="p-4 sm:p-6 flex-1 flex flex-col justify-center gap-4 sm:gap-6">
+                      {/* Away Team */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                          <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 bg-muted/10 rounded-full flex items-center justify-center font-black text-primary text-base sm:text-lg border border-primary/20 shadow-inner group-hover:bg-primary/20 transition-colors">
+                            {game.awayTeam.name.substring(0, 1)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold text-base sm:text-lg text-foreground truncate">{game.awayTeam.name}</p>
+                            <p className="text-[10px] sm:text-xs text-muted-foreground uppercase font-black tracking-wider truncate">Visitante</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-bold text-lg text-foreground">{game.awayTeam.name}</p>
-                          <p className="text-xs text-muted-foreground uppercase font-black tracking-wider">Visitante</p>
-                        </div>
+                        <span className="text-2xl sm:text-3xl font-black text-foreground drop-shadow-sm shrink-0">{game.awayScore ?? '-'}</span>
                       </div>
-                      <span className="text-3xl font-black text-foreground drop-shadow-sm">{game.awayScore ?? '-'}</span>
-                    </div>
 
-                    {/* Home Team */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-muted/10 rounded-full flex items-center justify-center font-black text-primary text-lg border border-primary/20 shadow-inner group-hover:bg-primary/20 transition-colors">
-                          {game.homeTeam.name.substring(0, 1)}
+                      {/* Home Team */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                          <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 bg-muted/10 rounded-full flex items-center justify-center font-black text-primary text-base sm:text-lg border border-primary/20 shadow-inner group-hover:bg-primary/20 transition-colors">
+                            {game.homeTeam.name.substring(0, 1)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold text-base sm:text-lg text-foreground truncate">{game.homeTeam.name}</p>
+                            <p className="text-[10px] sm:text-xs text-muted-foreground uppercase font-black tracking-wider truncate">Local</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-bold text-lg text-foreground">{game.homeTeam.name}</p>
-                          <p className="text-xs text-muted-foreground uppercase font-black tracking-wider">Local</p>
-                        </div>
+                        <span className="text-2xl sm:text-3xl font-black text-foreground drop-shadow-sm shrink-0">{game.homeScore ?? '-'}</span>
                       </div>
-                      <span className="text-3xl font-black text-foreground drop-shadow-sm">{game.homeScore ?? '-'}</span>
                     </div>
-                  </div>
 
-                  {/* Action Footer */}
-                  <div className="px-6 py-4 bg-muted/5 border-t border-muted/20 flex items-center justify-between mt-auto">
-                    <div className="text-sm font-bold text-muted-foreground truncate">
-                      {game.tournament?.name || 'Torneo'}
+                    {/* Action Footer */}
+                    <div className="px-4 sm:px-6 py-4 bg-muted/5 border-t border-muted/20 flex items-center justify-between mt-auto gap-2">
+                      <div className="text-xs sm:text-sm font-bold text-muted-foreground truncate flex-1">
+                        {game.tournament?.name || 'Torneo'}
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(`/gamecast/${game.id}`);
+                        }}
+                        className={`px-4 sm:px-5 py-2 text-white text-xs sm:text-sm font-bold rounded-lg transition-colors shadow shrink-0 ${game.status === 'finished' ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-500/20' : 'bg-primary hover:bg-primary-light shadow-primary/20'}`}
+                      >
+                        {game.status === 'finished' ? 'Ver Boxscore' : 'Gamecast'}
+                      </button>
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        router.push(`/gamecast/${game.id}`);
-                      }}
-                      className={`px-5 py-2 text-white text-sm font-bold rounded-lg transition-colors shadow ${game.status === 'finished' ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-500/20' : 'bg-primary hover:bg-primary-light shadow-primary/20'}`}
-                    >
-                      {game.status === 'finished' ? 'Ver Boxscore' : 'Gamecast'}
-                    </button>
                   </div>
-                </div>
-              );
+                );
               })
             )}
           </div>
@@ -256,7 +256,7 @@ export default function LobbyPage() {
       {/* Footer Section */}
       <footer className="border-t border-muted/20 bg-background pt-16 pb-8 mt-12 relative z-10 w-full overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-12 md:gap-8 mb-12">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-12 md:gap-8 mb-12">
             <div className="col-span-1 md:col-span-1">
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-8 h-8 rounded-lg bg-surface flex items-center justify-center border border-muted/30 shadow-sm relative overflow-hidden">
@@ -292,14 +292,14 @@ export default function LobbyPage() {
             <div>
               <h4 className="font-bold text-foreground mb-6">Contacto</h4>
               <ul className="space-y-4 text-sm text-muted-foreground font-medium">
-                <li className="hover:text-foreground transition-colors">info@tourneytru.com</li>
-                <li className="hover:text-foreground transition-colors">+1 555-0123</li>
+                <li className="hover:text-foreground transition-colors">arturoval04@gmail.com</li>
+                <li className="hover:text-foreground transition-colors">+526681697097</li>
               </ul>
             </div>
           </div>
 
-          <div className="pt-8 border-t border-muted/20 flex flex-col items-center justify-center">
-            <p className="text-muted-foreground text-sm font-medium">© 2025 TourneyTru. Todos los derechos reservados.</p>
+          <div className="pt-8 border-t border-muted/20 flex flex-col items-center justify-center text-center px-4">
+            <p className="text-muted-foreground text-xs sm:text-sm font-medium">© 2026 TourneyTru. Todos los derechos reservados.</p>
           </div>
         </div>
       </footer>

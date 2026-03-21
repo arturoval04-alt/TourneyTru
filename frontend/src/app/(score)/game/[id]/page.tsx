@@ -214,22 +214,22 @@ export default function ScorekeeperLivePanel() {
 
                     {/* Scorekeeper Sub-Navigation Tabs */}
                     <div className="flex justify-center mb-2">
-                        <div className="bg-surface border border-muted/30 p-1 rounded-xl shadow-sm inline-flex">
+                        <div className="bg-surface border border-muted/30 p-1 rounded-xl shadow-sm inline-flex flex-wrap sm:flex-nowrap justify-center gap-1">
                             <button
                                 onClick={() => setActiveTab('alineaciones')}
-                                className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'alineaciones' ? 'bg-primary text-white shadow' : 'text-muted-foreground hover:text-foreground hover:bg-muted/10'}`}
+                                className={`flex items-center gap-2 px-3 sm:px-6 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all flex-1 sm:flex-none justify-center ${activeTab === 'alineaciones' ? 'bg-primary text-white shadow' : 'text-muted-foreground hover:text-foreground hover:bg-muted/10'}`}
                             >
                                 <Users className="w-4 h-4" /> Alineaciones
                             </button>
                             <button
                                 onClick={() => setActiveTab('scorekeeper')}
-                                className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'scorekeeper' ? 'bg-primary text-white shadow' : 'text-muted-foreground hover:text-foreground hover:bg-muted/10'}`}
+                                className={`flex items-center gap-2 px-3 sm:px-6 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all flex-1 sm:flex-none justify-center ${activeTab === 'scorekeeper' ? 'bg-primary text-white shadow' : 'text-muted-foreground hover:text-foreground hover:bg-muted/10'}`}
                             >
                                 <LayoutDashboard className="w-4 h-4" /> Scorekeeper
                             </button>
                             <button
                                 onClick={() => setActiveTab('stream')}
-                                className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'stream' ? 'bg-primary text-white shadow' : 'text-muted-foreground hover:text-foreground hover:bg-muted/10'}`}
+                                className={`flex items-center gap-2 px-3 sm:px-6 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all flex-1 sm:flex-none justify-center ${activeTab === 'stream' ? 'bg-primary text-white shadow' : 'text-muted-foreground hover:text-foreground hover:bg-muted/10'}`}
                             >
                                 <Radio className="w-4 h-4" /> Stream
                             </button>
@@ -288,12 +288,12 @@ export default function ScorekeeperLivePanel() {
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in-up">
                             {/* Left: Field and Controls */}
                             <div className="lg:col-span-2 flex flex-col gap-6">
-                                <div className="bg-surface border border-muted/30 rounded-3xl p-6 shadow-xl relative overflow-hidden group">
+                                <div className="bg-surface border border-muted/30 rounded-3xl p-4 sm:p-6 shadow-xl relative overflow-hidden group overflow-x-auto">
                                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary/50 via-primary to-primary/50" />
                                     <Field />
                                 </div>
                                 <ActionPanel />
-                                <div className="bg-surface border border-muted/30 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                                <div className="bg-surface border border-muted/30 rounded-3xl p-4 sm:p-6 shadow-xl relative overflow-hidden overflow-x-auto">
                                      <div className="flex items-center justify-between mb-4 border-b border-muted/20 pb-4">
                                         <h3 className="text-xl font-black text-foreground uppercase tracking-wider flex items-center gap-2">
                                             <Trophy className="w-6 h-6 text-yellow-500" /> RESUMEN OFICIAL (Boxscore)
@@ -367,7 +367,7 @@ export default function ScorekeeperLivePanel() {
             {/* Modal de Finalización */}
             {showWrapUpModal && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
-                    <div className="bg-surface border border-muted/30 rounded-3xl shadow-2xl max-w-lg w-full p-8 animate-in zoom-in-95 duration-300">
+                    <div className="bg-surface border border-muted/30 rounded-3xl shadow-2xl max-w-lg w-full p-6 sm:p-8 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-300">
                         <h2 className="text-3xl font-black text-foreground mb-2 flex items-center gap-3">
                              <Trophy className="w-8 h-8 text-yellow-500" /> MVP & Finalización
                         </h2>

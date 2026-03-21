@@ -65,7 +65,7 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="min-h-screen bg-background text-foreground flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+        <div className="min-h-screen bg-background text-foreground flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
             <div className="sm:mx-auto sm:w-full sm:max-w-md">
                 <div className="flex justify-center mb-6">
                     <div className="w-16 h-16 rounded-2xl bg-surface flex items-center justify-center border border-muted/30 shadow-lg relative overflow-hidden group">
@@ -150,8 +150,8 @@ export default function LoginPage() {
                                 <div className="w-full border-t border-muted/30" />
                             </div>
                             <div className="relative flex justify-center text-sm">
-                                <span className="px-3 bg-surface text-muted-foreground">
-                                    ¿No tienes cuenta? <Link href="/register" className="text-primary hover:text-primary-light font-bold transition-colors">Regístrate</Link> | <Link href="/" className="text-primary hover:text-primary-light font-bold transition-colors">Ver sin iniciar sesión</Link>
+                                <span className="px-2 sm:px-3 bg-surface text-muted-foreground text-center">
+                                    ¿No tienes cuenta? <br className="sm:hidden" /> <Link href="/register" className="text-primary hover:text-primary-light font-bold transition-colors">Regístrate</Link> <span className="hidden sm:inline">|</span> <br className="sm:hidden" /> <Link href="/" className="text-primary hover:text-primary-light font-bold transition-colors">Ver sin iniciar sesión</Link>
                                 </span>
                             </div>
                         </div>

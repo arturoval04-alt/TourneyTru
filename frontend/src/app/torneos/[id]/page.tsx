@@ -591,16 +591,16 @@ export default function TournamentProfilePage() {
                         Volver a torneos
                     </Link>
 
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 pb-4">
+                    <div className="flex flex-col-reverse md:flex-row md:items-center justify-between gap-8 pb-4">
                         <div className="flex-1">
-                            <div className="flex items-center gap-4 mb-3">
-                                <h1 className="text-4xl md:text-6xl font-black text-foreground tracking-tight">
+                            <div className="flex flex-wrap items-center gap-4 mb-3">
+                                <h1 className="text-3xl sm:text-4xl md:text-6xl font-black text-foreground tracking-tight break-all sm:break-normal">
                                     {tournament?.name || 'Cargando...'}
                                 </h1>
                                 {(userRole === 'admin' || userRole === 'scorekeeper') && (
                                     <button
                                         onClick={() => setIsEditingProfile(true)}
-                                        className="w-10 h-10 rounded-full bg-muted/10 hover:bg-muted/20 flex items-center justify-center text-muted-foreground transition-all hover:rotate-90"
+                                        className="w-10 h-10 rounded-full bg-muted/10 hover:bg-muted/20 flex items-center justify-center text-muted-foreground transition-all hover:rotate-90 shrink-0"
                                         title="Editar Perfil del Torneo"
                                     >
                                         <Settings className="w-6 h-6" />
@@ -626,7 +626,7 @@ export default function TournamentProfilePage() {
                         </div>
 
                         {/* Tournament Avatar / Logo */}
-                        <div className="w-32 h-32 md:w-68 md:h-68 bg-white rounded-[2.5rem] border-4 border-surface shadow-xl overflow-hidden flex items-center justify-center shrink-0 relative group">
+                        <div className="w-24 h-24 sm:w-32 sm:h-32 md:w-64 md:h-64 mx-auto md:mx-0 bg-white rounded-3xl md:rounded-[2.5rem] border-4 border-surface shadow-xl overflow-hidden flex items-center justify-center shrink-0 relative group">
                             <div className="absolute inset-0 bg-primary/5 group-hover:bg-transparent transition-colors"></div>
                             {tournament?.logoUrl ? (
                                 <img src={tournament.logoUrl} alt="Tournament Logo" className="w-full h-full object-contain p-2" />
@@ -637,7 +637,7 @@ export default function TournamentProfilePage() {
                     </div>
 
                     {/* Pill Tabs Navigation */}
-                    <div className="flex overflow-x-auto scrollbar-hide gap-2 mt-8">
+                    <div className="flex overflow-x-auto scrollbar-hide gap-2 mt-8 pb-2">
                         {tabs.map((tab) => (
                             <button
                                 key={tab.id}
@@ -1009,16 +1009,16 @@ export default function TournamentProfilePage() {
                                                 : `${game.half === 'top' ? '▲' : '▼'}${game.currentInning}`;
                                         return (
                                             <Link href={game.status !== 'scheduled' ? `/gamecast/${game.id}` : '#'} key={game.id} className="block group">
-                                                <div className="bg-surface border border-muted/30 rounded-xl p-4 flex items-center justify-between shadow-sm hover:border-primary/40 hover:shadow-md transition-all">
-                                                    <div className="flex items-center gap-6">
-                                                        <div className="flex flex-col items-center">
-                                                            <div className="w-10 h-10 rounded-lg bg-primary text-white font-black flex items-center justify-center text-lg shadow-sm">{game.awayTeam.shortName || game.awayTeam.name.substring(0, 2).toUpperCase()}</div>
-                                                            <span className="text-xs font-semibold mt-1.5 text-foreground">{game.awayTeam.name}</span>
+                                                <div className="bg-surface border border-muted/30 rounded-xl p-3 sm:p-4 flex items-center justify-between shadow-sm hover:border-primary/40 hover:shadow-md transition-all">
+                                                    <div className="flex items-center gap-2 sm:gap-6 w-full">
+                                                        <div className="flex flex-col items-center w-[60px] sm:w-20 shrink-0">
+                                                            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary text-white font-black flex items-center justify-center text-sm sm:text-lg shadow-sm">{game.awayTeam.shortName || game.awayTeam.name.substring(0, 2).toUpperCase()}</div>
+                                                            <span className="text-[10px] sm:text-xs font-semibold mt-1.5 text-foreground text-center line-clamp-1 break-all sm:break-normal">{game.awayTeam.name}</span>
                                                         </div>
-                                                        <div className="text-2xl font-black text-foreground tracking-wider font-mono">{game.awayScore} - {game.homeScore}</div>
-                                                        <div className="flex flex-col items-center">
-                                                            <div className="w-10 h-10 rounded-lg bg-slate-700 text-white font-black flex items-center justify-center text-lg shadow-sm">{game.homeTeam.shortName || game.homeTeam.name.substring(0, 2).toUpperCase()}</div>
-                                                            <span className="text-xs font-semibold mt-1.5 text-foreground">{game.homeTeam.name}</span>
+                                                        <div className="flex-1 flex justify-center items-center text-lg sm:text-2xl font-black text-foreground tracking-wider font-mono shrink-0 whitespace-nowrap">{game.awayScore} - {game.homeScore}</div>
+                                                        <div className="flex flex-col items-center w-[60px] sm:w-20 shrink-0">
+                                                            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-slate-700 text-white font-black flex items-center justify-center text-sm sm:text-lg shadow-sm">{game.homeTeam.shortName || game.homeTeam.name.substring(0, 2).toUpperCase()}</div>
+                                                            <span className="text-[10px] sm:text-xs font-semibold mt-1.5 text-foreground text-center line-clamp-1 break-all sm:break-normal">{game.homeTeam.name}</span>
                                                         </div>
                                                     </div>
                                                     <div className="flex flex-col items-end gap-1">

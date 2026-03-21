@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { getUser, AuthUser } from '@/lib/auth';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -218,6 +219,8 @@ export default function AdminDashboard() {
 
     // -- Form: Create Player --
     const [playerForm, setPlayerForm] = useState({ firstName: '', lastName: '', number: '', position: 'INF', photoUrl: '', team_id: '' });
+    const [showEditPlayerModal, setShowEditPlayerModal] = useState(false);
+    const [editingPlayer, setEditingPlayer] = useState<any>(null);
 
     // -- Form: Create User --
     const [userForm, setUserForm] = useState({ name: '', email: '', password: '', role: 'general', tournament_id: '' });
@@ -317,10 +320,20 @@ export default function AdminDashboard() {
         }
         supabase
             .from('players')
-            .select('*')
+            .select('*, team:teams(name)')
             .eq('team_id', selectedTeam)
             .then(({ data, error }) => {
-                if (!error) setPlayers(data || []);
+                if (!error && data) {
+                    const mappedPlayers = data.map(p => ({
+                        ...p,
+                        firstName: p.first_name,
+                        lastName: p.last_name,
+                        photoUrl: p.photo_url
+                    }));
+                    setPlayers(mappedPlayers);
+                } else {
+                    setPlayers([]);
+                }
             });
     }, [selectedTeam]);
 
@@ -559,6 +572,67 @@ export default function AdminDashboard() {
         } finally { setSaving(false); }
     };
 
+    const handleEditPlayer = (player: any) => {
+        setEditingPlayer(player);
+        setPlayerForm({
+            firstName: player.firstName || player.first_name,
+            lastName: player.lastName || player.last_name,
+            number: player.number?.toString() || '',
+            position: player.position || 'INF',
+            photoUrl: player.photoUrl || player.photo_url || '',
+            team_id: player.team_id
+        });
+        setShowEditPlayerModal(true);
+    };
+
+    const handleUpdatePlayer = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingPlayer) return;
+        setSaving(true);
+        try {
+            const { error } = await supabase
+                .from('players')
+                .update({
+                    first_name: playerForm.firstName,
+                    last_name: playerForm.lastName,
+                    number: playerForm.number ? parseInt(playerForm.number) : null,
+                    team_id: playerForm.team_id,
+                    position: playerForm.position,
+                    photo_url: playerForm.photoUrl,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', editingPlayer.id);
+
+            if (error) throw error;
+            alert('Jugador Actualizado');
+            setShowEditPlayerModal(false);
+            setEditingPlayer(null);
+            setPlayerForm({ firstName: '', lastName: '', number: '', position: 'INF', photoUrl: '', team_id: '' });
+            
+            // Reload players
+            if (selectedTeam) {
+                supabase
+                    .from('players')
+                    .select('*, team:teams(name)')
+                    .eq('team_id', selectedTeam)
+                    .then(({ data, err }: any) => {
+                        if (!err && data) {
+                            const mappedPlayers = data.map((p: any) => ({
+                                ...p,
+                                firstName: p.first_name,
+                                lastName: p.last_name,
+                                photoUrl: p.photo_url
+                            }));
+                            setPlayers(mappedPlayers);
+                        }
+                    });
+            }
+        } catch (err) { 
+            console.error(err);
+            alert('Error al actualizar jugador'); 
+        } finally { setSaving(false); }
+    };
+
     const handleCreateUser = async (e: React.FormEvent) => {
         e.preventDefault();
         setSaving(true);
@@ -713,7 +787,7 @@ export default function AdminDashboard() {
             { id: 'usuarios', label: 'Cuentas Admin', icon: '🔑' },
         ];
         return (
-            <div className="w-full md:w-64 shrink-0 bg-surface border border-muted/30 rounded-2xl p-4 shadow-sm flex flex-row md:flex-col gap-2 overflow-x-auto">
+            <div className="w-full md:w-64 shrink-0 bg-surface border border-muted/30 rounded-2xl p-3 sm:p-4 shadow-sm flex flex-row md:flex-col gap-2 overflow-x-auto scrollbar-hide">
                 <div className="hidden md:block px-4 py-2 border-b border-muted/20 mb-2">
                     <p className="text-xs font-black text-muted-foreground uppercase tracking-widest">Dashboard</p>
                 </div>
@@ -771,7 +845,7 @@ export default function AdminDashboard() {
                                         <span className="w-2 h-4 bg-primary rounded-full"></span> Mi Perfil
                                     </h2>
                                 </div>
-                                <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm p-8 flex flex-col md:flex-row gap-8 items-start">
+                                <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm p-4 sm:p-8 flex flex-col md:flex-row gap-4 sm:gap-8 items-center sm:items-start">
                                     <div className="shrink-0 flex flex-col items-center gap-4">
                                         <div className="w-32 h-32 rounded-full bg-primary/20 flex items-center justify-center text-primary text-5xl font-black shadow-inner border-4 border-surface overflow-hidden relative group">
                                             {userProfilePicture ? (
@@ -853,7 +927,7 @@ export default function AdminDashboard() {
                                         </button>
                                     )}
                                 </div>
-                                <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm">
+                                <div className="bg-surface border border-muted/30 rounded-2xl overflow-x-auto overflow-y-hidden shadow-sm">
                                     <table className="w-full text-left text-sm text-muted-foreground">
                                         <thead className="bg-muted/10 text-xs uppercase text-foreground font-black tracking-wider border-b border-muted/20">
                                             <tr>
@@ -944,7 +1018,7 @@ export default function AdminDashboard() {
                                         )}
                                     </div>
                                 </div>
-                                <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm">
+                                <div className="bg-surface border border-muted/30 rounded-2xl overflow-x-auto overflow-y-hidden shadow-sm">
                                     <table className="w-full text-left text-sm text-muted-foreground">
                                         <thead className="bg-muted/10 text-xs uppercase text-foreground font-black tracking-wider border-b border-muted/20">
                                             <tr>
@@ -1036,7 +1110,7 @@ export default function AdminDashboard() {
                                         )}
                                     </div>
                                 </div>
-                                <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm">
+                                <div className="bg-surface border border-muted/30 rounded-2xl overflow-x-auto overflow-y-hidden shadow-sm">
                                     <table className="w-full text-left text-sm text-muted-foreground">
                                         <thead className="bg-muted/10 text-xs uppercase text-foreground font-black tracking-wider border-b border-muted/20">
                                             <tr>
@@ -1083,8 +1157,15 @@ export default function AdminDashboard() {
                                                         <span className="bg-primary/10 text-primary px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-tighter">{player.position || 'INF'}</span>
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
-                                                        <button className="text-muted-foreground hover:text-foreground font-bold text-xs mr-4">Ficha</button>
-                                                        <button className="text-red-500/50 hover:text-red-500 font-bold text-xs">Baja</button>
+                                                        <Link href={`/torneos/${selectedTournament}/jugadores/${player.id}`} className="text-muted-foreground hover:text-foreground font-bold text-xs mr-4 transition-colors">
+                                                            Ficha
+                                                        </Link>
+                                                        <button
+                                                            onClick={() => handleEditPlayer(player)}
+                                                            className="text-blue-500/70 hover:text-blue-500 font-bold text-xs transition-colors"
+                                                        >
+                                                            Editar
+                                                        </button>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -1113,7 +1194,7 @@ export default function AdminDashboard() {
                                         </button>
                                     </div>
                                 </div>
-                                <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm">
+                                <div className="bg-surface border border-muted/30 rounded-2xl overflow-x-auto overflow-y-hidden shadow-sm">
                                     <table className="w-full text-left text-sm text-muted-foreground">
                                         <thead className="bg-muted/10 text-xs uppercase text-foreground font-black tracking-wider border-b border-muted/20">
                                             <tr>
@@ -1201,7 +1282,7 @@ export default function AdminDashboard() {
                                         + Generar Cuenta
                                     </button>
                                 </div>
-                                <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm">
+                                <div className="bg-surface border border-muted/30 rounded-2xl overflow-x-auto overflow-y-hidden shadow-sm">
                                     <table className="w-full text-left text-sm text-muted-foreground">
                                         <thead className="bg-muted/10 text-xs uppercase text-foreground font-black tracking-wider border-b border-muted/20">
                                             <tr>
@@ -1251,7 +1332,7 @@ export default function AdminDashboard() {
             {/* MODAL NUEVO TORNEO */}
             {showTournamentModal && (
                 <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
-                    <div className="bg-surface border border-muted/30 p-8 rounded-2xl w-full max-w-lg shadow-2xl relative animate-fade-in-up">
+                    <div className="bg-surface border border-muted/30 p-5 sm:p-8 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl relative animate-fade-in-up">
                         <button onClick={() => setShowTournamentModal(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
@@ -1364,7 +1445,7 @@ export default function AdminDashboard() {
             {/* MODAL EDITAR TORNEO */}
             {showEditTournModal && (
                 <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
-                    <div className="bg-surface border border-muted/30 p-8 rounded-2xl w-full max-w-lg shadow-2xl relative animate-fade-in-up">
+                    <div className="bg-surface border border-muted/30 p-5 sm:p-8 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl relative animate-fade-in-up">
                         <button onClick={() => { setShowEditTournModal(false); setEditingTourn(null); }} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
@@ -1474,7 +1555,7 @@ export default function AdminDashboard() {
             {/* MODAL NUEVO JUEGO */}
             {showGameModal && (
                 <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
-                    <div className="bg-surface border border-muted/30 p-8 rounded-2xl w-full max-w-lg shadow-2xl relative animate-fade-in-up">
+                    <div className="bg-surface border border-muted/30 p-5 sm:p-8 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl relative animate-fade-in-up">
                         <button
                             onClick={() => setShowGameModal(false)}
                             className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
@@ -1559,7 +1640,7 @@ export default function AdminDashboard() {
             {/* MODAL NUEVO EQUIPO */}
             {showTeamModal && (
                 <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
-                    <div className="bg-surface border border-muted/30 p-8 rounded-2xl w-full max-w-lg shadow-2xl relative animate-fade-in-up">
+                    <div className="bg-surface border border-muted/30 p-5 sm:p-8 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl relative animate-fade-in-up">
                         <button onClick={() => setShowTeamModal(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
@@ -1628,7 +1709,7 @@ export default function AdminDashboard() {
             {/* MODAL NUEVO JUGADOR */}
             {showPlayerModal && (
                 <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
-                    <div className="bg-surface border border-muted/30 p-8 rounded-2xl w-full max-w-lg shadow-2xl relative animate-fade-in-up">
+                    <div className="bg-surface border border-muted/30 p-5 sm:p-8 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl relative animate-fade-in-up">
                         <button onClick={() => setShowPlayerModal(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
@@ -1712,10 +1793,97 @@ export default function AdminDashboard() {
                     </div>
                 </div>
             )}
+            {/* MODAL EDITAR JUGADOR */}
+            {showEditPlayerModal && (
+                <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
+                    <div className="bg-surface border border-muted/30 p-5 sm:p-8 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl relative animate-fade-in-up">
+                        <button onClick={() => setShowEditPlayerModal(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                        <h2 className="text-2xl font-black text-foreground mb-6 uppercase tracking-tight pb-4 border-b border-muted/20">
+                            Editar Jugador
+                        </h2>
+                        <form onSubmit={handleUpdatePlayer} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Equipo Destino</label>
+                                <select
+                                    required
+                                    value={playerForm.team_id}
+                                    onChange={e => setPlayerForm({ ...playerForm, team_id: e.target.value })}
+                                    className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition"
+                                >
+                                    <option value="">-- Seleccionar Equipo --</option>
+                                    {teams.map((t: TeamData) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="flex gap-4">
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Nombre</label>
+                                    <input required type="text" value={playerForm.firstName} onChange={e => setPlayerForm({ ...playerForm, firstName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Roberto" />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Apellido</label>
+                                    <input required type="text" value={playerForm.lastName} onChange={e => setPlayerForm({ ...playerForm, lastName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Gómez" />
+                                </div>
+                            </div>
+                            <div className="flex gap-4">
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Número (Jersey)</label>
+                                    <input required type="text" value={playerForm.number} onChange={e => setPlayerForm({ ...playerForm, number: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. 24" />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Posición</label>
+                                    <select value={playerForm.position} onChange={e => setPlayerForm({ ...playerForm, position: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition">
+                                        <option value="P">Pitcher (P)</option>
+                                        <option value="C">Catcher (C)</option>
+                                        <option value="INF">Infielder (INF)</option>
+                                        <option value="OF">Outfielder (OF)</option>
+                                        <option value="DH">Bateador Designado (DH)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Foto del Jugador (URL o Subir)</label>
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        value={playerForm.photoUrl} 
+                                        onChange={e => setPlayerForm({ ...playerForm, photoUrl: e.target.value })} 
+                                        className="flex-1 bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-xs" 
+                                        placeholder="URL de la foto" 
+                                    />
+                                    <label className="shrink-0 bg-muted/20 hover:bg-muted/30 text-foreground px-4 py-3 rounded-lg cursor-pointer transition text-xs font-bold border border-muted/30">
+                                        Subir
+                                        <input 
+                                            type="file" 
+                                            accept="image/*" 
+                                            className="hidden" 
+                                            onChange={e => handleImageChange(e, playerForm, setPlayerForm, 'photoUrl')} 
+                                        />
+                                    </label>
+                                </div>
+                                {playerForm.photoUrl && (
+                                    <div className="mt-2 flex items-center gap-2 border border-muted/20 p-2 rounded-lg bg-muted/5">
+                                        <div className="w-12 h-12 rounded border border-muted/30 overflow-hidden bg-white flex items-center justify-center">
+                                            <img src={playerForm.photoUrl} alt="Preview" className="w-full h-full object-contain" />
+                                        </div>
+                                        <button type="button" onClick={() => setPlayerForm({ ...playerForm, photoUrl: '' })} className="text-[10px] text-red-500 font-bold hover:underline">Eliminar Foto</button>
+                                    </div>
+                                )}
+                            </div>
+
+                            <button type="submit" disabled={saving} className={`w-full py-3 mt-4 font-bold rounded-xl transition shadow-lg ${saving ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-primary/20 cursor-pointer active:scale-95'}`}>
+                                {saving ? 'Guardando...' : 'Actualizar Jugador'}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
             {/* MODAL NUEVA CUENTA */}
             {showUserModal && (
                 <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
-                    <div className="bg-surface border border-muted/30 p-8 rounded-2xl w-full max-w-lg shadow-2xl relative animate-fade-in-up">
+                    <div className="bg-surface border border-muted/30 p-5 sm:p-8 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl relative animate-fade-in-up">
                         <button onClick={() => setShowUserModal(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
@@ -1774,7 +1942,7 @@ export default function AdminDashboard() {
             {/* MODAL NUEVA LIGA */}
             {showLeagueModal && (
                 <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[60] flex flex-col items-center justify-center p-4">
-                    <div className="bg-surface border border-muted/30 p-8 rounded-2xl w-full max-w-sm shadow-2xl relative animate-fade-in-up">
+                    <div className="bg-surface border border-muted/30 p-5 sm:p-8 rounded-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto shadow-2xl relative animate-fade-in-up">
                         <button onClick={() => setShowLeagueModal(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>

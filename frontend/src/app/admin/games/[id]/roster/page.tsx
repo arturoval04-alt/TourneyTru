@@ -264,7 +264,7 @@ export default function RosterSetupPage() {
         const occupiedPositions = getOccupiedPositions();
 
         return (
-            <div className="bg-surface border border-muted/30 p-6 rounded-2xl shadow-sm hover:border-primary/50 transition-colors">
+            <div className="bg-surface border border-muted/30 p-4 sm:p-6 rounded-2xl shadow-sm hover:border-primary/50 transition-colors">
                 <h2 className="text-xl font-black text-foreground mb-6 flex items-center gap-2">
                     <span className="w-2 h-4 bg-primary rounded-full"></span>
                     Lineup: {team.name}
@@ -274,8 +274,8 @@ export default function RosterSetupPage() {
                     {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((order) => {
                         const currentLp = lineupState.find((l: LineupStateItem) => l.battingOrder === order);
                         return (
-                            <div key={order} className="flex flex-col sm:flex-row items-center gap-3">
-                                <span className="font-black text-foreground w-6 text-sm text-center">{order}.</span>
+                            <div key={order} className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 bg-muted/5 sm:bg-transparent p-3 sm:p-0 rounded-xl sm:rounded-none border border-muted/10 sm:border-transparent mb-2 sm:mb-0">
+                                <span className="font-black text-primary sm:text-foreground w-full sm:w-6 text-xs sm:text-sm text-left sm:text-center border-b sm:border-0 border-muted/20 pb-1 sm:pb-0">Turno {order}</span>
 
                                 {/* Player Dropdown */}
                                 <select
@@ -360,11 +360,11 @@ export default function RosterSetupPage() {
                 </div>
 
                 {/* Footer Buttons Matching Mockup */}
-                <div className="flex flex-col sm:flex-row items-center justify-end gap-6 pt-6 border-t border-muted/20">
+                <div className="flex flex-col sm:flex-row items-center justify-end gap-3 sm:gap-6 pt-6 border-t border-muted/20">
                     <button onClick={() => router.push(`/torneos`)} className="text-foreground font-bold hover:text-muted-foreground transition-colors px-6 py-3 cursor-pointer">
                         Cancelar
                     </button>
-                    <button onClick={() => router.push(`/gamecast/${gameId}`)} className="px-8 py-3 bg-[#059669] hover:bg-[#047857] shadow-lg shadow-[#059669]/20 text-white font-bold rounded-xl transition-all cursor-pointer flex items-center gap-2">
+                    <button onClick={() => router.push(`/gamecast/${gameId}`)} className="w-full sm:w-auto px-8 py-3 bg-[#059669] hover:bg-[#047857] shadow-lg shadow-[#059669]/20 text-white font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                         Confirmar e Ir al Marcador
                     </button>

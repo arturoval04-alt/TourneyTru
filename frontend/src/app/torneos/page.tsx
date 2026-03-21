@@ -82,7 +82,7 @@ export default function TorneosPage() {
 
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
                 <div className="animate-fade-in-up">
-                    <h1 className="text-4xl font-black mb-2 text-foreground">Torneos</h1>
+                    <h1 className="text-3xl sm:text-4xl font-black mb-2 text-foreground">Torneos</h1>
                     <p className="text-muted-foreground mb-8">Explora y sigue los torneos de béisbol y softbol</p>
 
                     {/* Barra de Búsqueda y Filtros */}
@@ -97,7 +97,7 @@ export default function TorneosPage() {
                                 className="w-full bg-surface border border-muted/30 rounded-xl py-3 pl-12 pr-4 text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-sm font-medium shadow-sm"
                             />
                         </div>
-                        <button className="flex items-center gap-2 border border-muted/30 px-6 py-3 rounded-xl text-sm font-bold bg-surface hover:bg-muted/10 hover:border-muted/50 transition-all shadow-sm shrink-0">
+                        <button className="flex items-center justify-center sm:justify-start gap-2 border border-muted/30 px-6 py-3 rounded-xl text-sm font-bold bg-surface hover:bg-muted/10 hover:border-muted/50 transition-all shadow-sm shrink-0 w-full sm:w-auto">
                             <Filter className="w-4 h-4" /> Filtros
                         </button>
                     </div>
@@ -168,7 +168,7 @@ export default function TorneosPage() {
                                                 <Calendar className="w-4 h-4 text-muted-foreground/70 shrink-0" />
                                                 <span>{t.season}</span>
                                             </div>
-                                            <div className="flex items-center gap-5 text-sm text-muted-foreground font-medium pt-1">
+                                            <div className="flex items-center gap-4 sm:gap-5 flex-wrap text-sm text-muted-foreground font-medium pt-1">
                                                 <div className="flex items-center gap-2">
                                                     <Users className="w-4 h-4 text-muted-foreground/70" />
                                                     <span>{t._count?.teams || 0} equipos</span>

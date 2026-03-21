@@ -112,7 +112,7 @@ export default function RegisterPage() {
     };
 
     return (
-        <div className="min-h-screen bg-background text-foreground flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+        <div className="min-h-screen bg-background text-foreground flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
             <div className="sm:mx-auto sm:w-full sm:max-w-md">
                 <div className="flex justify-center mb-6">
                     <div className="w-16 h-16 rounded-2xl bg-surface flex items-center justify-center border border-muted/30 shadow-lg relative overflow-hidden group">
@@ -137,7 +137,7 @@ export default function RegisterPage() {
                     )}
 
                     <form className="space-y-5" onSubmit={handleSubmit}>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label htmlFor="nombre" className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">Nombre</label>
                                 <input
@@ -210,8 +210,8 @@ export default function RegisterPage() {
                                 <div className="w-full border-t border-muted/30" />
                             </div>
                             <div className="relative flex justify-center text-sm">
-                                <span className="px-3 bg-surface text-muted-foreground">
-                                    ¿Ya tienes cuenta? <Link href="/login" className="text-primary hover:text-primary-light font-bold transition-colors">Inicia sesión</Link>
+                                <span className="px-3 bg-surface text-muted-foreground text-center">
+                                    ¿Ya tienes cuenta? <br className="sm:hidden" /> <Link href="/login" className="text-primary hover:text-primary-light font-bold transition-colors">Inicia sesión</Link>
                                 </span>
                             </div>
                         </div>

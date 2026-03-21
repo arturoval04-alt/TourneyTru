@@ -304,9 +304,9 @@ export default function TeamProfilePage() {
                             {/* "Participando En" Wrapper */}
                             <div className="absolute inset-0 flex flex-col items-center justify-center z-20 transition-transform duration-300">
                                 <h3 className="text-white text-sm font-bold tracking-[0.2em] mb-2 drop-shadow-md">PARTICIPANDO EN:</h3>
-                                <h2 className="text-3xl md:text-5xl font-black text-white/90 tracking-tighter text-center uppercase drop-shadow-lg px-4 flex items-center gap-3">
+                                <h2 className="text-3xl md:text-5xl font-black text-white/90 tracking-tighter text-center uppercase drop-shadow-lg px-4 flex flex-wrap justify-center items-center gap-2 sm:gap-3">
                                     {team.tournament?.name || 'Sin Torneo'}
-                                    <ExternalLink className="w-6 h-6 opacity-0 group-hover:opacity-100 transition-opacity -mt-3" />
+                                    <ExternalLink className="w-5 h-5 sm:w-6 sm:h-6 opacity-0 group-hover:opacity-100 transition-opacity -mt-2 sm:-mt-3 shrink-0" />
                                 </h2>
                             </div>
                         </Link>
@@ -342,15 +342,15 @@ export default function TeamProfilePage() {
                         </div>
 
                         <div className="relative z-30">
-                            <h1 className="text-3xl font-black text-foreground">{team.name}</h1>
-                            <p className="text-muted-foreground text-sm uppercase tracking-wide mt-1 font-bold">
+                            <h1 className="text-2xl sm:text-3xl font-black text-foreground break-words">{team.name}</h1>
+                            <p className="text-muted-foreground text-sm uppercase tracking-wide mt-1 font-bold break-words">
                                 {team.tournament?.category || team.tournament?.name || ''}
                             </p>
                         </div>
                     </div>
 
                     {/* Tabs Navigation */}
-                    <div className="flex overflow-x-auto scrollbar-hide border-t border-muted/20 px-2 sm:px-6 relative z-30">
+                    <div className="flex overflow-x-auto scrollbar-hide border-t border-muted/20 px-2 sm:px-6 relative z-30 pb-1 sm:pb-0">
                         {tabs.map((tab) => (
                             <button
                                 key={tab.id}
@@ -425,10 +425,10 @@ export default function TeamProfilePage() {
                                     const dateStr = new Date(game.scheduledDate).toLocaleDateString('es-MX', { month: 'short', day: 'numeric' });
 
                                     return (
-                                        <div key={game.id} className="bg-surface border border-muted/30 rounded-xl p-4 flex items-center justify-between shadow-sm hover:border-primary/40 hover:shadow-md cursor-pointer transition-all group">
+                                        <div key={game.id} className="bg-surface border border-muted/30 rounded-xl p-3 sm:p-4 flex items-center justify-between shadow-sm hover:border-primary/40 hover:shadow-md cursor-pointer transition-all group">
                                             <div className="flex items-center gap-4">
                                                 <div className="text-center w-12 border-r border-muted/20 pr-4">
-                                                    <p className="text-sm font-black text-foreground">{dateStr}</p>
+                                                    <p className="text-xs sm:text-sm font-black text-foreground">{dateStr}</p>
                                                 </div>
                                                 <div>
                                                     <div className="flex items-center gap-2 mb-1 opacity-70">
@@ -446,11 +446,12 @@ export default function TeamProfilePage() {
                                             <div>
                                                 {game.status === 'finished' && (
                                                     <span className={`px-3 py-1 text-xs font-bold rounded uppercase tracking-wider ${won ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/10 text-red-600 dark:text-red-400'}`}>
-                                                        {won ? 'Victoria' : 'Derrota'}
+                                                        <span className="hidden sm:inline">{won ? 'Victoria' : 'Derrota'}</span>
+                                                        <span className="sm:hidden">{won ? 'V' : 'D'}</span>
                                                     </span>
                                                 )}
                                                 {game.status === 'in_progress' && (
-                                                    <span className="px-3 py-1 bg-primary/10 text-primary text-xs font-bold rounded uppercase tracking-wider animate-pulse">En Vivo</span>
+                                                    <span className="px-2 py-1 sm:px-3 sm:py-1 bg-primary/10 text-primary text-[10px] sm:text-xs font-bold rounded uppercase tracking-wider animate-pulse">Vivo</span>
                                                 )}
                                             </div>
                                         </div>
@@ -547,12 +548,12 @@ export default function TeamProfilePage() {
                                         return (
                                             <div key={game.id} className="bg-surface border border-muted/30 rounded-xl overflow-hidden shadow-sm hover:border-primary/40 hover:shadow-md transition-all flex flex-col md:flex-row md:items-stretch">
                                                 {/* Left side: Game Info */}
-                                                <div className="flex-1 p-5 flex flex-col justify-center">
+                                                <div className="flex-1 p-4 sm:p-5 flex flex-col justify-center min-w-0">
                                                     <div className="flex justify-between items-start mb-4">
                                                         <span className="text-xs font-black tracking-widest uppercase text-muted-foreground bg-muted/10 px-2 py-1 rounded">
                                                             {new Date(game.scheduledDate).toLocaleDateString('es-MX', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                                         </span>
-                                                        <span className={`text-xs font-bold px-2 py-1 rounded border border-muted/30 ${game.status === 'in_progress' ? 'text-primary animate-pulse bg-surface' : game.status === 'finished' ? 'bg-amber-500/10 text-amber-500 border-amber-500/30' : 'text-muted-foreground bg-surface'}`}>
+                                                        <span className={`text-[10px] sm:text-xs font-bold px-2 py-1 rounded border border-muted/30 ml-2 shrink-0 ${game.status === 'in_progress' ? 'text-primary animate-pulse bg-surface' : game.status === 'finished' ? 'bg-amber-500/10 text-amber-500 border-amber-500/30' : 'text-muted-foreground bg-surface'}`}>
                                                             {inningLabel}
                                                         </span>
                                                     </div>
@@ -560,15 +561,15 @@ export default function TeamProfilePage() {
                                                     <div className="space-y-3">
                                                         <div className="flex items-center justify-between">
                                                             <div className="flex items-center gap-3">
-                                                                <div className={`w-3 h-3 rounded-full ${!isHome ? 'bg-primary' : 'bg-muted/20'}`} />
-                                                                <span className={`text-base font-bold ${!isHome ? 'text-foreground' : 'text-muted-foreground'}`}>{game.awayTeam?.name}</span>
+                                                                <div className={`w-3 h-3 shrink-0 rounded-full ${!isHome ? 'bg-primary' : 'bg-muted/20'}`} />
+                                                                <span className={`text-sm sm:text-base font-bold truncate ${!isHome ? 'text-foreground' : 'text-muted-foreground'}`}>{game.awayTeam?.name}</span>
                                                             </div>
                                                             <span className="text-xl font-black">{game.awayScore ?? '-'}</span>
                                                         </div>
                                                         <div className="flex items-center justify-between">
                                                             <div className="flex items-center gap-3">
-                                                                <div className={`w-3 h-3 rounded-full ${isHome ? 'bg-primary' : 'bg-muted/20'}`} />
-                                                                <span className={`text-base font-bold ${isHome ? 'text-foreground' : 'text-muted-foreground'}`}>{game.homeTeam?.name}</span>
+                                                                <div className={`w-3 h-3 shrink-0 rounded-full ${isHome ? 'bg-primary' : 'bg-muted/20'}`} />
+                                                                <span className={`text-sm sm:text-base font-bold truncate ${isHome ? 'text-foreground' : 'text-muted-foreground'}`}>{game.homeTeam?.name}</span>
                                                             </div>
                                                             <span className="text-xl font-black">{game.homeScore ?? '-'}</span>
                                                         </div>

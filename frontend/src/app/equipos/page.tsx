@@ -114,7 +114,7 @@ export default function EquiposPage() {
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
                 {!selectedTournament ? (
                     <div className="animate-fade-in-up">
-                        <h1 className="text-4xl font-black mb-4">Directorio de Equipos</h1>
+                        <h1 className="text-3xl sm:text-4xl font-black mb-4">Directorio de Equipos</h1>
                         <p className="text-lg text-muted-foreground mb-8">
                             Elige un torneo para ver los equipos participantes.
                         </p>
@@ -168,12 +168,12 @@ export default function EquiposPage() {
                             <span className="group-hover:-translate-x-1 transition-transform">&larr;</span> Volver a torneos
                         </button>
 
-                        <div className="mb-10 flex items-center gap-6">
-                            <div className="w-20 h-20 bg-gradient-to-br from-primary/20 to-primary/5 rounded-2xl flex items-center justify-center text-primary font-black text-2xl border border-primary/20 shadow-inner">
+                        <div className="mb-10 flex flex-col sm:flex-row items-center sm:items-center text-center sm:text-left gap-4 sm:gap-6">
+                            <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 bg-gradient-to-br from-primary/20 to-primary/5 rounded-2xl flex items-center justify-center text-primary font-black text-2xl border border-primary/20 shadow-inner">
                                 ⚾
                             </div>
-                            <div>
-                                <h1 className="text-3xl sm:text-4xl font-black text-foreground mb-1">{selectedTournament.name}</h1>
+                            <div className="w-full overflow-hidden">
+                                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-foreground mb-1 truncate">{selectedTournament.name}</h1>
                                 <p className="text-muted-foreground font-medium">{selectedTournament.season}</p>
                             </div>
                         </div>
@@ -192,13 +192,13 @@ export default function EquiposPage() {
                                 <Link href={`/equipos/${team.id}`} key={team.id} className="block group focus:outline-none focus:ring-2 focus:ring-primary rounded-2xl outline-none">
                                     <div className="bg-surface border border-muted/30 rounded-2xl p-6 shadow-sm hover:shadow-xl hover:-translate-y-2 hover:border-primary/50 transition-all duration-300 h-full flex flex-col justify-between cursor-pointer">
 
-                                        <div className="flex items-center gap-5 mb-8">
+                                        <div className="flex items-center gap-4 sm:gap-5 mb-8">
                                             {/* Team Avatar */}
-                                            <div className="w-16 h-16 rounded-[20px] bg-primary flex items-center justify-center font-bold text-2xl text-white shadow-md group-hover:scale-105 transition-transform">
-                                                {team.shortName || team.name.substring(0, 2).toUpperCase()}
+                                            <div className="w-14 h-14 sm:w-16 sm:h-16 shrink-0 rounded-[16px] sm:rounded-[20px] bg-primary flex items-center justify-center font-bold text-xl sm:text-2xl text-white shadow-md group-hover:scale-105 transition-transform overflow-hidden">
+                                                {team.logoUrl ? <img src={team.logoUrl} alt={team.name} className="w-full h-full object-contain" /> : (team.shortName || team.name.substring(0, 2).toUpperCase())}
                                             </div>
-                                            <div>
-                                                <h3 className="font-bold text-[1.1rem] leading-tight text-foreground group-hover:text-primary transition-colors tracking-tight">
+                                            <div className="flex-1 overflow-hidden">
+                                                <h3 className="font-bold text-[1.1rem] leading-tight text-foreground group-hover:text-primary transition-colors tracking-tight truncate">
                                                     {team.name}
                                                 </h3>
                                                 <span className="text-sm text-muted-foreground mt-1 font-medium">{(team._count?.players ?? team.players?.length ?? 0)} jugadores</span>
