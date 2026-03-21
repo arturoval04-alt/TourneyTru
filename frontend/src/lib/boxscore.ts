@@ -39,6 +39,10 @@ export function calculateBoxscore(gameId: string, homeTeam: any, awayTeam: any, 
     const sortedPlays = [...plays].sort((a,b) => new Date(a.timestamp || a.created_at).getTime() - new Date(b.timestamp || b.created_at).getTime());
 
     for (const play of sortedPlays) {
+        const rawResult = (play.result || '').toUpperCase();
+        // Support code|description format
+        const resCode = rawResult.includes('|') ? rawResult.split('|')[0] : rawResult;
+        
         const isTop = play.half === 'top';
         const battingBox = isTop ? awayBox : homeBox;
         const fieldingBox = isTop ? homeBox : awayBox;
@@ -52,11 +56,11 @@ export function calculateBoxscore(gameId: string, homeTeam: any, awayTeam: any, 
         // Find pitcher and update stats
         const pitcher = fieldingBox.lineup.find(p => p.playerId === play.pitcher_id);
         if (pitcher) {
-            if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(play.result)) {
+            if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(resCode)) {
                 pitcher.pitchingHits = (pitcher.pitchingHits || 0) + 1;
             }
-            if (play.result === 'BB') pitcher.pitchingBB = (pitcher.pitchingBB || 0) + 1;
-            if (play.result.startsWith('K')) pitcher.pitchingSO = (pitcher.pitchingSO || 0) + 1;
+            if (resCode === 'BB') pitcher.pitchingBB = (pitcher.pitchingBB || 0) + 1;
+            if (resCode.startsWith('K')) pitcher.pitchingSO = (pitcher.pitchingSO || 0) + 1;
             pitcher.pitchingRuns = (pitcher.pitchingRuns || 0) + (play.runs_scored || 0);
             pitcher.pitchingIPOuts = (pitcher.pitchingIPOuts || 0) + (play.outs_recorded || 0);
         }
@@ -64,29 +68,29 @@ export function calculateBoxscore(gameId: string, homeTeam: any, awayTeam: any, 
         // Find batter
         const batter = battingBox.lineup.find(b => b.playerId === play.batter_id);
         if (batter) {
-            const isRunOnly = play.result === 'WP_RUN' || play.result === 'RUN_SCORED';
+            const isRunOnly = resCode === 'WP_RUN' || resCode === 'RUN_SCORED';
             if (isRunOnly) {
                 batter.runs += 1;
                 // Add to previous play if exists (simplified)
                 continue;
             }
 
-            const isAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH'].includes(play.result);
+            const isAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'INT'].includes(resCode);
             if (isAtBat) batter.atBats++;
 
-            if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(play.result)) {
+            if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(resCode)) {
                 batter.hits++;
                 battingBox.totalHits++;
             }
-            if (play.result === 'BB') batter.bb++;
-            if (play.result.startsWith('K')) batter.so++;
+            if (resCode === 'BB') batter.bb++;
+            if (resCode.startsWith('K')) batter.so++;
             batter.rbi += play.rbi || 0;
             batter.runs += play.runs_scored || 0;
 
             if (!batter.plays[inn]) batter.plays[inn] = [];
             batter.plays[inn].push({
                 inning: inn,
-                result: play.result,
+                result: resCode, // Usamos el código para el boxscore
                 outsRecorded: play.outs_recorded || 0,
                 outsBeforePlay: play.outs_before_play,
                 runsScored: play.runs_scored || 0,

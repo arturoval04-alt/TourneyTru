@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-import { supabase } from "@/lib/supabaseClient";
+import api from "@/lib/api";
 
 function ResetPasswordForm() {
     const router = useRouter();
@@ -30,18 +30,15 @@ function ResetPasswordForm() {
 
         setLoading(true);
         try {
-            const { error } = await supabase.auth.updateUser({
-                password: newPassword
-            });
-
-            if (error) {
-                setError(error.message || "No se pudo actualizar la contraseña.");
+            const token = searchParams.get('token');
+            if (!token) {
+                setError("Token inválido. Solicita un nuevo enlace de recuperación.");
                 return;
             }
-
+            await api.post('/auth/reset-password', { token, newPassword });
             router.push("/login?reset=true");
-        } catch (err) {
-            setError("Error de conexión con el servidor.");
+        } catch (err: any) {
+            setError(err?.response?.data?.message || "No se pudo actualizar la contraseña.");
         } finally {
             setLoading(false);
         }

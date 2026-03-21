@@ -45,6 +45,9 @@ export class TournamentsService {
                     include: {
                         user: true
                     }
+                },
+                news: {
+                    orderBy: { createdAt: 'desc' }
                 }
             },
         });
@@ -102,14 +105,40 @@ export class TournamentsService {
         });
     }
 
-    async addField(tournamentId: string, name: string, location?: string) {
+    async addField(tournamentId: string, name: string, location?: string, mapsUrl?: string) {
         await this.findOne(tournamentId);
 
         return this.prisma.field.create({
             data: {
                 name,
-                location,
+                // If a Maps URL is provided, store it as location (used as href in UI)
+                location: mapsUrl || location,
                 tournamentId
+            }
+        });
+    }
+
+    async createNews(tournamentId: string, data: {
+        title: string;
+        description?: string;
+        coverUrl?: string;
+        facebookUrl?: string;
+        type?: string;
+        hasVideo?: boolean;
+        authorId?: string;
+    }) {
+        await this.findOne(tournamentId);
+
+        return this.prisma.tournamentNews.create({
+            data: {
+                tournamentId,
+                title: data.title,
+                description: data.description,
+                coverUrl: data.coverUrl,
+                facebookUrl: data.facebookUrl,
+                type: data.type || 'Noticia',
+                hasVideo: data.hasVideo ?? false,
+                authorId: data.authorId || null,
             }
         });
     }

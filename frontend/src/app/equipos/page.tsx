@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
-import { supabase } from "@/lib/supabaseClient";
+import api from "@/lib/api";
 
 interface TournamentListItem {
     id: string;
@@ -45,22 +45,8 @@ export default function EquiposPage() {
     useEffect(() => {
         const fetchTournaments = async () => {
             try {
-                const { data, error } = await supabase
-                    .from('tournaments')
-                    .select('*, teams(id), games(id)')
-                    .order('created_at', { ascending: false });
-
-                if (error) throw error;
-
-                const mapped = (data || []).map((t: any) => ({
-                    ...t,
-                    _count: {
-                        teams: t.teams?.length || 0,
-                        games: t.games?.length || 0
-                    }
-                }));
-
-                setTournaments(mapped);
+                const { data } = await api.get('/tournaments');
+                setTournaments(data || []);
                 setLoadingT(false);
             } catch (err) {
                 console.error(err);
@@ -74,23 +60,8 @@ export default function EquiposPage() {
         setSelectedTournament(t);
         setLoadingTeams(true);
         try {
-            const { data, error } = await supabase
-                .from('teams')
-                .select('*, players(id)')
-                .eq('tournament_id', t.id)
-                .order('name', { ascending: true });
-
-            if (error) throw error;
-
-            const mapped = (data || []).map((team: any) => ({
-                ...team,
-                shortName: team.short_name,
-                logoUrl: team.logo_url,
-                managerName: team.manager_name,
-                _count: { players: team.players?.length || 0 }
-            }));
-
-            setTeams(mapped);
+            const { data } = await api.get('/teams', { params: { tournamentId: t.id } });
+            setTeams(data || []);
             setLoadingTeams(false);
         } catch (err) {
             console.error(err);

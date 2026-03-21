@@ -7,9 +7,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
 }
 
 
@@ -35,6 +34,7 @@ model User {
   leaguesAdmin  League[] @relation("LeagueAdmin")
   tournamentsAdmin Tournament[] @relation("TournamentAdmin")
   tournamentOrganizers TournamentOrganizer[]
+  tournamentNews TournamentNews[]
 
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
@@ -93,6 +93,8 @@ model Tournament {
   games       Game[]
   fields      Field[]
   organizers  TournamentOrganizer[]
+  news        TournamentNews[]
+  playerStats PlayerStat[]
   
   createdAt   DateTime @default(now()) @map("created_at")
 
@@ -142,11 +144,12 @@ model Team {
   homeField     Field?       @relation(fields: [homeFieldId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   
   players       Player[]     // Roster
-  
+
   gamesAsHome   Game[]       @relation("HomeTeam")
   gamesAsAway   Game[]       @relation("AwayTeam")
   lineups       Lineup[]
   lineupChanges LineupChange[]
+  playerStats   PlayerStat[]
 
   createdAt     DateTime     @default(now()) @map("created_at")
 
@@ -173,6 +176,8 @@ model Player {
   // Acciones en el Play-by-play
   playsAsBatter Play[]   @relation("BatterPlay")
   playsAsPitcher Play[]  @relation("PitcherPlay")
+
+  playerStats   PlayerStat[]
 
   // Premios de juego (MVPs)
   gamesWonAsPitcher Game[] @relation("GameWinningPitcher")
@@ -301,6 +306,61 @@ model LineupChange {
   createdAt     DateTime @default(now()) @map("created_at")
 
   @@map("lineup_changes")
+}
+
+model PlayerStat {
+  id           String      @id @default(uuid())
+  playerId     String      @map("player_id")
+  player       Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  teamId       String      @map("team_id")
+  team         Team        @relation(fields: [teamId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tournamentId String?     @map("tournament_id")
+  tournament   Tournament? @relation(fields: [tournamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  // Batting
+  atBats   Int @default(0) @map("at_bats")
+  runs     Int @default(0)
+  hits     Int @default(0)
+  h2       Int @default(0)
+  h3       Int @default(0)
+  hr       Int @default(0)
+  rbi      Int @default(0)
+  bb       Int @default(0)
+  so       Int @default(0)
+  hbp      Int @default(0)
+  sac      Int @default(0)
+
+  // Pitching
+  wins       Int @default(0)
+  losses     Int @default(0)
+  ipOuts     Int @default(0) @map("ip_outs")
+  hAllowed   Int @default(0) @map("h_allowed")
+  erAllowed  Int @default(0) @map("er_allowed")
+  bbAllowed  Int @default(0) @map("bb_allowed")
+  soPitching Int @default(0) @map("so_pitching")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([playerId, teamId, tournamentId])
+  @@map("player_stats")
+}
+
+model TournamentNews {
+  id           String     @id @default(uuid())
+  tournamentId String     @map("tournament_id")
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  authorId     String?    @map("author_id")
+  author       User?      @relation(fields: [authorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  title        String
+  description  String?    @db.NVarChar(Max)
+  coverUrl     String?    @map("cover_url")
+  facebookUrl  String?    @map("facebook_url")
+  type         String     @default("Noticia")
+  hasVideo     Boolean    @default(false) @map("has_video")
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  @@map("tournament_news")
 }
 
 // Registro histórico de cada acción -> Fundamental para sabermetría y recrear juegos

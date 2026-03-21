@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { supabase } from '@/lib/supabaseClient';
-import { RealtimeChannel } from '@supabase/supabase-js';
+import { io, Socket } from 'socket.io-client';
+import { getAccessToken } from '@/lib/auth';
+import api from '@/lib/api';
 
 export interface PlayLog {
     text: string;
@@ -94,14 +95,14 @@ export interface GameState extends BaseState {
     undo: () => void;
 }
 
-let gameChannel: RealtimeChannel | null = null;
+let gameSocket: Socket | null = null;
 
-// Helper para enviar estado completo consolidado directamente a Supabase (Serverless)
+// Helper: envía la jugada al backend via Socket.io.
+// El backend persiste en DB, actualiza el game y hace broadcast a todos los clientes.
 const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsScored: number = 0, outsOffensive: number = 0, currentBatterIdOverride: string | null = null, inningOverride: number | null = null, halfOverride: string | null = null, outsBeforeOverride: number | null = null) => {
     const stateSnapshot = get();
     if (!stateSnapshot.gameId) return;
 
-    // 1. Identificar actores
     const activeBatterId = currentBatterIdOverride || stateSnapshot.currentBatterId;
     const defensiveLineup = stateSnapshot.half === 'top' ? stateSnapshot.homeLineup : stateSnapshot.awayLineup;
     const currentPitcher = defensiveLineup.find((item: LineupItem) => item.position === "1" || item.position === "P");
@@ -111,72 +112,62 @@ const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsSc
     const payloadHalf = halfOverride !== null ? halfOverride : stateSnapshot.half;
     const payloadOutsBefore = outsBeforeOverride !== null ? outsBeforeOverride : Math.max(0, stateSnapshot.outs - outsOffensive);
 
-    try {
-        const newPlay = {
-            game_id: stateSnapshot.gameId,
-            inning: payloadInning,
-            half: payloadHalf,
-            outs_before_play: payloadOutsBefore,
-            result: resultStr,
-            rbi: runsScored, 
-            runs_scored: runsScored,
-            outs_recorded: outsOffensive,
-            batter_id: activeBatterId,
-            pitcher_id: activePitcherId,
-            timestamp: new Date().toISOString(),
-        };
+    const logText = resultStr.includes('|') ? resultStr.split('|')[1] : resultStr;
+    const resCode = resultStr.includes('|') ? resultStr.split('|')[0] : resultStr;
 
-        await supabase.from('plays').insert(newPlay);
+    // Actualizar log local inmediatamente (sin esperar respuesta del backend)
+    useGameStore.setState(state => ({
+        playLogs: [{ text: `Inning ${payloadInning}: ${logText}` }, ...state.playLogs]
+    }));
 
-        // Actualizar estado local inmediatamente para el Scorekeeper
-        useGameStore.setState(state => ({
-            plays: [...state.plays, newPlay],
-            playLogs: [{ text: `Inning ${payloadInning}: ${resultStr}` }, ...state.playLogs]
-        }));
+    const nextState = get();
 
-        // 2. Sincronizar estado global en la tabla Games
-        const nextState = get(); 
-        await supabase.from('games').update({
-            home_score: nextState.homeScore,
-            away_score: nextState.awayScore,
-            current_inning: nextState.inning,
-            half: nextState.half,
-            status: 'in_progress',
-        }).eq('id', stateSnapshot.gameId);
-
-        // 3. Broadcast Realtime
-        if (gameChannel) {
-            gameChannel.send({
-                type: 'broadcast',
-                event: 'gameStateUpdate',
-                payload: {
-                    lastPlay: { result: resultStr, inning: payloadInning, half: payloadHalf },
-                    fullState: {
-                        inning: nextState.inning,
-                        half: nextState.half,
-                        outs: nextState.outs,
-                        balls: nextState.balls,
-                        strikes: nextState.strikes,
-                        homeScore: nextState.homeScore,
-                        awayScore: nextState.awayScore,
-                        bases: nextState.bases,
-                        currentBatter: nextState.currentBatter,
-                        currentBatterId: nextState.currentBatterId,
-                        playLogs: nextState.playLogs,
-                        homeLineup: nextState.homeLineup,
-                        awayLineup: nextState.awayLineup,
-                        playbackId: nextState.playbackId,
-                        currentPitcher: (() => {
-                            const defLineup = nextState.half === 'top' ? nextState.homeLineup : nextState.awayLineup;
-                            const p = defLineup.find((item: LineupItem) => item.position === '1' || item.position === 'P');
-                            return p?.player ? `${p.player.firstName} ${p.player.lastName}` : 'Pitcher Desconocido';
-                        })(),
-                    }
-                }
+    // Un solo emit al backend — él hace todo: DB, update game, broadcast
+    if (gameSocket?.connected) {
+        gameSocket.emit('registerPlay', {
+            gameId: stateSnapshot.gameId,
+            token: getAccessToken(),
+            playInfo: {
+                inning: payloadInning,
+                half: payloadHalf,
+                outs_before_play: payloadOutsBefore,
+                result: resultStr,
+                rbi: runsScored,
+                runs_scored: runsScored,
+                outs_recorded: outsOffensive,
+                batter_id: activeBatterId,
+                pitcher_id: activePitcherId,
+            },
+            fullState: {
+                inning: nextState.inning,
+                half: nextState.half,
+                outs: nextState.outs,
+                balls: nextState.balls,
+                strikes: nextState.strikes,
+                homeScore: nextState.homeScore,
+                awayScore: nextState.awayScore,
+                bases: nextState.bases,
+                currentBatter: nextState.currentBatter,
+                currentBatterId: nextState.currentBatterId,
+                playLogs: nextState.playLogs,
+                homeLineup: nextState.homeLineup,
+                awayLineup: nextState.awayLineup,
+                playbackId: nextState.playbackId,
+                lastPlay: { result: resCode, description: logText, inning: payloadInning, half: payloadHalf },
+            },
+        });
+    } else {
+        // Fallback HTTP si el socket no está conectado
+        try {
+            await api.post(`/games/${stateSnapshot.gameId}/plays`, {
+                inning: payloadInning, half: payloadHalf,
+                outs_before_play: payloadOutsBefore, result: resultStr,
+                rbi: runsScored, runs_scored: runsScored, outs_recorded: outsOffensive,
+                batter_id: activeBatterId, pitcher_id: activePitcherId,
             });
+        } catch (e) {
+            console.error("Fallback HTTP play failed:", e);
         }
-    } catch (error) {
-        console.error("Error in serverless emitPlayToBackend:", error);
     }
 };
 
@@ -271,23 +262,9 @@ export const useGameStore = create<GameState>()(
                 const { gameId } = get();
                 if (!gameId) return;
                 try {
-                    const { data, error } = await supabase
-                        .from('games')
-                        .select(`
-                            id, home_score, away_score, current_inning, half, status,
-                            home_team_id, away_team_id, playback_id,
-                            lineups (*, player:players (*)),
-                            plays (*),
-                            winningPitcher:players!winning_pitcher_id(*),
-                            mvpBatter1:players!mvp_batter1_id(*),
-                            mvpBatter2:players!mvp_batter2_id(*)
-                        `)
-                        .eq('id', gameId)
-                        .single();
+                    const { data: gameData } = await api.get(`/games/${gameId}/state`);
 
-                    if (error) throw error;
-                    if (data) {
-                        const gameData = data as any;
+                    if (gameData) {
                         const sanitizeLineup = (lp: any[]) => lp.map(l => ({
                             playerId: l.player_id, teamId: l.team_id,
                             position: l.position, battingOrder: l.batting_order,
@@ -336,7 +313,10 @@ export const useGameStore = create<GameState>()(
                                 mvpBatter1: gameData.mvpBatter1,
                                 mvpBatter2: gameData.mvpBatter2,
                                 status: gameData.status,
-                                playLogs: plays.map((p: any) => ({ text: `Inning ${p.inning}: ${p.result}` })).reverse()
+                                playLogs: plays.map((p: any) => {
+                                    const logText = (p.result || '').includes('|') ? p.result.split('|')[1] : p.result;
+                                    return { text: `Inning ${p.inning}: ${logText}` };
+                                }).reverse()
                             });
                         } else {
                             // No hay jugadas aún, inicializar con el primer bateador
@@ -370,15 +350,24 @@ export const useGameStore = create<GameState>()(
             connectSocket: () => {
                 const { gameId } = get();
                 if (!gameId) return;
-                if (gameChannel) gameChannel.unsubscribe();
-                gameChannel = supabase.channel(`game-${gameId}`, { config: { broadcast: { self: true } } });
-                gameChannel.subscribe((status) => {
-                    if (status === 'SUBSCRIBED') console.log(`Realtime subscribed: game-${gameId}`);
+                if (gameSocket) gameSocket.disconnect();
+
+                const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+                gameSocket = io(`${backendUrl}/live_games`, {
+                    auth: { token: getAccessToken() },
+                    transports: ['websocket'],
                 });
+
+                gameSocket.on('connect', () => {
+                    console.log(`Socket connected: game-${gameId}`);
+                    gameSocket!.emit('joinGame', gameId);
+                });
+
+                gameSocket.on('disconnect', () => console.log('Socket disconnected'));
             },
 
             disconnectSocket: () => {
-                if (gameChannel) { gameChannel.unsubscribe(); gameChannel = null; }
+                if (gameSocket) { gameSocket.disconnect(); gameSocket = null; }
             },
 
             resetCount: () => set({ balls: 0, strikes: 0 }),
@@ -520,7 +509,7 @@ export const useGameStore = create<GameState>()(
                 const activeId = state.currentBatterId;
                 if (totalOuts >= 3) get().nextHalfInning();
                 else { set({ outs: totalOuts, bases: newBases, baseIds: newBaseIds }); get().cycleBatter(); }
-                emitPlayToBackend(get, "FC", 0, 1, activeId);
+                emitPlayToBackend(get, "FC|Bola Ocupada", 0, 1, activeId);
             },
 
             executeSacrifice: (type) => {
@@ -532,7 +521,7 @@ export const useGameStore = create<GameState>()(
                 if (state.bases.third) runs = 1;
                 if (totalOuts >= 3) get().nextHalfInning();
                 else { set({ outs: totalOuts, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore }); get().cycleBatter(); }
-                emitPlayToBackend(get, type === 'fly' ? 'SF' : 'SH', runs, 1, activeId);
+                emitPlayToBackend(get, type === 'fly' ? 'SF|Fly de Sacrificio' : 'SH|Toque de Sacrificio', runs, 1, activeId);
             },
 
             registerCustomPlay: (desc) => {

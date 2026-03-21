@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import Image from "next/image";
 
-import { supabase } from "@/lib/supabaseClient";
+import api from "@/lib/api";
 
 interface TournamentListItem {
     id: string;
@@ -44,22 +44,8 @@ export default function JugadoresPage() {
     useEffect(() => {
         const fetchTournaments = async () => {
             try {
-                const { data, error } = await supabase
-                    .from('tournaments')
-                    .select('*, teams(id), games(id)')
-                    .order('created_at', { ascending: false });
-
-                if (error) throw error;
-
-                const mappedData = (data || []).map((t: any) => ({
-                    ...t,
-                    _count: {
-                        teams: t.teams?.length || 0,
-                        games: t.games?.length || 0
-                    }
-                }));
-
-                setTournaments(mappedData);
+                const { data } = await api.get('/tournaments');
+                setTournaments(data || []);
                 setLoadingT(false);
             } catch (err) {
                 console.error(err);
@@ -75,25 +61,16 @@ export default function JugadoresPage() {
         setLoadingPlayers(true);
 
         try {
-            const { data, error } = await supabase
-                .from('teams')
-                .select(`
-                    id, name,
-                    players(*)
-                `)
-                .eq('tournament_id', t.id);
-
-            if (error) throw error;
+            const { data } = await api.get('/teams', {
+                params: { tournamentId: t.id, includePlayers: true }
+            });
 
             const allPlayers: PlayerItem[] = [];
-            for (const team of data || []) {
-                for (const p of (team as any).players || []) {
-                    allPlayers.push({ 
-                        ...p, 
-                        firstName: p.first_name,
-                        lastName: p.last_name,
-                        photoUrl: p.photo_url,
-                        team: { id: team.id, name: team.name } 
+            for (const team of (data || []) as any[]) {
+                for (const p of team.players || []) {
+                    allPlayers.push({
+                        ...p,
+                        team: { id: team.id, name: team.name }
                     });
                 }
             }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import api from "@/lib/api";
 import { saveSession } from "@/lib/auth";
 
 export default function RegisterPage() {
@@ -40,72 +40,33 @@ export default function RegisterPage() {
 
         setLoading(true);
         try {
-            // 1. Registro en Supabase Auth
-            const { data: authData, error: authError } = await supabase.auth.signUp({
+            const { data } = await api.post('/auth/register', {
                 email: formData.correo.trim().toLowerCase(),
                 password: formData.password,
-                options: {
-                    data: {
-                        first_name: formData.nombre.trim(),
-                        last_name: formData.apellido.trim(),
-                    }
-                }
+                firstName: formData.nombre.trim(),
+                lastName: formData.apellido.trim(),
+                phone: formData.celular || undefined,
             });
 
-            if (authError) {
-                setError(authError.message);
-                return;
+            saveSession({
+                id: data.user.id,
+                email: data.user.email,
+                firstName: data.user.firstName,
+                lastName: data.user.lastName,
+                role: data.user.role,
+            }, {
+                accessToken: data.accessToken,
+                refreshToken: data.refreshToken,
+            });
+
+            router.push("/");
+        } catch (err: any) {
+            const msg = err?.response?.data?.message;
+            if (msg?.includes('already')) {
+                setError("Ya existe una cuenta con ese correo.");
+            } else {
+                setError(msg || "Error de conexión con el servidor.");
             }
-
-            if (authData.user) {
-                // 2. Obtener el ID del rol 'public'
-                const { data: roleData } = await supabase
-                    .from('roles')
-                    .select('id')
-                    .eq('name', 'public')
-                    .single();
-
-                // 3. Crear el perfil en nuestra tabla 'users'
-                const now = new Date().toISOString();
-                const { error: profileError } = await supabase
-                    .from('users')
-                    .insert({
-                        id: authData.user.id,
-                        email: formData.correo.trim().toLowerCase(),
-                        first_name: formData.nombre.trim(),
-                        last_name: formData.apellido.trim(),
-                        phone: formData.celular || null,
-                        role_id: roleData?.id,
-                        password_hash: '', // No necesario con Supabase Auth
-                        created_at: now,
-
-                    });
-
-                if (profileError) {
-                    console.error("Error al crear perfil:", profileError);
-                    // No bloqueamos el login si el perfil falla, pero informamos
-                }
-
-                if (authData.session) {
-                    saveSession({
-                        id: authData.user.id,
-                        email: authData.user.email!,
-                        firstName: formData.nombre.trim(),
-                        lastName: formData.apellido.trim(),
-                        role: 'public',
-                    }, {
-                        accessToken: authData.session.access_token,
-                        refreshToken: authData.session.refresh_token!,
-                    });
-                    router.push("/");
-                } else {
-                    // Si requiere confirmación de email
-                    setError("Cuenta creada. Por favor verifica tu correo electrónico para iniciar sesión.");
-                }
-            }
-        } catch (err) {
-            console.error(err);
-            setError("Error de conexión con el servidor.");
         } finally {
             setLoading(false);
         }

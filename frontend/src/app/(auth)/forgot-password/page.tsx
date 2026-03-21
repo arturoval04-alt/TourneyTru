@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 
-import { supabase } from "@/lib/supabaseClient";
+import api from "@/lib/api";
 
 export default function ForgotPasswordPage() {
     const [email, setEmail] = useState("");
@@ -17,18 +17,13 @@ export default function ForgotPasswordPage() {
         setLoading(true);
 
         try {
-            const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-                redirectTo: `${window.location.origin}/reset-password`,
+            await api.post('/auth/forgot-password', {
+                email: email.trim().toLowerCase(),
             });
-
-            if (error) {
-                setError(error.message || "Ocurrió un error.");
-                return;
-            }
-
             setSubmitted(true);
-        } catch (err) {
-            setError("Error de conexión con el servidor.");
+        } catch (err: any) {
+            // Por seguridad mostramos éxito aunque el email no exista
+            setSubmitted(true);
         } finally {
             setLoading(false);
         }

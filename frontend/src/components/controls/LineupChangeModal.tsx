@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { supabase } from "@/lib/supabaseClient";
+import api from "@/lib/api";
 import { LineupItem, useGameStore } from '@/store/gameStore';
 
 interface LineupChangeModalProps {
@@ -9,8 +9,8 @@ interface LineupChangeModalProps {
 
 interface TeamPlayer {
     id: string;
-    first_name: string;
-    last_name: string;
+    firstName: string;
+    lastName: string;
     number?: number;
 }
 
@@ -96,15 +96,8 @@ export default function LineupChangeModal({ isOpen, onClose }: LineupChangeModal
         const loadRoster = async (teamId: string | null) => {
             if (!teamId || rosters[teamId]) return;
             try {
-                const { data, error } = await supabase
-                    .from('players')
-                    .select('*')
-                    .eq('team_id', teamId);
-                
-                if (error) throw error;
-                if (data) {
-                    setRosters((prev) => ({ ...prev, [teamId]: data || [] }));
-                }
+                const { data } = await api.get('/players', { params: { teamId } });
+                setRosters((prev) => ({ ...prev, [teamId]: data || [] }));
             } catch (err) {
                 console.error("Error loading roster:", err);
                 setRosters((prev) => ({ ...prev, [teamId]: [] }));
@@ -146,42 +139,21 @@ export default function LineupChangeModal({ isOpen, onClose }: LineupChangeModal
 
         setLoading(true);
         try {
-            // 1. Update Lineup record
-            const { error: updateError } = await supabase
-                .from('lineups')
-                .update({
-                    player_id: playerInId,
-                    position: position,
-                    dh_for_position: normalizePosition(position) === 'DH' ? dhForPosition : null,
-                    is_starter: false
-                })
-                .eq('game_id', gameId)
-                .eq('team_id', selectedTeamId)
-                .eq('batting_order', battingOrder);
-
-            if (updateError) throw updateError;
-
-            // 2. Insert into LineupChange history
-            const { error: insertError } = await supabase
-                .from('lineup_changes')
-                .insert({
-                    game_id: gameId,
-                    team_id: selectedTeamId,
-                    batting_order: battingOrder,
-                    player_out_id: currentSlot?.playerId || null,
-                    player_in_id: playerInId,
-                    position: position,
-                    dh_for_position: normalizePosition(position) === 'DH' ? dhForPosition : null
-                });
-
-            if (insertError) throw insertError;
+            await api.post(`/games/${gameId}/lineup-change`, {
+                teamId: selectedTeamId,
+                battingOrder,
+                playerInId,
+                playerOutId: currentSlot?.playerId || null,
+                position,
+                dhForPosition: normalizePosition(position) === 'DH' ? dhForPosition : null,
+            });
 
             await fetchGameConfig();
             connectSocket();
             onClose();
         } catch (err: any) {
             console.error(err);
-            setError(err.message || 'No se pudo actualizar el lineup.');
+            setError(err.response?.data?.message || err.message || 'No se pudo actualizar el lineup.');
         } finally {
             setLoading(false);
         }
@@ -239,7 +211,7 @@ export default function LineupChangeModal({ isOpen, onClose }: LineupChangeModal
                                 <option value="">Selecciona jugador</option>
                                 {availablePlayers.map((p) => (
                                     <option key={p.id} value={p.id}>
-                                        {p.number ? `#${p.number} - ` : ''}{p.first_name} {p.last_name}
+                                        {p.number ? `#${p.number} - ` : ''}{p.firstName} {p.lastName}
                                     </option>
                                 ))}
                             </select>

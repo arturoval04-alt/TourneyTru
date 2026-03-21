@@ -42,10 +42,17 @@ export default function AdvancedPlayModal({ isOpen, onClose }: AdvancedPlayModal
         processRunner(runner1Dest, bases.first, baseIds.first);
         processRunner(batterDest, currentBatter, currentBatterId);
 
-        const desc = playDescription || 'Jugada Avanzada / Error';
+        let code = 'ADV';
+        if (batterDest === '1B') code = 'H1';
+        else if (batterDest === '2B') code = 'H2';
+        else if (batterDest === '3B') code = 'H3';
+        else if (batterDest === 'Home') code = 'HR';
+        else if (batterDest === 'Out') code = 'OUT';
+
+        const fullResult = `${code}|${playDescription || 'Jugada Avanzada / Error'}`;
 
         // 2. Enviar actualización al Store
-        executeAdvancedPlay(newBases, newBaseIds, runsScored, outsRecorded, desc);
+        executeAdvancedPlay(newBases, newBaseIds, runsScored, outsRecorded, fullResult);
 
         // 3. Reset y cerrar
         setPlayDescription('');

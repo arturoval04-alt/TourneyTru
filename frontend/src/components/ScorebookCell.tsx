@@ -20,7 +20,9 @@ interface ParsedPlay {
 }
 
 function parsePlay(result: string): ParsedPlay {
-    const r = result.trim().toUpperCase();
+    // Support code|description format
+    const cleanResult = result.includes('|') ? result.split('|')[0] : result;
+    const r = cleanResult.trim().toUpperCase();
 
     // ── Hits (H1/H2/H3/HR — notación WBSC del usuario) ──────────────────────
     if (r === 'HR') return { label: 'HR', labelColor: 'text-indigo-600', basesReached: 4, isOut: false, isStrikeoutSwinging: false, isStrikeoutLooking: false };

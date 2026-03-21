@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import api from "@/lib/api";
 import { saveSession } from "@/lib/auth";
 
 export default function LoginPage() {
@@ -19,46 +19,33 @@ export default function LoginPage() {
         setLoading(true);
 
         try {
-            const { data, error: authError } = await supabase.auth.signInWithPassword({
+            const { data } = await api.post('/auth/login', {
                 email: email.trim().toLowerCase(),
                 password,
             });
 
-            if (authError) {
-                setError(authError.message === "Invalid login credentials" ? "Credenciales incorrectas." : authError.message);
-                return;
+            saveSession({
+                id: data.user.id,
+                email: data.user.email,
+                firstName: data.user.firstName,
+                lastName: data.user.lastName,
+                role: data.user.role,
+            }, {
+                accessToken: data.accessToken,
+                refreshToken: data.refreshToken,
+            });
+
+            const role = data.user.role;
+            if (role === "admin" || role === "scorekeeper") {
+                router.push("/admin/dashboard");
+            } else {
+                router.push("/");
             }
-
-            if (data.user && data.session) {
-                // Obtener datos adicionales del usuario desde nuestra tabla 'users'
-                const { data: userData } = await supabase
-                    .from('users')
-                    .select('id, email, first_name, last_name, role_id, roles(name)')
-                    .eq('email', data.user.email)
-                    .single();
-
-                const roleName = (userData as any)?.roles?.name || 'public';
-
-                saveSession({
-                    id: userData?.id || data.user.id,
-                    email: data.user.email!,
-                    firstName: (userData as any)?.first_name || '',
-                    lastName: (userData as any)?.last_name || '',
-                    role: roleName,
-                }, {
-                    accessToken: data.session.access_token,
-                    refreshToken: data.session.refresh_token!,
-                });
-
-                if (roleName === "admin" || roleName === "scorekeeper") {
-                    router.push("/admin/dashboard");
-                } else {
-                    router.push("/");
-                }
-            }
-        } catch (err) {
-            console.error(err);
-            setError("Error de conexión con el servidor.");
+        } catch (err: any) {
+            const msg = err?.response?.data?.message;
+            setError(msg === "Invalid credentials" || msg === "Unauthorized"
+                ? "Credenciales incorrectas."
+                : "Error de conexión con el servidor.");
         } finally {
             setLoading(false);
         }

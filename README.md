@@ -1,48 +1,58 @@
-# ScoreKeeper
+# ScoreKeeper - Nueva Arquitectura
 
-Aplicación para llevar la puntuación y el tablero en vivo de partidos deportivos.
+Aplicación avanzada para la gestión de torneos deportivos, anotaciones en vivo y sabermetría.
 
-## Requisitos previos
+## 🏗️ Arquitectura Actual
 
-- Node.js (preferentemente v18+)
-- NPM o Yarn
+El proyecto ha sido migrado de un modelo serverless (Supabase) a una arquitectura robusta de servidor:
 
-## Estructura del Proyecto
+- **Frontend**: Next.js (React, Tailwind CSS) - Ubicado en `/frontend`.
+- **Backend**: NestJS (Node.js framework) - Ubicado en `/backend`.
+- **Base de Datos**: SQL Server (Local/Remoto) gestionado mediante **Prisma ORM**.
+- **Conectividad**: Cloudflare Tunnel para exponer de forma segura el backend local al frontend (ej. Vercel).
 
-El proyecto ha sido migrado a una arquitectura **Serverless con Supabase**:
-- **`frontend`**: Aplicación principal construida con Next.js, React y Tailwind CSS. Utiliza Supabase para autenticación, base de datos y tiempo real.
-- **`backend`**: (Legacy) Anteriormente utilizado para la lógica de servidor, ahora reemplazado por Supabase y Route Handlers nativos de Next.js.
+## 🚀 Guía de Inicio Rápido
 
-## Configuración y Ejecución
+### 1. Requisitos Previos
+- Node.js v18+
+- SQL Server (Instancia local o remota)
+- Cloudflare Tunnel (`cloudflared`) instalado para acceso externo.
 
-Ya no es necesario ejecutar un servidor backend por separado. Todo funciona a través del frontend conectado a Supabase.
-
-### Paso 1: Configurar Variables de Entorno
-Asegúrate de tener un archivo `.env.local` dentro de la carpeta `frontend` con las siguientes variables:
-```env
-NEXT_PUBLIC_SUPABASE_URL=tu_url_de_supabase
-NEXT_PUBLIC_SUPABASE_ANON_KEY=tu_llave_anon_de_supabase
-```
-
-### Paso 2: Ejecutar el Proyecto
-1. Abre una terminal en la raíz del proyecto.
-2. Navega a la carpeta del frontend:
-   ```bash
-   cd frontend
-   ```
-3. Instala las dependencias (si no lo has hecho):
+### 2. Configuración del Backend
+1. Navega a `backend/`.
+2. Copia `.env.example` a `.env` y configura tu `DATABASE_URL`.
+3. Instala dependencias e inicia el servidor:
    ```bash
    npm install
+   npm run start:dev
    ```
-4. Inicia la aplicación en modo desarrollo:
+4. Sincroniza la base de datos (si es necesario):
    ```bash
+   npx prisma db push
+   ```
+
+### 3. Configuración del Frontend
+1. Navega a `frontend/`.
+2. Configura `.env.local` con la URL de tu API:
+   ```env
+   NEXT_PUBLIC_API_URL=http://localhost:3001 # O tu URL de Cloudflare
+   ```
+3. Instala dependencias e inicia:
+   ```bash
+   npm install
    npm run dev
    ```
 
-### Paso 3: Abrir la Aplicación
-Abre [http://localhost:3000](http://localhost:3000) en tu navegador.
+## 🛠️ Tecnologías Utilizadas
+- **Lenguaje**: TypeScript
+- **Frameworks**: NestJS, Next.js
+- **ORM**: Prisma (SQL Server)
+- **Estilos**: Tailwind CSS
+- **Autenticación**: JWT (JSON Web Tokens)
+- **Comunicación**: Axios con Interceptores
 
-
-### Paso 3: Abrir la Aplicación
-
-
+## 📡 Túnel de Cloudflare
+Para configurar el acceso externo:
+1. Ejecuta `cloudflared tunnel run <nombre-del-túnel>`.
+2. Asegúrate de que el tráfico se redirija a `http://localhost:3001`.
+3. Actualiza `ALLOWED_ORIGINS` en el `.env` del backend para permitir el dominio de tu frontend.

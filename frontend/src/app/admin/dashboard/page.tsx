@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getUser, AuthUser } from '@/lib/auth';
-import { supabase } from '@/lib/supabaseClient';
+import api from '@/lib/api';
 
 export default function AdminDashboard() {
     const router = useRouter();
@@ -98,72 +98,7 @@ export default function AdminDashboard() {
         }
     }, []);
 
-    useEffect(() => {
-        const loadCurrentUser = async () => {
-            try {
-                const { data, error } = await supabase.auth.getSession();
-                if (error) throw error;
-                if (data?.session) {
-                    let { data: userProfile, error: profileError } = await supabase
-                        .from('users')
-                        .select('*, roles(name)')
-                        .eq('id', data.session.user.id)
-                        .single();
-
-                    // Si el perfil no existe (PGRST116), lo creamos automáticamente (Fallback Frontend)
-                    if (profileError && (profileError.code === 'PGRST116')) {
-                        console.log("Perfil no encontrado en DB, creando uno nuevo...");
-                        
-                        // Buscamos el ID del rol public para asignarlo
-                        const { data: publicRole } = await supabase.from('roles').select('id').eq('name', 'public').single();
-                        
-                        const { data: newProfile, error: insertError } = await supabase
-                            .from('users')
-                            .insert({
-                                id: data.session.user.id,
-                                email: data.session.user.email,
-                                first_name: data.session.user.user_metadata?.first_name || data.session.user.user_metadata?.full_name?.split(' ')[0] || '',
-                                last_name: data.session.user.user_metadata?.last_name || data.session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '',
-                                role_id: publicRole?.id,
-                                password_hash: 'OAUTH_USER', // Evitar error de NOT NULL
-                                created_at: new Date().toISOString(),
-                            })
-                            .select('*, roles(name)')
-                            .single();
-                        
-                        if (insertError) {
-                            console.error("Error creando perfil automático:", insertError);
-                            // Si falla por RLS, al menos intentamos seguir con los datos de Auth
-                            userProfile = {
-                                id: data.session.user.id,
-                                email: data.session.user.email,
-                                roles: { name: 'public' }
-                            };
-                        } else {
-                            userProfile = newProfile;
-                        }
-                    } else if (profileError) {
-                        throw profileError;
-                    }
-
-                    const merged = {
-                        ...data.session.user,
-                        ...userProfile,
-                        firstName: userProfile?.first_name || data.session.user.user_metadata?.first_name || data.session.user.user_metadata?.full_name?.split(' ')[0] || '',
-                        lastName: userProfile?.last_name || data.session.user.user_metadata?.last_name || data.session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '',
-                        role: userProfile?.roles?.name || 'public',
-                        profilePicture: userProfile?.profile_picture || data.session.user.user_metadata?.avatar_url || null,
-                        phone: userProfile?.phone || ''
-                    } as AuthUser;
-                    localStorage.setItem('user', JSON.stringify(merged));
-                    setCurrentUser(merged);
-                }
-            } catch (err) {
-                console.error("Error loading current user:", err);
-            }
-        };
-        loadCurrentUser();
-    }, []);
+    // El usuario ya está en el store JWT vía getUser() en el siguiente useEffect
 
     useEffect(() => {
         if (!currentUser) {
@@ -231,56 +166,29 @@ export default function AdminDashboard() {
     // --- API Fetchers ---
     const fetchGames = async () => {
         try {
-            const { data, error } = await supabase
-                .from('games')
-                .select('*, homeTeam:teams!home_team_id(name), awayTeam:teams!away_team_id(name)')
-                .order('created_at', { ascending: false });
-            
-            if (error) throw error;
-            setGames(data as any);
+            const { data } = await api.get('/games');
+            setGames(data || []);
         } catch (err) { console.error("Error fetching games:", err); }
     };
 
     const fetchTournaments = async () => {
         try {
-            const { data, error } = await supabase
-                .from('tournaments')
-                .select('*, league:leagues(id, name), _count:teams(count), _count_games:games(count)');
-            
-            if (error) throw error;
-            // Map the count structure to match previous expectation if necessary
-            const formatted = data.map((t: any) => ({
-                ...t,
-                _count: {
-                    teams: t._count?.[0]?.count || 0,
-                    games: t._count_games?.[0]?.count || 0
-                }
-            }));
-            setTournaments(formatted);
+            const { data } = await api.get('/tournaments');
+            setTournaments(data || []);
         } catch (err) { console.error("Error fetching tournaments:", err); }
     }
 
     const fetchLeagues = async () => {
         try {
-            const { data, error } = await supabase
-                .from('leagues')
-                .select('*');
-            if (error) throw error;
-            setLeagues(data);
+            const { data } = await api.get('/leagues');
+            setLeagues(data || []);
         } catch (err) { console.error("Error fetching leagues:", err); }
     };
 
     const fetchUsers = async () => {
         try {
-            const { data, error } = await supabase
-                .from('users')
-                .select('*, roles(name)');
-            if (error) throw error;
-            const formatted = data.map((u: any) => ({
-                ...u,
-                role: u.roles?.name || 'public'
-            }));
-            setUsers(formatted);
+            const { data } = await api.get('/users');
+            setUsers(data || []);
         } catch (err) { console.error("Error fetching users:", err); }
     };
 
@@ -302,13 +210,9 @@ export default function AdminDashboard() {
             setTeams([]);
             return;
         }
-        supabase
-            .from('teams')
-            .select('*')
-            .eq('tournament_id', selectedTournament)
-            .then(({ data, error }) => {
-                if (!error) setTeams(data || []);
-            });
+        api.get('/teams', { params: { tournamentId: selectedTournament } })
+            .then(({ data }) => setTeams(data || []))
+            .catch(err => console.error(err));
     }, [selectedTournament]);
 
     // Fetch Players when Selected Team changes
@@ -317,23 +221,9 @@ export default function AdminDashboard() {
             setPlayers([]);
             return;
         }
-        supabase
-            .from('players')
-            .select('*, team:teams(name)')
-            .eq('team_id', selectedTeam)
-            .then(({ data, error }) => {
-                if (!error && data) {
-                    const mappedPlayers = data.map(p => ({
-                        ...p,
-                        firstName: p.first_name,
-                        lastName: p.last_name,
-                        photoUrl: p.photo_url
-                    }));
-                    setPlayers(mappedPlayers);
-                } else {
-                    setPlayers([]);
-                }
-            });
+        api.get('/players', { params: { teamId: selectedTeam } })
+            .then(({ data }) => setPlayers(data || []))
+            .catch(err => console.error(err));
     }, [selectedTeam]);
 
 
@@ -358,27 +248,17 @@ export default function AdminDashboard() {
 
         setSaving(true);
         try {
-            const now = new Date().toISOString();
-            const { data: newGame, error } = await supabase
-                .from('games')
-                .insert({
-                    tournament_id: selectedTournament,
-                    home_team_id: homeTeamId,
-                    away_team_id: awayTeamId,
-                    scheduled_date: now,
-                    status: 'scheduled',
-                    created_at: now
-                })
-                .select()
-                .single();
-
-            if (error) throw error;
-            if (newGame) {
-                alert('Partido Creado');
-                setShowGameModal(false);
-                fetchGames();
-                router.push(`/admin/games/${newGame.id}/roster`);
-            }
+            const { data: newGame } = await api.post('/games', {
+                tournamentId: selectedTournament,
+                homeTeamId,
+                awayTeamId,
+                status: 'scheduled',
+                scheduledDate: new Date().toISOString(),
+            });
+            alert('Partido Creado');
+            setShowGameModal(false);
+            fetchGames();
+            router.push(`/admin/games/${newGame.id}/roster`);
         } catch (err) { 
             console.error(err);
             alert('Error al crear partido');
@@ -395,26 +275,18 @@ export default function AdminDashboard() {
                 return;
             }
 
-            const now = new Date().toISOString();
-            const { data: newTourn, error } = await supabase
-                .from('tournaments')
-                .insert({
-                    name: tournForm.name,
-                    season: tournForm.season,
-                    rules_type: tournForm.sport === 'Softbol' ? 'softball_7' : 'baseball_9',
-                    category: tournForm.category,
-                    admin_id: currentUser.id,
-                    league_id: tournForm.leagueId || null,
-                    location_city: tournForm.location_city,
-                    location_state: tournForm.location_state,
-                    description: tournForm.description,
-                    logo_url: tournForm.logoUrl,
-                    created_at: now
-                })
-                .select()
-                .single();
-
-            if (error) throw error;
+            const { data: newTourn } = await api.post('/tournaments', {
+                name: tournForm.name,
+                season: tournForm.season,
+                rulesType: tournForm.sport === 'Softbol' ? 'softball_7' : 'baseball_9',
+                category: tournForm.category,
+                adminId: currentUser.id,
+                leagueId: tournForm.leagueId || null,
+                locationCity: tournForm.location_city,
+                locationState: tournForm.location_state,
+                description: tournForm.description,
+                logoUrl: tournForm.logoUrl,
+            });
             if (newTourn) {
                 alert('Torneo Creado Satisfactoriamente');
                 setShowTournamentModal(false);
@@ -444,22 +316,17 @@ export default function AdminDashboard() {
         if (!editingTourn) return;
         setSaving(true);
         try {
-            const { error } = await supabase
-                .from('tournaments')
-                .update({
-                    name: tournForm.name,
-                    season: tournForm.season,
-                    rules_type: tournForm.sport === 'Softbol' ? 'softball_7' : 'baseball_9',
-                    category: tournForm.category,
-                    league_id: tournForm.leagueId || null,
-                    location_city: tournForm.location_city,
-                    location_state: tournForm.location_state,
-                    description: tournForm.description,
-                    logo_url: tournForm.logoUrl
-                })
-                .eq('id', editingTourn.id);
-
-            if (error) throw error;
+            await api.patch(`/tournaments/${editingTourn.id}`, {
+                name: tournForm.name,
+                season: tournForm.season,
+                rulesType: tournForm.sport === 'Softbol' ? 'softball_7' : 'baseball_9',
+                category: tournForm.category,
+                leagueId: tournForm.leagueId || null,
+                locationCity: tournForm.location_city,
+                locationState: tournForm.location_state,
+                description: tournForm.description,
+                logoUrl: tournForm.logoUrl,
+            });
             alert('Torneo Actualizado');
             setShowEditTournModal(false);
             setEditingTourn(null);
@@ -503,27 +370,19 @@ export default function AdminDashboard() {
         e.preventDefault();
         setSaving(true);
         try {
-            const now = new Date().toISOString();
-            const { error } = await supabase
-                .from('teams')
-                .insert({
-                    name: teamForm.name,
-                    tournament_id: teamForm.tournament_id,
-                    created_at: now,
-                });
-            
-            if (error) throw error;
+            await api.post('/teams', {
+                name: teamForm.name,
+                tournamentId: teamForm.tournament_id,
+                managerName: teamForm.manager || null,
+                logoUrl: teamForm.logoUrl || null,
+            });
             alert('Equipo Creado y Asignado Satisfactoriamente');
             setShowTeamModal(false);
             setTeamForm({ name: '', manager: '', logoUrl: '', tournament_id: '' });
             if (selectedTournament === teamForm.tournament_id) {
-                supabase
-                    .from('teams')
-                    .select('*')
-                    .eq('tournament_id', selectedTournament)
-                    .then(({ data, error }) => {
-                        if (!error) setTeams(data || []);
-                    });
+                api.get('/teams', { params: { tournamentId: selectedTournament } })
+                    .then(({ data }) => setTeams(data || []))
+                    .catch(console.error);
             }
         } catch (err) { 
             console.error(err);
@@ -535,30 +394,20 @@ export default function AdminDashboard() {
         e.preventDefault();
         setSaving(true);
         try {
-            const now = new Date().toISOString();
-            const { error } = await supabase
-                .from('players')
-                .insert({
-                    first_name: playerForm.firstName,
-                    last_name: playerForm.lastName,
-                    number: playerForm.number ? parseInt(playerForm.number) : null,
-                    team_id: playerForm.team_id,
-                    position: playerForm.position,
-                    created_at: now,
-                });
-
-            if (error) throw error;
+            await api.post('/players', {
+                firstName: playerForm.firstName,
+                lastName: playerForm.lastName,
+                number: playerForm.number ? parseInt(playerForm.number) : null,
+                teamId: playerForm.team_id,
+                position: playerForm.position,
+            });
             alert('Jugador Registrado Satisfactoriamente');
             setShowPlayerModal(false);
             setPlayerForm({ firstName: '', lastName: '', number: '', position: 'INF', photoUrl: '', team_id: '' });
             if (selectedTeam === playerForm.team_id) {
-                supabase
-                    .from('players')
-                    .select('*')
-                    .eq('team_id', selectedTeam)
-                    .then(({ data, error }) => {
-                        if (!error) setPlayers(data || []);
-                    });
+                api.get('/players', { params: { teamId: selectedTeam } })
+                    .then(({ data }) => setPlayers(data || []))
+                    .catch(console.error);
             }
         } catch (err) { 
             console.error(err);
@@ -584,41 +433,22 @@ export default function AdminDashboard() {
         if (!editingPlayer) return;
         setSaving(true);
         try {
-            const { error } = await supabase
-                .from('players')
-                .update({
-                    first_name: playerForm.firstName,
-                    last_name: playerForm.lastName,
-                    number: playerForm.number ? parseInt(playerForm.number) : null,
-                    team_id: playerForm.team_id,
-                    position: playerForm.position,
-                    photo_url: playerForm.photoUrl,
-                })
-                .eq('id', editingPlayer.id);
-
-            if (error) throw error;
+            await api.patch(`/players/${editingPlayer.id}`, {
+                firstName: playerForm.firstName,
+                lastName: playerForm.lastName,
+                number: playerForm.number ? parseInt(playerForm.number) : null,
+                teamId: playerForm.team_id,
+                position: playerForm.position,
+                photoUrl: playerForm.photoUrl || null,
+            });
             alert('Jugador Actualizado');
             setShowEditPlayerModal(false);
             setEditingPlayer(null);
             setPlayerForm({ firstName: '', lastName: '', number: '', position: 'INF', photoUrl: '', team_id: '' });
-            
-            // Reload players
             if (selectedTeam) {
-                supabase
-                    .from('players')
-                    .select('*, team:teams(name)')
-                    .eq('team_id', selectedTeam)
-                    .then(({ data, err }: any) => {
-                        if (!err && data) {
-                            const mappedPlayers = data.map((p: any) => ({
-                                ...p,
-                                firstName: p.first_name,
-                                lastName: p.last_name,
-                                photoUrl: p.photo_url
-                            }));
-                            setPlayers(mappedPlayers);
-                        }
-                    });
+                api.get('/players', { params: { teamId: selectedTeam } })
+                    .then(({ data }) => setPlayers(data || []))
+                    .catch(console.error);
             }
         } catch (err) { 
             console.error(err);
@@ -630,30 +460,13 @@ export default function AdminDashboard() {
         e.preventDefault();
         setSaving(true);
         try {
-            const { data, error: authError } = await supabase.auth.signUp({
+            await api.post('/auth/register', {
                 email: userForm.email,
                 password: userForm.password,
+                firstName: userForm.name.split(' ')[0] || '',
+                lastName: userForm.name.split(' ').slice(1).join(' ') || '',
+                role: userForm.role,
             });
-
-            if (authError) throw authError;
-
-            if (data.user) {
-                const now = new Date().toISOString();
-                const { error: profileError } = await supabase
-                    .from('users')
-                    .insert({
-                        id: data.user.id,
-                        email: userForm.email,
-                        first_name: userForm.name.split(' ')[0] || '',
-                        last_name: userForm.name.split(' ').slice(1).join(' ') || '',
-                        password_hash: 'MANUAL_USER', // Placeholder para cumplir con NOT NULL
-                        phone: '', 
-                        role_id: (await supabase.from('roles').select('id').eq('name', userForm.role).single()).data?.id,
-                        created_at: now,
-                    });
-                if (profileError) throw profileError;
-            }
-
             alert('Cuenta Registrada Satisfactoriamente');
             setShowUserModal(false);
             setUserForm({ name: '', email: '', password: '', role: 'general', tournament_id: '' });
@@ -674,16 +487,10 @@ export default function AdminDashboard() {
                 setSaving(false);
                 return;
             }
-            const now = new Date().toISOString();
-            const { error } = await supabase
-                .from('leagues')
-                .insert({
-                    name: leagueName,
-                    admin_id: currentUser.id,
-                    created_at: now,
-                });
-
-            if (error) throw error;
+            await api.post('/leagues', {
+                name: leagueName,
+                adminId: currentUser.id,
+            });
             alert('Liga Creada');
             setLeagueName('');
             setShowLeagueModal(false);
@@ -718,14 +525,7 @@ export default function AdminDashboard() {
         if (!currentUser) return;
         setSaving(true);
         try {
-            const { error } = await supabase
-                .from('users')
-                .update({ 
-                    phone: newPhone,
-                })
-                .eq('id', currentUser.id);
-
-            if (error) throw error;
+            await api.patch('/users/profile', { phone: newPhone });
             setUserPhone(newPhone);
             updateStoredUser({ phone: newPhone });
             setIsEditingPhone(false);
@@ -745,14 +545,7 @@ export default function AdminDashboard() {
             const base64String = reader.result as string;
             setSaving(true);
             try {
-                const { error } = await supabase
-                    .from('users')
-                    .update({ 
-                        profile_picture: base64String,
-                    })
-                    .eq('id', currentUser.id);
-
-                if (error) throw error;
+                await api.patch('/users/profile', { profilePicture: base64String });
                 setUserProfilePicture(base64String);
                 updateStoredUser({ profilePicture: base64String });
             } catch (error) {

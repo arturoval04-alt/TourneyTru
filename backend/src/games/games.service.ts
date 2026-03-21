@@ -65,7 +65,7 @@ export class GamesService {
         return this.prisma.game.create({ data });
     }
 
-    async findAll(filters?: { status?: string; tournamentId?: string }) {
+    async findAll(filters?: { status?: string; tournamentId?: string; limit?: number }) {
         const where: any = {};
         if (filters?.status) where.status = filters.status;
         if (filters?.tournamentId) where.tournamentId = filters.tournamentId;
@@ -78,6 +78,7 @@ export class GamesService {
                 tournament: { select: { name: true, id: true } },
             },
             orderBy: { scheduledDate: 'desc' },
+            ...(filters?.limit ? { take: filters.limit } : {}),
         });
     }
 
@@ -85,8 +86,8 @@ export class GamesService {
         const game = await this.prisma.game.findUnique({
             where: { id },
             include: {
-                homeTeam: true,
-                awayTeam: true,
+                homeTeam: { include: { players: true } },
+                awayTeam: { include: { players: true } },
                 tournament: true,
                 winningPitcher: true,
                 mvpBatter1: true,

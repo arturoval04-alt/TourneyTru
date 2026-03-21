@@ -1,4 +1,4 @@
-import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { TeamsService } from './teams.service';
 import { CreateTeamDto, UpdateTeamDto, CreateTeamBulkDto } from './dto/team.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -20,8 +20,11 @@ export class TeamsController {
     }
 
     @Get()
-    findAll() {
-        return this.teamsService.findAll();
+    findAll(
+        @Query('tournamentId') tournamentId?: string,
+        @Query('includePlayers') includePlayers?: string,
+    ) {
+        return this.teamsService.findAll({ tournamentId, includePlayers: includePlayers === 'true' });
     }
 
     @Get(':id')

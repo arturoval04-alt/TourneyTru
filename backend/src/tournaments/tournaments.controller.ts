@@ -54,14 +54,33 @@ export class TournamentsController {
 
     @Post(':id/fields')
     @UseGuards(JwtAuthGuard)
-    addField(@Param('id') id: string, @Body('name') name: string, @Body('location') location?: string) {
-        return this.tournamentsService.addField(id, name, location);
+    addField(
+        @Param('id') id: string,
+        @Body('name') name: string,
+        @Body('location') location?: string,
+        @Body('mapsUrl') mapsUrl?: string,
+    ) {
+        return this.tournamentsService.addField(id, name, location, mapsUrl);
     }
 
     @Delete(':id/fields/:fieldId')
     @UseGuards(JwtAuthGuard)
     removeField(@Param('id') id: string, @Param('fieldId') fieldId: string) {
         return this.tournamentsService.removeField(id, fieldId);
+    }
+
+    @Post(':id/news')
+    @UseGuards(JwtAuthGuard)
+    createNews(@Param('id') id: string, @Body() body: {
+        title: string;
+        description?: string;
+        coverUrl?: string;
+        facebookUrl?: string;
+        type?: string;
+        hasVideo?: boolean;
+        authorId?: string;
+    }) {
+        return this.tournamentsService.createNews(id, body);
     }
 
     @Get(':id/standings')

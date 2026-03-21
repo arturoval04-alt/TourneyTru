@@ -55,9 +55,17 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
             const batter = useGameStore.getState().currentBatter;
             description = `${batter} pega ${playName}${loc}`;
 
-            if (hitType) registerHit(hitType, description);
+            if (hitType) {
+                const code = hitType === 4 ? 'HR' : `H${hitType}`;
+                registerHit(hitType, `${code}|${description}`);
+            }
         } else if (playType === 'Out') {
             const batter = useGameStore.getState().currentBatter;
+            let code = 'OUT';
+            if (playName === 'Rola') code = 'GO';
+            else if (playName === 'Elevado') code = 'FO';
+            else if (playName === 'Línea') code = 'LO';
+            else if (playName === 'Doble Play') code = 'DP';
 
             if (selectedPositions.length === 1) {
                 // Preposiciones ajustadas para outs directos
@@ -72,10 +80,10 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
             }
 
             const isGroundout = playName === 'Rola';
-            addOut(description, isGroundout);
+            addOut(`${code}|${description}`, isGroundout);
 
             if (playName === 'Doble Play') {
-                addOut("Doble Play completado", false, false); // No emite plate appearance, solo suma el out a pizarra
+                addOut("DP|Doble Play completado", false, false); // No emite plate appearance, solo suma el out a pizarra
             }
         } else if (playType === 'Error') {
             const batter = useGameStore.getState().currentBatter;

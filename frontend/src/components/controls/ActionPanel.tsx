@@ -74,12 +74,12 @@ export default function ActionPanel() {
 
                     <button onClick={() => {
                         const batter = useGameStore.getState().currentBatter;
-                        addOut(`${batter} es Ponchado Tirándole (K)`);
+                        addOut(`KS|${batter} es Ponchado Tirándole (K)`);
                     }} className="bg-red-900 hover:bg-red-800 text-white text-[11px] font-bold py-1.5 rounded-md active:scale-95 border border-red-500/30">Ponche (K)</button>
 
                     <button onClick={() => {
                         const batter = useGameStore.getState().currentBatter;
-                        addOut(`${batter} es Ponchado Sin Tirar (ꓘ)`);
+                        addOut(`KL|${batter} es Ponchado Sin Tirar (ꓘ)`);
                     }} className="bg-red-900 hover:bg-red-800 text-white text-[11px] font-bold py-1.5 rounded-md active:scale-95 border border-red-500/30">Ponche (ꓘ)</button>
                     <button onClick={() => openLocationModal('Out', 'Doble Play')} className="bg-orange-600 hover:bg-orange-500 text-white text-[11px] font-bold py-1.5 rounded-md active:scale-95 border border-orange-400/50">Doble Play</button>
                 </div>

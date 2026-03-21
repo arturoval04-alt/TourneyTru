@@ -14,8 +14,12 @@ export class GamesController {
     }
 
     @Get()
-    findAll(@Query('status') status?: string, @Query('tournamentId') tournamentId?: string) {
-        return this.gamesService.findAll({ status, tournamentId });
+    findAll(
+        @Query('status') status?: string,
+        @Query('tournamentId') tournamentId?: string,
+        @Query('limit') limit?: string,
+    ) {
+        return this.gamesService.findAll({ status, tournamentId, limit: limit ? parseInt(limit) : undefined });
     }
 
     @Get(':id')

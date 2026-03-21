@@ -1,4 +1,4 @@
-import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { PlayersService } from './players.service';
 import { CreatePlayerDto, UpdatePlayerDto } from './dto/player.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -14,8 +14,8 @@ export class PlayersController {
     }
 
     @Get()
-    findAll() {
-        return this.playersService.findAll();
+    findAll(@Query('teamId') teamId?: string) {
+        return this.playersService.findAll({ teamId });
     }
 
     @Get(':id')

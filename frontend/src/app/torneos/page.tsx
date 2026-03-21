@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
-import { supabase } from "@/lib/supabaseClient";
+import api from "@/lib/api";
 import { Search, Filter, MapPin, Calendar, Users, Trophy, ChevronRight } from "lucide-react";
 
 interface TournamentItem {
@@ -27,31 +27,10 @@ export default function TorneosPage() {
     useEffect(() => {
         const fetchTournaments = async () => {
             try {
-                const { data, error } = await supabase
-                    .from('tournaments')
-                    .select(`
-                        *,
-                        league:leagues(name),
-                        teams:teams(id),
-                        games:games(status)
-                    `)
-                    .order('created_at', { ascending: false });
-
-                if (error) throw error;
-
-                const mappedData = (data || []).map((t: any) => ({
-                    ...t,
-                    rulesType: t.rules_type,
-                    logoUrl: t.logo_url,
-                    _count: {
-                        teams: t.teams?.length || 0,
-                        games: t.games?.length || 0
-                    }
-                }));
-
-                setTournaments(mappedData);
+                const { data } = await api.get('/tournaments');
+                setTournaments(data || []);
                 setLoading(false);
-            } catch (err) {
+            } catch (err: any) {
                 console.error("Error fetching tournaments:", err);
                 setLoading(false);
             }

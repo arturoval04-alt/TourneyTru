@@ -12,7 +12,7 @@ import { useGameStore, PlayLog } from '@/store/gameStore';
 import { useRouter } from 'next/navigation';
 import { Users, Radio, ChevronLeft, Trophy } from 'lucide-react';
 import Navbar from '@/components/Navbar';
-import { supabase } from '@/lib/supabaseClient';
+import api from '@/lib/api';
 import { calculateBoxscore } from '@/lib/boxscore';
 
 // Mapa de código numérico a nombre de posición
@@ -50,25 +50,10 @@ export default function PublicGamecast() {
 
     const fetchBoxscore = useCallback(async () => {
         try {
-            const { data, error } = await supabase
-                .from('games')
-                .select(`
-                    id, home_team_id, away_team_id, 
-                    homeTeam:teams!home_team_id(*),
-                    awayTeam:teams!away_team_id(*),
-                    lineups(*, player:players(*)),
-                    plays(*)
-                `)
-                .eq('id', gameId)
-                .single();
-
-            if (error) throw error;
-            if (data) {
-                const box = calculateBoxscore(gameId, data.homeTeam, data.awayTeam, data.lineups, data.plays);
-                setBoxscore(box);
-            }
+            const { data } = await api.get(`/games/${gameId}/boxscore`);
+            if (data) setBoxscore(data);
         } catch (error) {
-            console.error("Error fetching boxscore from Supabase:", error);
+            console.error("Error fetching boxscore:", error);
         }
     }, [gameId]);
 
@@ -83,18 +68,17 @@ export default function PublicGamecast() {
 
         fetchBoxscore();
 
-        // Suscribirse a actualizaciones de broadcast (Mismo canal que el store)
-        const channel = supabase.channel(`game-${gameId}`)
-            .on('broadcast', { event: 'gameStateUpdate' }, ({ payload }) => {
-                if (payload.fullState) {
-                    useGameStore.setState(payload.fullState);
-                }
-                setTimeout(() => fetchBoxscore(), 300);
-            })
-            .subscribe();
-
-        return () => { channel.unsubscribe(); };
+        // El store ya maneja el WebSocket via socket.io
+        return () => {};
     }, [gameId, setGameId, fetchGameConfig, connectSocket, fetchBoxscore]);
+
+    // Refrescar boxscore cada vez que llega una nueva jugada (playLogs cambia)
+    useEffect(() => {
+        if (gameId && playLogs.length > 0) {
+            const timer = setTimeout(() => fetchBoxscore(), 1500);
+            return () => clearTimeout(timer);
+        }
+    }, [playLogs.length, gameId, fetchBoxscore]);
 
     const batterStats = useMemo(() => {
         if (!boxscore || !currentBatterId) return 'Sin datos aún';

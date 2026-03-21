@@ -29,12 +29,18 @@ export class TeamsService {
         });
     }
 
-    async findAll() {
+    async findAll(filters?: { tournamentId?: string; includePlayers?: boolean }) {
+        const where: any = {};
+        if (filters?.tournamentId) where.tournamentId = filters.tournamentId;
+
         return this.prisma.team.findMany({
+            where,
             include: {
                 tournament: true,
                 _count: { select: { players: true } },
+                ...(filters?.includePlayers ? { players: true } : {}),
             },
+            orderBy: { name: 'asc' },
         });
     }
 

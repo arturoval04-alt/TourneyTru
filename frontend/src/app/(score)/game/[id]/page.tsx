@@ -10,7 +10,7 @@ import { useGameStore, LineupItem } from '@/store/gameStore';
 import { useParams, useRouter } from 'next/navigation';
 import { GameBoxscoreDto } from '@/types/boxscore';
 import { ScorebookTable } from '@/components/ScorebookTable';
-import { supabase } from '@/lib/supabaseClient';
+import api from '@/lib/api';
 import { calculateBoxscore } from '@/lib/boxscore';
 import { Users, LayoutDashboard, Radio, ChevronLeft, Trophy } from 'lucide-react';
 import Navbar from '@/components/Navbar';
@@ -52,9 +52,9 @@ export default function ScorekeeperLivePanel() {
     const [streamInfo, setStreamInfo] = useState<{ streamKey: string, playbackId: string, id: string } | null>(null);
 
     // Live base tracking
-    const { 
-        baseIds, inning, half, currentBatter, currentBatterId, 
-        homeLineup, awayLineup, homeScore, awayScore 
+    const {
+        baseIds, inning, half, currentBatter, currentBatterId,
+        homeLineup, awayLineup, homeScore, awayScore, playLogs
     } = useGameStore();
 
     const handleFinalizarJuego = () => {
@@ -79,134 +79,15 @@ export default function ScorekeeperLivePanel() {
 
     const submitGameFinalization = async () => {
         try {
-            // Get all plays for this game to aggregate stats
-            const { data: plays, error: playsError } = await supabase.from('plays').select('*').eq('game_id', params.id);
-            if (playsError) console.error("Error fetching plays for stats:", playsError);
-
-            // Get game details to know tournament_id
-            const { data: gameConfig, error: gameError } = await supabase.from('games').select('tournament_id, home_team_id, away_team_id').eq('id', params.id).single();
-            if (gameError) console.error("Error fetching game for stats:", gameError);
-
-            if (plays && gameConfig) {
-                // Prepare player stats map
-                const statsMap: Record<string, any> = {};
-
-                const initStat = (playerId: string, teamId: string) => {
-                    if (!statsMap[playerId]) {
-                        statsMap[playerId] = {
-                            player_id: playerId,
-                            team_id: teamId,
-                            tournament_id: gameConfig.tournament_id,
-                            games_played: 1, // Since we are aggregating this game, they played at least this one
-                            at_bats: 0, runs: 0, hits: 0, h2: 0, h3: 0, hr: 0, rbi: 0, bb: 0, so: 0, hbp: 0, sac: 0,
-                            wins: 0, losses: 0, ip_outs: 0, h_allowed: 0, er_allowed: 0, bb_allowed: 0, so_pitching: 0
-                        };
-                    }
-                    return statsMap[playerId];
-                };
-
-                plays.forEach((play: any) => {
-                    const isTop = play.half === 'top';
-                    const battingTeamId = isTop ? gameConfig.away_team_id : gameConfig.home_team_id;
-                    const pitchingTeamId = isTop ? gameConfig.home_team_id : gameConfig.away_team_id;
-
-                    // Batting
-                    if (play.batter_id) {
-                        const batter = initStat(play.batter_id, battingTeamId);
-                        const result = (play.result || '').toUpperCase();
-                        const isAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'INT'].includes(result);
-                        if (isAtBat) batter.at_bats++;
-                        
-                        if (['H1', '1B'].includes(result)) batter.hits++;
-                        else if (['H2', '2B'].includes(result)) { batter.hits++; batter.h2++; }
-                        else if (['H3', '3B'].includes(result)) { batter.hits++; batter.h3++; }
-                        else if (['HR', 'H4'].includes(result)) { batter.hits++; batter.hr++; }
-                        
-                        if (result === 'BB') batter.bb++;
-                        if (result === 'HBP') batter.hbp++;
-                        if (['SAC', 'SF', 'SH'].includes(result)) batter.sac++;
-                        if (result.startsWith('K')) batter.so++;
-                        batter.rbi += (play.rbi || 0);
-                        batter.runs += (play.runs_scored || 0);
-                    }
-
-                    // Pitching
-                    if (play.pitcher_id) {
-                        const pitcher = initStat(play.pitcher_id, pitchingTeamId);
-                        pitcher.ip_outs += (play.outs_recorded || 0);
-                        const result = (play.result || '').toUpperCase();
-                        if (['H1', '1B', 'H2', '2B', 'H3', '3B', 'HR', 'H4'].includes(result)) pitcher.h_allowed++;
-                        if (result === 'BB') pitcher.bb_allowed++;
-                        if (result.startsWith('K')) pitcher.so_pitching++;
-                        pitcher.er_allowed += (play.runs_scored || 0);
-                    }
-                });
-
-                // Wins calculation
-                if (selectedPitcherId) {
-                    const winningPitcher = initStat(selectedPitcherId, (homeScore > awayScore) ? gameConfig.home_team_id : gameConfig.away_team_id);
-                    winningPitcher.wins++;
-                }
-
-                const statsArray = Object.values(statsMap);
-                
-                if (statsArray.length > 0) {
-                    // Fetch existing existing stats for these players in this tournament
-                    const playerIds = statsArray.map((s: any) => s.player_id);
-                    const { data: existingStats } = await supabase.from('player_stats')
-                        .select('*')
-                        .eq('tournament_id', gameConfig.tournament_id)
-                        .in('player_id', playerIds);
-                    
-                    const existingStatsMap: Record<string, any> = {};
-                    existingStats?.forEach(s => { existingStatsMap[s.player_id] = s; });
-
-                    const finalStatsArray = statsArray.map((st: any) => {
-                        const ex = existingStatsMap[st.player_id];
-                        if (ex) {
-                            return {
-                                ...st,
-                                id: ex.id,
-                                games_played: ex.games_played + st.games_played,
-                                at_bats: ex.at_bats + st.at_bats,
-                                runs: ex.runs + st.runs,
-                                hits: ex.hits + st.hits,
-                                h2: ex.h2 + st.h2,
-                                h3: ex.h3 + st.h3,
-                                hr: ex.hr + st.hr,
-                                rbi: ex.rbi + st.rbi,
-                                bb: ex.bb + st.bb,
-                                so: ex.so + st.so,
-                                hbp: ex.hbp + st.hbp,
-                                sac: ex.sac + st.sac,
-                                wins: ex.wins + st.wins,
-                                losses: ex.losses + st.losses,
-                                ip_outs: ex.ip_outs + st.ip_outs,
-                                h_allowed: ex.h_allowed + st.h_allowed,
-                                er_allowed: ex.er_allowed + st.er_allowed,
-                                bb_allowed: ex.bb_allowed + st.bb_allowed,
-                                so_pitching: ex.so_pitching + st.so_pitching
-                            };
-                        }
-                        return st;
-                    });
-
-                    const { error: upsertError } = await supabase.from('player_stats').upsert(finalStatsArray, { onConflict: 'player_id, team_id, tournament_id' });
-                    if (upsertError) console.error("Error upserting stats:", upsertError);
-                }
-            }
-
-            // Finally, update the game itself
-            const { error } = await supabase.from('games').update({
+            // Finalizar el juego via backend API
+            await api.patch(`/games/${params.id}`, {
                 status: 'finished',
-                home_score: homeScore,
-                away_score: awayScore,
-                winning_pitcher_id: selectedPitcherId ? selectedPitcherId : null,
-                mvp_batter1_id: selectedBatter1Id ? selectedBatter1Id : null,
-                mvp_batter2_id: selectedBatter2Id ? selectedBatter2Id : null,
-            }).eq('id', params.id);
-
-            if (error) throw error;
+                homeScore,
+                awayScore,
+                winningPitcherId: selectedPitcherId || null,
+                mvpBatter1Id: selectedBatter1Id || null,
+                mvpBatter2Id: selectedBatter2Id || null,
+            });
             alert("Juego finalizado y estadísticas guardadas exitosamente.");
             router.push(`/torneos`);
         } catch (error) {
@@ -242,29 +123,17 @@ export default function ScorekeeperLivePanel() {
 
     const isMountedRef = useRef(false);
 
-    const fetchBoxscore = useCallback(async (gameId: string) => {
+    const fetchBoxscore = useCallback(async (gameId: string, showLoading = false) => {
         try {
-            const { data, error } = await supabase
-                .from('games')
-                .select(`
-                    id, home_team_id, away_team_id, 
-                    homeTeam:teams!home_team_id(*),
-                    awayTeam:teams!away_team_id(*),
-                    lineups(*, player:players(*)),
-                    plays(*)
-                `)
-                .eq('id', gameId)
-                .single();
-
-            if (error) throw error;
+            if (showLoading) setBoxscoreLoading(true);
+            const { data } = await api.get(`/games/${gameId}/boxscore`);
             if (data && isMountedRef.current) {
-                const box = calculateBoxscore(gameId, data.homeTeam, data.awayTeam, data.lineups, data.plays);
-                setBoxscore(box);
+                setBoxscore(data);
                 setBoxscoreLoading(false);
                 setBoxscoreError(false);
             }
         } catch (err) {
-            console.error("Error fetching boxscore from Supabase:", err);
+            console.error("Error fetching boxscore:", err);
             if (isMountedRef.current) {
                 setBoxscoreError(true);
                 setBoxscoreLoading(false);
@@ -288,18 +157,21 @@ export default function ScorekeeperLivePanel() {
         // 2. Carga inicial
         fetchBoxscore(gameId);
 
-        // 3. Suscribirse a cambios vía Supabase Realtime (Mismo canal que el store)
-        const channel = supabase.channel(`game-${gameId}`)
-            .on('broadcast', { event: 'gameStateUpdate' }, () => {
-                setTimeout(() => { if (isMountedRef.current) fetchBoxscore(gameId); }, 300);
-            })
-            .subscribe();
-
+        // El store ya recibe actualizaciones vía socket.io
+        // Refrescar boxscore con el primer load
         return () => {
             isMountedRef.current = false;
-            channel.unsubscribe();
         };
     }, [params.id, fetchBoxscore]);
+
+    // Refrescar boxscore cuando el store recibe nuevas jugadas vía socket.io
+    useEffect(() => {
+        const gameId = params.id as string;
+        if (gameId && playLogs.length > 0 && isMountedRef.current) {
+            const timer = setTimeout(() => fetchBoxscore(gameId), 800);
+            return () => clearTimeout(timer);
+        }
+    }, [playLogs.length, params.id, fetchBoxscore]);
 
     const handleCreateStream = async () => {
         setIsCreatingStream(true);

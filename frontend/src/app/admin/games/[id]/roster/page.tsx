@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import api from '@/lib/api';
 import { useParams, useRouter } from 'next/navigation';
 
 interface Player {
@@ -40,55 +40,22 @@ export default function RosterSetupPage() {
     useEffect(() => {
         const fetchGame = async () => {
             try {
-                const { data, error } = await supabase
-                    .from('games')
-                    .select(`
-                        id,
-                        home_team_id,
-                        away_team_id,
-                        homeTeam:teams!home_team_id (
-                            id, 
-                            name, 
-                            players (
-                                id, 
-                                firstName:first_name, 
-                                lastName:last_name, 
-                                position, 
-                                number
-                            )
-                        ),
-                        awayTeam:teams!away_team_id (
-                            id, 
-                            name, 
-                            players (
-                                id, 
-                                firstName:first_name, 
-                                lastName:last_name, 
-                                position, 
-                                number
-                            )
-                        ),
-                        lineups (*)
-                    `)
-                    .eq('id', gameId)
-                    .single();
-
-                if (error) throw error;
+                const { data } = await api.get(`/games/${gameId}`);
                 if (data) {
                     setGame(data as any);
 
-                    // Inicializar lineups si ya existen
-                    const homeLp = data.lineups?.filter((l: any) => l.team_id === data.home_team_id).map((l: any) => ({
-                        playerId: l.player_id, 
-                        position: l.position, 
-                        battingOrder: l.batting_order, 
-                        dhForPosition: l.dh_for_position || ''
+                    // Inicializar lineups si ya existen (backend returns camelCase)
+                    const homeLp = data.lineups?.filter((l: any) => l.teamId === data.homeTeamId).map((l: any) => ({
+                        playerId: l.playerId,
+                        position: l.position,
+                        battingOrder: l.battingOrder,
+                        dhForPosition: l.dhForPosition || ''
                     })) || [];
-                    const awayLp = data.lineups?.filter((l: any) => l.team_id === data.away_team_id).map((l: any) => ({
-                        playerId: l.player_id, 
-                        position: l.position, 
-                        battingOrder: l.batting_order, 
-                        dhForPosition: l.dh_for_position || ''
+                    const awayLp = data.lineups?.filter((l: any) => l.teamId === data.awayTeamId).map((l: any) => ({
+                        playerId: l.playerId,
+                        position: l.position,
+                        battingOrder: l.battingOrder,
+                        dhForPosition: l.dhForPosition || ''
                     })) || [];
 
                     setHomeLineup(homeLp);
@@ -166,31 +133,15 @@ export default function RosterSetupPage() {
             }
 
             const dataToSubmit = validLineups.map(l => ({
-                batting_order: l.battingOrder,
+                battingOrder: l.battingOrder,
                 position: l.position || 'DH',
-                dh_for_position: normalizePosition(l.position) === 'DH' ? (l.dhForPosition || null) : null,
-                is_starter: true,
-                team_id: teamId,
-                player_id: l.playerId,
-                game_id: gameId
+                dhForPosition: normalizePosition(l.position) === 'DH' ? (l.dhForPosition || null) : null,
+                isStarter: true,
+                playerId: l.playerId,
             }));
 
-            // 1. Eliminar todo el lineup existente de este equipo en este juego
-            const { error: deleteError } = await supabase
-                .from('lineups')
-                .delete()
-                .eq('game_id', gameId)
-                .eq('team_id', teamId);
-
-            if (deleteError) throw deleteError;
-
-            // 2. Insertar los nuevos
-            const { error: insertError } = await supabase
-                .from('lineups')
-                .insert(dataToSubmit);
-
-            if (insertError) throw insertError;
-
+            // Usar el endpoint del backend para guardar el lineup
+            await api.post(`/games/${gameId}/team/${teamId}/lineup`, { lineups: dataToSubmit });
             alert('Lineup guardado con éxito');
         } catch (err) {
             console.error(err);

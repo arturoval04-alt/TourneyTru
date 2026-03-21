@@ -10,8 +10,10 @@ export class PlayersService {
         return this.prisma.player.create({ data });
     }
 
-    async findAll() {
-        return this.prisma.player.findMany({ include: { team: true } });
+    async findAll(filters?: { teamId?: string }) {
+        const where: any = {};
+        if (filters?.teamId) where.teamId = filters.teamId;
+        return this.prisma.player.findMany({ where, include: { team: true }, orderBy: { lastName: 'asc' } });
     }
 
     async findOne(id: string) {
