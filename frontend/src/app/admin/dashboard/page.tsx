@@ -411,8 +411,7 @@ export default function AdminDashboard() {
                     location_state: tournForm.location_state,
                     description: tournForm.description,
                     logo_url: tournForm.logoUrl,
-                    created_at: now,
-                    updated_at: now
+                    created_at: now
                 })
                 .select()
                 .single();
@@ -458,8 +457,7 @@ export default function AdminDashboard() {
                     location_city: tournForm.location_city,
                     location_state: tournForm.location_state,
                     description: tournForm.description,
-                    logo_url: tournForm.logoUrl,
-                    updated_at: new Date().toISOString()
+                    logo_url: tournForm.logoUrl
                 })
                 .eq('id', editingTourn.id);
 
@@ -919,12 +917,20 @@ export default function AdminDashboard() {
                                         <span className="w-2 h-4 bg-primary rounded-full"></span> Mis Torneos
                                     </h2>
                                     {userRole === 'admin' && (
-                                        <button
-                                            onClick={() => setShowTournamentModal(true)}
-                                            className="px-5 py-2 bg-primary hover:bg-primary-light text-white font-bold rounded-lg transition shadow-md hover:shadow-primary/40 text-sm flex items-center gap-2"
-                                        >
-                                            + Registrar Torneo
-                                        </button>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => setShowLeagueModal(true)}
+                                                className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-900 font-black rounded-lg transition shadow-md hover:shadow-amber-500/40 text-sm flex items-center gap-2 shrink-0"
+                                            >
+                                                + Nueva Liga
+                                            </button>
+                                            <button
+                                                onClick={() => setShowTournamentModal(true)}
+                                                className="px-5 py-2 bg-primary hover:bg-primary-light text-white font-bold rounded-lg transition shadow-md hover:shadow-primary/40 text-sm flex items-center gap-2 shrink-0"
+                                            >
+                                                + Registrar Torneo
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
                                 <div className="bg-surface border border-muted/30 rounded-2xl overflow-x-auto overflow-y-hidden shadow-sm">
