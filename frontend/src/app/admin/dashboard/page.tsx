@@ -124,6 +124,7 @@ export default function AdminDashboard() {
                                 first_name: data.session.user.user_metadata?.first_name || data.session.user.user_metadata?.full_name?.split(' ')[0] || '',
                                 last_name: data.session.user.user_metadata?.last_name || data.session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '',
                                 role_id: publicRole?.id,
+                                password_hash: 'OAUTH_USER', // Evitar error de NOT NULL
                                 created_at: new Date().toISOString(),
                                 updated_at: new Date().toISOString()
                             })
@@ -574,6 +575,8 @@ export default function AdminDashboard() {
                         email: userForm.email,
                         first_name: userForm.name.split(' ')[0] || '',
                         last_name: userForm.name.split(' ').slice(1).join(' ') || '',
+                        password_hash: 'MANUAL_USER', // Placeholder para cumplir con NOT NULL
+                        phone: '', 
                         role_id: (await supabase.from('roles').select('id').eq('name', userForm.role).single()).data?.id,
                         created_at: now,
                         updated_at: now
