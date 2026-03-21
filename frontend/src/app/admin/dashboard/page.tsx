@@ -149,7 +149,11 @@ export default function AdminDashboard() {
                     const merged = {
                         ...data.session.user,
                         ...userProfile,
-                        role: userProfile?.roles?.name || 'public'
+                        firstName: userProfile?.first_name || data.session.user.user_metadata?.first_name || data.session.user.user_metadata?.full_name?.split(' ')[0] || '',
+                        lastName: userProfile?.last_name || data.session.user.user_metadata?.last_name || data.session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '',
+                        role: userProfile?.roles?.name || 'public',
+                        profilePicture: userProfile?.profile_picture || data.session.user.user_metadata?.avatar_url || null,
+                        phone: userProfile?.phone || ''
                     } as AuthUser;
                     localStorage.setItem('user', JSON.stringify(merged));
                     setCurrentUser(merged);
