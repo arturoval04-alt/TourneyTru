@@ -78,7 +78,7 @@ export default function RegisterPage() {
                         role_id: roleData?.id,
                         password_hash: '', // No necesario con Supabase Auth
                         created_at: now,
-                        updated_at: now,
+
                     });
 
                 if (profileError) {

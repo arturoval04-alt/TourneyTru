@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "updated_data": [
+    {
+      "id": "ddb1629e-4def-446a-b2e4-9861fabd9775",
+      "name": "Torneo Pollo Fierro LMSA Test Test Test",
+      "season": "2026",
+      "description": "Testing manual update",
+      "category": "Semirrápida Varonil",
+      "logo_url": "",
+      "rules_type": "softball_7",
+      "admin_id": "03618319-0f7f-42ae-93bf-e8b8facfab48",
+      "league_id": "71996310-b254-4195-add4-10f481184036",
+      "location_city": "a",
+      "location_state": "",
+      "created_at": "2026-03-21T03:29:11.22"
+    }
+  ],
+  "error": null
+}

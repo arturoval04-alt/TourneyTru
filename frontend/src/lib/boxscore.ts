@@ -19,6 +19,11 @@ export function calculateBoxscore(gameId: string, homeTeam: any, awayTeam: any, 
             rbi: 0,
             bb: 0,
             so: 0,
+            pitchingHits: 0,
+            pitchingRuns: 0,
+            pitchingBB: 0,
+            pitchingSO: 0,
+            pitchingIPOuts: 0,
             plays: {}
         })),
         runsByInning: {},
@@ -31,17 +36,30 @@ export function calculateBoxscore(gameId: string, homeTeam: any, awayTeam: any, 
     const awayBox = initTeam(awayTeam, awayLp);
 
     // Sort plays by time
-    const sortedPlays = [...plays].sort((a,b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    const sortedPlays = [...plays].sort((a,b) => new Date(a.timestamp || a.created_at).getTime() - new Date(b.timestamp || b.created_at).getTime());
 
     for (const play of sortedPlays) {
         const isTop = play.half === 'top';
         const battingBox = isTop ? awayBox : homeBox;
+        const fieldingBox = isTop ? homeBox : awayBox;
         
         // Update runs by inning
         const inn = play.inning;
         if (!battingBox.runsByInning[inn]) battingBox.runsByInning[inn] = 0;
         battingBox.runsByInning[inn] += play.runs_scored;
         battingBox.totalRuns += play.runs_scored;
+
+        // Find pitcher and update stats
+        const pitcher = fieldingBox.lineup.find(p => p.playerId === play.pitcher_id);
+        if (pitcher) {
+            if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(play.result)) {
+                pitcher.pitchingHits = (pitcher.pitchingHits || 0) + 1;
+            }
+            if (play.result === 'BB') pitcher.pitchingBB = (pitcher.pitchingBB || 0) + 1;
+            if (play.result.startsWith('K')) pitcher.pitchingSO = (pitcher.pitchingSO || 0) + 1;
+            pitcher.pitchingRuns = (pitcher.pitchingRuns || 0) + (play.runs_scored || 0);
+            pitcher.pitchingIPOuts = (pitcher.pitchingIPOuts || 0) + (play.outs_recorded || 0);
+        }
 
         // Find batter
         const batter = battingBox.lineup.find(b => b.playerId === play.batter_id);
@@ -56,7 +74,7 @@ export function calculateBoxscore(gameId: string, homeTeam: any, awayTeam: any, 
             const isAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH'].includes(play.result);
             if (isAtBat) batter.atBats++;
 
-            if (['H1', 'H2', 'H3', 'HR', '1B', '2B', '3B'].includes(play.result)) {
+            if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(play.result)) {
                 batter.hits++;
                 battingBox.totalHits++;
             }
@@ -70,6 +88,7 @@ export function calculateBoxscore(gameId: string, homeTeam: any, awayTeam: any, 
                 inning: inn,
                 result: play.result,
                 outsRecorded: play.outs_recorded || 0,
+                outsBeforePlay: play.outs_before_play,
                 runsScored: play.runs_scored || 0,
                 rbi: play.rbi || 0
             });

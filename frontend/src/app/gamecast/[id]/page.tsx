@@ -8,9 +8,9 @@ import PlayByPlayLog from '@/components/live/PlayByPlayLog';
 import { GameBoxscoreDto } from '@/types/boxscore';
 import { ScorebookTable } from '@/components/ScorebookTable';
 import PlayerInfo from '@/components/live/PlayerInfo';
-import { PlayLog } from '@/store/gameStore';
+import { useGameStore, PlayLog } from '@/store/gameStore';
 import { useRouter } from 'next/navigation';
-import { Users, LayoutDashboard, Radio, ChevronLeft, Trophy, Star, Award } from 'lucide-react';
+import { Users, Radio, ChevronLeft, Trophy } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import { supabase } from '@/lib/supabaseClient';
 import { calculateBoxscore } from '@/lib/boxscore';
@@ -23,16 +23,7 @@ const POS_LABEL: Record<string, string> = {
     'DH': 'DH', 'BD': 'BD',
 };
 
-interface LineupItemPublic {
-    playerId: string;
-    teamId: string;
-    position: string;
-    battingOrder: number;
-    dhForPosition?: string | null;
-    player?: { id: string; firstName: string; lastName: string };
-}
-
-const formatPosition = (item: LineupItemPublic) => {
+const formatPosition = (item: any) => {
     const isDh = item.position === 'DH' || item.position === 'BD';
     if (isDh && item.dhForPosition) {
         const anchor = POS_LABEL[item.dhForPosition] || item.dhForPosition;
@@ -49,31 +40,20 @@ export default function PublicGamecast() {
     const [boxscore, setBoxscore] = useState<GameBoxscoreDto | null>(null);
     const [activeTab, setActiveTab] = useState<"alineaciones" | "scorekeeper" | "stream">("scorekeeper");
 
-    // Estado replicado básico del juego
-    const [gameState, setGameState] = useState({
-        inning: 1,
-        half: 'top' as 'top' | 'bottom',
-        outs: 0,
-        balls: 0,
-        strikes: 0,
-        homeScore: 0,
-        awayScore: 0,
-        bases: { first: null, second: null, third: null },
-        currentBatter: "Esperando Bateador...",
-        currentBatterId: null as string | null,
-        currentPitcher: "Esperando Pitcher..." as string,
-        playLogs: [] as PlayLog[],
-        playbackId: null as string | null,
-        homeLineup: [] as any[],
-        awayLineup: [] as any[],
-    });
+    // Usar el store global igual que el Scorekeeper
+    const { 
+        inning, half, outs, balls, strikes, homeScore, awayScore, bases,
+        currentBatter, currentPitcher, currentBatterId, playLogs, 
+        homeLineup, awayLineup, playbackId, setGameId, fetchGameConfig, connectSocket,
+        winningPitcher, mvpBatter1, mvpBatter2, status
+    } = useGameStore();
 
     const fetchBoxscore = useCallback(async () => {
         try {
             const { data, error } = await supabase
                 .from('games')
                 .select(`
-                    id, home_team_id, away_team_id, home_score, away_score, current_inning, half, playback_id,
+                    id, home_team_id, away_team_id, 
                     homeTeam:teams!home_team_id(*),
                     awayTeam:teams!away_team_id(*),
                     lineups(*, player:players(*)),
@@ -86,18 +66,6 @@ export default function PublicGamecast() {
             if (data) {
                 const box = calculateBoxscore(gameId, data.homeTeam, data.awayTeam, data.lineups, data.plays);
                 setBoxscore(box);
-                
-                // If it's the first fetch or someone refreshed, sync initial state
-                setGameState(prev => ({
-                    ...prev,
-                    homeScore: data.home_score || 0,
-                    awayScore: data.away_score || 0,
-                    inning: data.current_inning || 1,
-                    half: data.half || 'top',
-                    playbackId: data.playback_id,
-                    homeLineup: data.lineups.filter((l: any) => l.team_id === data.home_team_id).sort((a:any, b:any) => a.batting_order - b.batting_order),
-                    awayLineup: data.lineups.filter((l: any) => l.team_id === data.away_team_id).sort((a:any, b:any) => a.batting_order - b.batting_order),
-                }));
             }
         } catch (error) {
             console.error("Error fetching boxscore from Supabase:", error);
@@ -107,47 +75,56 @@ export default function PublicGamecast() {
     useEffect(() => {
         if (!gameId) return;
 
+        // Inicializar el store
+        setGameId(gameId);
+        fetchGameConfig().then(() => {
+            connectSocket();
+        });
+
         fetchBoxscore();
 
-        const channel = supabase.channel(`gamecast-${gameId}`)
+        // Suscribirse a actualizaciones de broadcast (Mismo canal que el store)
+        const channel = supabase.channel(`game-${gameId}`)
             .on('broadcast', { event: 'gameStateUpdate' }, ({ payload }) => {
                 if (payload.fullState) {
-                    setGameState(prev => ({ ...prev, ...payload.fullState }));
+                    useGameStore.setState(payload.fullState);
                 }
-                fetchBoxscore();
+                setTimeout(() => fetchBoxscore(), 300);
             })
             .subscribe();
 
         return () => { channel.unsubscribe(); };
-    }, [gameId, fetchBoxscore]);
+    }, [gameId, setGameId, fetchGameConfig, connectSocket, fetchBoxscore]);
 
     const batterStats = useMemo(() => {
-        if (!boxscore || !gameState.currentBatterId) return 'Sin datos aún';
-        const battingBox = gameState.half === 'top' ? boxscore.awayTeam : boxscore.homeTeam;
-        const entry = battingBox.lineup?.find((b: any) => b.playerId === gameState.currentBatterId);
+        if (!boxscore || !currentBatterId) return 'Sin datos aún';
+        const battingBox = half === 'top' ? boxscore.awayTeam : boxscore.homeTeam;
+        const entry = battingBox.lineup?.find((b: any) => b.playerId === currentBatterId);
         if (!entry) return 'Sin datos aún';
         const avg = entry.atBats > 0 ? (entry.hits / entry.atBats).toFixed(3) : '.000';
         return `AVG: ${avg} | H: ${entry.hits} | RBI: ${entry.rbi} | SO: ${entry.so}`;
-    }, [boxscore, gameState.currentBatterId, gameState.half]);
+    }, [boxscore, currentBatterId, half]);
 
     const pitcherStats = useMemo(() => {
-        // Simple placeholder for now, could be improved by tracking current pitcher in state
-        return "IP: 0.0 | K: 0 | ERA: 0.00";
-    }, []);
+        const defLineup = half === 'top' ? homeLineup : awayLineup;
+        const p = defLineup.find((item: any) => item.position === '1' || item.position === 'P');
+        if (boxscore && p?.playerId) {
+            const pitchingBox = half === 'top' ? boxscore.homeTeam : boxscore.awayTeam;
+            const pitcherEntry = pitchingBox.lineup?.find((b: any) => b.playerId === p.playerId);
+            if (pitcherEntry) {
+                const ip = (Math.floor((pitcherEntry.pitchingIPOuts || 0) / 3) + ((pitcherEntry.pitchingIPOuts || 0) % 3) / 10).toFixed(1);
+                return `IP: ${ip} | K: ${pitcherEntry.pitchingSO || 0} | BB: ${pitcherEntry.pitchingBB || 0} | H: ${pitcherEntry.pitchingHits || 0} | R: ${pitcherEntry.pitchingRuns || 0}`;
+            }
+        }
+        return "IP: 0.0 | K: 0 | BB: 0";
+    }, [boxscore, half, homeLineup, awayLineup]);
 
     return (
         <div className="min-h-screen bg-slate-950 text-white">
             <Navbar />
             
             <div className="max-w-[1400px] mx-auto p-4 flex flex-col gap-6">
-                {/* Scoreboard */}
-                {/* We pass internal state to components since we don't have the store in Public view */}
-                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-3 sm:p-6 shadow-2xl overflow-hidden relative">
-                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-sky-500 via-purple-500 to-emerald-500" />
-                     {/* Mocking the props for ScoreCard since it usually uses store */}
-                     {/* In a real scenario, we might want to pass props to ScoreCard instead of it being a connected component */}
-                     <ScoreCard />
-                </div>
+                <ScoreCard />
 
                 {/* Tabs */}
                 <div className="flex justify-center border-b border-slate-800 pb-4">
@@ -170,28 +147,50 @@ export default function PublicGamecast() {
 
                 {activeTab === 'scorekeeper' && (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* Field Section */}
                         <div className="lg:col-span-2 flex flex-col gap-6">
                             <div className="bg-slate-900 border border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-8 shadow-xl relative overflow-hidden group">
                                 <Field />
                             </div>
 
-                            {/* Boxscore Table */}
                             <div className="bg-slate-950 border border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl overflow-x-auto scrollbar-hide">
                                 <h3 className="text-xl font-black text-white mb-6 flex items-center gap-3">
                                     <Trophy className="w-6 h-6 text-amber-500" /> RESUMEN OFICIAL
                                 </h3>
+
+                                {/* MVP Panel for Finished Games */}
+                                {status === 'finished' && (winningPitcher || mvpBatter1 || mvpBatter2) && (
+                                    <div className="mb-10 grid grid-cols-1 md:grid-cols-3 gap-4 border-b border-white/5 pb-10">
+                                        <div className="bg-white/5 p-4 rounded-2xl border border-white/10 hover:border-amber-500/30 transition-colors">
+                                            <div className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1">Pitcher Ganador</div>
+                                            <div className="text-lg font-black text-white">
+                                                {winningPitcher ? `${winningPitcher.first_name} ${winningPitcher.last_name}` : 'Sin registrar'}
+                                            </div>
+                                        </div>
+                                        <div className="bg-white/5 p-4 rounded-2xl border border-white/10 hover:border-amber-500/30 transition-colors">
+                                            <div className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1">MVP Bateador 1</div>
+                                            <div className="text-lg font-black text-white">
+                                                {mvpBatter1 ? `${mvpBatter1.first_name} ${mvpBatter1.last_name}` : 'Sin registrar'}
+                                            </div>
+                                        </div>
+                                        <div className="bg-white/5 p-4 rounded-2xl border border-white/10 hover:border-amber-500/30 transition-colors">
+                                            <div className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1">MVP Bateador 2</div>
+                                            <div className="text-lg font-black text-white">
+                                                {mvpBatter2 ? `${mvpBatter2.first_name} ${mvpBatter2.last_name}` : 'Sin registrar'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                                 {boxscore ? (
                                     <div className="flex flex-col gap-8">
                                         <ScorebookTable 
                                             teamBoxscore={boxscore.awayTeam} 
-                                            baseIds={gameState.half === 'top' ? gameState.bases : null} 
-                                            currentInning={gameState.inning} 
+                                            baseIds={half === 'top' ? bases : null} 
+                                            currentInning={inning} 
                                         />
                                         <ScorebookTable 
                                             teamBoxscore={boxscore.homeTeam} 
-                                            baseIds={gameState.half === 'bottom' ? gameState.bases : null} 
-                                            currentInning={gameState.inning} 
+                                            baseIds={half === 'bottom' ? bases : null} 
+                                            currentInning={inning} 
                                         />
                                     </div>
                                 ) : (
@@ -200,18 +199,9 @@ export default function PublicGamecast() {
                             </div>
                         </div>
 
-                        {/* Info Column */}
                         <div className="flex flex-col gap-6">
-                            <PlayerInfo 
-                                type="Batting"
-                                name={gameState.currentBatter} 
-                                stats={batterStats}
-                            />
-                            <PlayerInfo 
-                                type="Pitching"
-                                name={gameState.currentPitcher} 
-                                stats={pitcherStats}
-                            />
+                            <PlayerInfo type="Batting" name={currentBatter} stats={batterStats} />
+                            <PlayerInfo type="Pitching" name={currentPitcher} stats={pitcherStats} />
                             <PlayByPlayLog />
                         </div>
                     </div>
@@ -219,7 +209,7 @@ export default function PublicGamecast() {
 
                 {activeTab === 'alineaciones' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8">
-                        {[{ label: 'VISITANTE', lineup: gameState.awayLineup }, { label: 'LOCAL', lineup: gameState.homeLineup }].map(t => (
+                        {[{ label: 'VISITANTE', lineup: awayLineup }, { label: 'LOCAL', lineup: homeLineup }].map(t => (
                             <div key={t.label} className="bg-slate-900 border border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-8 shadow-xl hover:border-slate-700 transition-colors">
                                 <h3 className="text-xl sm:text-2xl font-black text-sky-400 mb-4 sm:mb-6 flex items-center gap-2 sm:gap-3 border-b border-slate-800 pb-2 sm:pb-4">
                                     <Users className="w-6 h-6 sm:w-7 sm:h-7" /> {t.label}

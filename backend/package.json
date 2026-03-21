@@ -29,6 +29,7 @@
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/websockets": "^11.1.14",
     "@prisma/client": "^6.3.1",
+    "@supabase/supabase-js": "^2.99.3",
     "bcrypt": "^6.0.0",
     "body-parser": "^2.2.2",
     "class-transformer": "^0.5.1",
@@ -37,6 +38,7 @@
     "dotenv-cli": "^11.0.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
+    "pg": "^8.20.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.3"

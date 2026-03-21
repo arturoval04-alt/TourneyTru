@@ -45,6 +45,7 @@ type BaseState = {
     };
     currentBatter: string;
     currentBatterId: string | null;
+    currentPitcher: string;
     playLogs: PlayLog[];
     homeLineup: LineupItem[];
     awayLineup: LineupItem[];
@@ -57,6 +58,11 @@ export interface GameState extends BaseState {
     homeTeamId: string | null;
     awayTeamId: string | null;
     playbackId: string | null;
+    plays: any[];
+    winningPitcher: any;
+    mvpBatter1: any;
+    mvpBatter2: any;
+    status: string | null;
 
     // Conexión
     setGameId: (id: string) => void;
@@ -106,8 +112,7 @@ const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsSc
     const payloadOutsBefore = outsBeforeOverride !== null ? outsBeforeOverride : Math.max(0, stateSnapshot.outs - outsOffensive);
 
     try {
-        // En lugar de Socket.io, guardamos directo en la DB
-        await supabase.from('plays').insert({
+        const newPlay = {
             game_id: stateSnapshot.gameId,
             inning: payloadInning,
             half: payloadHalf,
@@ -118,9 +123,16 @@ const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsSc
             outs_recorded: outsOffensive,
             batter_id: activeBatterId,
             pitcher_id: activePitcherId,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-        });
+            timestamp: new Date().toISOString(),
+        };
+
+        await supabase.from('plays').insert(newPlay);
+
+        // Actualizar estado local inmediatamente para el Scorekeeper
+        useGameStore.setState(state => ({
+            plays: [...state.plays, newPlay],
+            playLogs: [{ text: `Inning ${payloadInning}: ${resultStr}` }, ...state.playLogs]
+        }));
 
         // 2. Sincronizar estado global en la tabla Games
         const nextState = get(); 
@@ -130,7 +142,6 @@ const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsSc
             current_inning: nextState.inning,
             half: nextState.half,
             status: 'in_progress',
-            updated_at: new Date().toISOString(),
         }).eq('id', stateSnapshot.gameId);
 
         // 3. Broadcast Realtime
@@ -183,16 +194,22 @@ export const useGameStore = create<GameState>()(
             baseIds: { first: null, second: null, third: null },
             currentBatter: "Esperando Lineup",
             currentBatterId: null,
+            currentPitcher: "Esperando Pitcher...",
             gameId: null,
             homeTeamId: null,
             awayTeamId: null,
             playbackId: null,
+            plays: [],
             playLogs: [{ text: "Inicio del partido", inningString: "▲ 1" }],
             homeLineup: [],
             awayLineup: [],
             homeBatterIndex: 0,
             awayBatterIndex: 0,
             history: [],
+            winningPitcher: null,
+            mvpBatter1: null,
+            mvpBatter2: null,
+            status: null,
 
             setGameId: (id: string) => {
                 if (get().gameId === id) return;
@@ -212,10 +229,15 @@ export const useGameStore = create<GameState>()(
                     baseIds: { first: null, second: null, third: null },
                     currentBatter: 'Cargando lineup...',
                     currentBatterId: null,
+                    currentPitcher: 'Cargando pitcher...',
                     awayBatterIndex: 0,
                     homeBatterIndex: 0,
                     playLogs: [{ text: "Inicio del partido", inningString: "▲ 1" }],
                     history: [],
+                    winningPitcher: null,
+                    mvpBatter1: null,
+                    mvpBatter2: null,
+                    status: null,
                 });
             },
 
@@ -227,6 +249,7 @@ export const useGameStore = create<GameState>()(
                     homeScore: state.homeScore, awayScore: state.awayScore,
                     bases: { ...state.bases }, baseIds: { ...state.baseIds },
                     currentBatter: state.currentBatter, currentBatterId: state.currentBatterId,
+                    currentPitcher: state.currentPitcher,
                     playLogs: [...state.playLogs], homeLineup: [...state.homeLineup],
                     awayLineup: [...state.awayLineup], homeBatterIndex: state.homeBatterIndex,
                     awayBatterIndex: state.awayBatterIndex,
@@ -251,10 +274,13 @@ export const useGameStore = create<GameState>()(
                     const { data, error } = await supabase
                         .from('games')
                         .select(`
-                            id, home_score, away_score, current_inning, half, 
+                            id, home_score, away_score, current_inning, half, status,
                             home_team_id, away_team_id, playback_id,
                             lineups (*, player:players (*)),
-                            plays (*)
+                            plays (*),
+                            winningPitcher:players!winning_pitcher_id(*),
+                            mvpBatter1:players!mvp_batter1_id(*),
+                            mvpBatter2:players!mvp_batter2_id(*)
                         `)
                         .eq('id', gameId)
                         .single();
@@ -266,7 +292,11 @@ export const useGameStore = create<GameState>()(
                             playerId: l.player_id, teamId: l.team_id,
                             position: l.position, battingOrder: l.batting_order,
                             dhForPosition: l.dh_for_position,
-                            player: l.player ? { id: l.player.id, firstName: l.player.first_name, lastName: l.player.last_name } : undefined
+                            player: l.player ? { 
+                                id: l.player.id, 
+                                firstName: l.player.first_name || l.player.firstName, 
+                                lastName: l.player.last_name || l.player.lastName 
+                            } : undefined
                         }));
 
                         const homeLp = sanitizeLineup(gameData.lineups?.filter((l: any) => l.team_id === gameData.home_team_id) || []).sort((a,b) => a.battingOrder - b.battingOrder);
@@ -277,18 +307,23 @@ export const useGameStore = create<GameState>()(
                             awayLineup: awayLp,
                             homeTeamId: gameData.home_team_id,
                             awayTeamId: gameData.away_team_id,
-                            playbackId: gameData.playback_id
+                            playbackId: gameData.playback_id,
+                            plays: gameData.plays || []
                         });
 
                         if (gameData.plays && gameData.plays.length > 0) {
-                            const plays = gameData.plays.sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+                            const plays = gameData.plays.sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
                             const awayPA = plays.filter((p: any) => p.half === 'top').length;
                             const homePA = plays.filter((p: any) => p.half === 'bottom').length;
                             const awayIdx = awayLp.length > 0 ? awayPA % awayLp.length : 0;
                             const homeIdx = homeLp.length > 0 ? homePA % homeLp.length : 0;
                             const activeHalf = gameData.half || 'top';
                             const currentLineup = activeHalf === 'top' ? awayLp : homeLp;
+                            const defensiveLineup = activeHalf === 'top' ? homeLp : awayLp;
                             const currentIndex = activeHalf === 'top' ? awayIdx : homeIdx;
+
+                            const pitcher = defensiveLineup.find((p: any) => p.position === 'P' || p.position === '1');
+                            const pName = pitcher?.player ? `${pitcher.player.firstName} ${pitcher.player.lastName}` : 'Esperando Pitcher...';
 
                             set({
                                 inning: gameData.current_inning || 1, half: activeHalf,
@@ -296,7 +331,34 @@ export const useGameStore = create<GameState>()(
                                 awayBatterIndex: awayIdx, homeBatterIndex: homeIdx,
                                 currentBatter: currentLineup[currentIndex]?.player ? `${currentLineup[currentIndex].player.firstName} ${currentLineup[currentIndex].player.lastName}` : 'Desconocido',
                                 currentBatterId: currentLineup[currentIndex]?.playerId || null,
+                                currentPitcher: pName,
+                                winningPitcher: gameData.winningPitcher,
+                                mvpBatter1: gameData.mvpBatter1,
+                                mvpBatter2: gameData.mvpBatter2,
+                                status: gameData.status,
                                 playLogs: plays.map((p: any) => ({ text: `Inning ${p.inning}: ${p.result}` })).reverse()
+                            });
+                        } else {
+                            // No hay jugadas aún, inicializar con el primer bateador
+                            const activeHalf = gameData.half || 'top';
+                            const currentLineup = activeHalf === 'top' ? awayLp : homeLp;
+                            const defensiveLineup = activeHalf === 'top' ? homeLp : awayLp;
+                            
+                            const pitcher = defensiveLineup.find((p: any) => p.position === 'P' || p.position === '1');
+                            const pName = pitcher?.player ? `${pitcher.player.firstName} ${pitcher.player.lastName}` : 'Esperando Pitcher...';
+
+                            set({
+                                inning: gameData.current_inning || 1, half: activeHalf,
+                                homeScore: gameData.home_score || 0, awayScore: gameData.away_score || 0,
+                                awayBatterIndex: 0, homeBatterIndex: 0,
+                                currentBatter: currentLineup[0]?.player ? `${currentLineup[0].player.firstName} ${currentLineup[0].player.lastName}` : 'Esperando Lineup',
+                                currentBatterId: currentLineup[0]?.playerId || null,
+                                currentPitcher: pName,
+                                winningPitcher: gameData.winningPitcher,
+                                mvpBatter1: gameData.mvpBatter1,
+                                mvpBatter2: gameData.mvpBatter2,
+                                status: gameData.status,
+                                playLogs: [{ text: "Inicio del partido", inningString: `▲ 1` }]
                             });
                         }
                     }
@@ -309,7 +371,7 @@ export const useGameStore = create<GameState>()(
                 const { gameId } = get();
                 if (!gameId) return;
                 if (gameChannel) gameChannel.unsubscribe();
-                gameChannel = supabase.channel(`game-${gameId}`, { config: { broadcast: { self: false } } });
+                gameChannel = supabase.channel(`game-${gameId}`, { config: { broadcast: { self: true } } });
                 gameChannel.subscribe((status) => {
                     if (status === 'SUBSCRIBED') console.log(`Realtime subscribed: game-${gameId}`);
                 });

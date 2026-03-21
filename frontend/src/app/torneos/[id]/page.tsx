@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { getUser } from '@/lib/auth';
-import { ArrowLeft, MapPin, Calendar, Users, Target, Clock, Settings, Radio, X, CheckCircle2, ShieldAlert, ChevronRight } from "lucide-react";
+import { ArrowLeft, MapPin, Calendar, Users, Target, Clock, Settings, Radio, X, CheckCircle2, ShieldAlert, ChevronRight, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { calculateBoxscore } from "@/lib/boxscore";
 
@@ -18,7 +18,7 @@ export default function TournamentProfilePage() {
     // Tournament data from API
     interface TournamentData {
         id: string; name: string; season: string; category?: string; rulesType: string;
-        rules_type?: string; 
+        rules_type?: string;
         description?: string;
         logoUrl?: string;
         logo_url?: string;
@@ -29,6 +29,7 @@ export default function TournamentProfilePage() {
         games: { id: string; homeTeam: { id: string; name: string; shortName?: string }; awayTeam: { id: string; name: string; shortName?: string }; homeScore: number; awayScore: number; currentInning: number; half: string; status: string; scheduledDate: string }[];
         fields: { id: string; name: string; location?: string }[];
         organizers: { id: string; user: { firstName?: string; lastName?: string; email: string } }[];
+        news?: { id: string; title: string; description?: string; cover_url?: string; facebook_url?: string; type?: string; has_video?: boolean; created_at: string }[];
     }
     const [tournament, setTournament] = useState<TournamentData | null>(null);
     const [loadingTournament, setLoadingTournament] = useState(true);
@@ -45,13 +46,25 @@ export default function TournamentProfilePage() {
                         teams:teams(*, _count:players(count)),
                         games:games(*, homeTeam:teams!home_team_id(*), awayTeam:teams!away_team_id(*)),
                         fields:fields(id, name, location),
-                        organizers:tournament_organizers(*, user:users(*))
+                        organizers:tournament_organizers(*, user:users(*)),
+                        news:tournament_news(*)
                     `)
                     .eq('id', tournamentId)
                     .single();
 
                 if (error) throw error;
-                // Transform snake_case to camelCase if necessary, or update interface
+                
+                // Map fields to match interface if necessary
+                if (data && data.games) {
+                    data.games = data.games.map((g: any) => ({
+                        ...g,
+                        scheduledDate: g.scheduled_date,
+                        homeScore: g.home_score,
+                        awayScore: g.away_score,
+                        currentInning: g.current_inning
+                    }));
+                }
+
                 setTournament(data as any);
                 setLoadingTournament(false);
             } catch (err) {
@@ -81,24 +94,7 @@ export default function TournamentProfilePage() {
     const [leagueUmpires, setLeagueUmpires] = useState<UmpireOption[]>([]);
     const [umpireAssignment, setUmpireAssignment] = useState({ plate: '', base1: '', base2: '', base3: '' });
 
-    useEffect(() => {
-        const fetchUmpires = async () => {
-            const lId = tournament?.league_id || tournament?.leagueId;
-            if (isCreatingGame && lId) {
-                try {
-                    const { data, error } = await supabase
-                        .from('umpires')
-                        .select('*')
-                        .eq('league_id', lId);
-                    if (error) throw error;
-                    setLeagueUmpires(data || []);
-                } catch (err) {
-                    console.error("Error fetching umpires:", err);
-                }
-            }
-        };
-        fetchUmpires();
-    }, [isCreatingGame, tournament]);
+    // Umpire fetching removed as we use text inputs now
 
     const handleCreateGameSubmit = async () => {
         if (!gameForm.homeTeamId || !gameForm.awayTeamId || !gameForm.scheduledDate) {
@@ -117,7 +113,10 @@ export default function TournamentProfilePage() {
                     scheduled_date: new Date(gameForm.scheduledDate).toISOString(),
                     field: gameForm.field || null,
                     status: 'scheduled',
-                    updated_at: new Date().toISOString()
+                    umpire_plate: umpireAssignment.plate || null,
+                    umpire_base1: umpireAssignment.base1 || null,
+                    umpire_base2: umpireAssignment.base2 || null,
+                    umpire_base3: umpireAssignment.base3 || null,
                 })
                 .select()
                 .single();
@@ -125,20 +124,7 @@ export default function TournamentProfilePage() {
             if (gameError) throw gameError;
             setCreatedGameId(newGame.id);
 
-            // 2. Assign umpires
-            const roles = ['plate', 'base1', 'base2', 'base3'] as const;
-            for (const role of roles) {
-                const umpireId = umpireAssignment[role];
-                if (umpireId) {
-                    await supabase.from('game_umpires').insert({
-                        game_id: newGame.id,
-                        umpire_id: umpireId,
-                        role: role
-                    });
-                }
-            }
-
-            // 3. Fetch rosters
+            // 2. Fetch rosters
             const { data: homeData, error: homeError } = await supabase.from('teams').select('*, players(*)').eq('id', gameForm.homeTeamId).single();
             const { data: awayData, error: awayError } = await supabase.from('teams').select('*, players(*)').eq('id', gameForm.awayTeamId).single();
 
@@ -264,7 +250,46 @@ export default function TournamentProfilePage() {
     };
 
     const [isCreatingNews, setIsCreatingNews] = useState(false);
+    const [saving, setSaving] = useState(false);
     const [newsForm, setNewsForm] = useState({ title: '', facebook_url: '', cover_url: '', type: 'Noticia', has_video: false, description: '' });
+
+    const handleCreateNews = async () => {
+        if (!newsForm.title) {
+            alert('Por favor agrega un título a la noticia');
+            return;
+        }
+
+        setSaving(true);
+        try {
+            const user = getUser();
+            const { error } = await supabase
+                .from('tournament_news')
+                .insert({
+                    tournament_id: tournamentId,
+                    title: newsForm.title,
+                    description: newsForm.description,
+                    cover_url: newsForm.cover_url,
+                    facebook_url: newsForm.facebook_url,
+                    type: newsForm.type,
+                    has_video: newsForm.has_video,
+                    author_id: user?.id || null
+                });
+
+            if (error) throw error;
+
+            alert('Noticia Publicada con éxito');
+            setIsCreatingNews(false);
+            setNewsForm({ title: '', facebook_url: '', cover_url: '', type: 'Noticia', has_video: false, description: '' });
+            
+            // Reload news in state or just reload page
+            window.location.reload();
+        } catch (err) {
+            console.error(err);
+            alert('Error al publicar noticia');
+        } finally {
+            setSaving(false);
+        }
+    };
 
     const [isAddingField, setIsAddingField] = useState(false);
     const [fieldForm, setFieldForm] = useState({ name: '', address: '', maps_url: '' });
@@ -301,9 +326,9 @@ export default function TournamentProfilePage() {
                 name: tournament.name,
                 season: tournament.season,
                 description: tournament.description || '',
-                rulesType: tournament.rulesType,
+                rulesType: tournament.rules_type,
                 category: tournament.category || '',
-                logoUrl: tournament.logoUrl || ''
+                logoUrl: tournament.logo_url || ''
             });
         }
     }, [tournament]);
@@ -354,7 +379,7 @@ export default function TournamentProfilePage() {
                 .eq('id', tournamentId);
 
             if (error) throw error;
-            
+
             alert('Perfil del Torneo Actualizado');
             setIsEditingProfile(false);
             window.location.reload();
@@ -526,7 +551,7 @@ export default function TournamentProfilePage() {
                         }
                     });
 
-                    const standingsArray = Object.values(statsMap).sort((a,b) => (b.w - b.l) - (a.w - a.l) || (b.rs - b.ra) - (a.rs - a.ra));
+                    const standingsArray = Object.values(statsMap).sort((a, b) => (b.w - b.l) - (a.w - a.l) || (b.rs - b.ra) - (a.rs - a.ra));
                     if (standingsArray.length > 0) {
                         const top = standingsArray[0];
                         standingsArray.forEach(s => {
@@ -548,20 +573,126 @@ export default function TournamentProfilePage() {
     }, [activeTab, standingsLoaded, tournamentId]);
 
     // Stats state
-    interface BattingRow { playerId: string; firstName: string; lastName: string; teamName: string; gp: number; ab: number; h: number; avg: string; hr: number; rbi: number; bb: number; so: number }
-    interface PitchingRow { playerId: string; firstName: string; lastName: string; teamName: string; gp: number; ip: string; h: number; r: number; bb: number; so: number; era: string }
+    interface BattingRow {
+        playerId: string;
+        firstName: string;
+        lastName: string;
+        teamName: string;
+        photoUrl?: string;
+        gp: number;
+        ab: number;
+        h: number;
+        h2: number;
+        h3: number;
+        hr: number;
+        rbi: number;
+        bb: number;
+        so: number;
+        avg: string;
+        obp?: string;
+        slg?: string;
+        ops?: string;
+    }
+    interface PitchingRow {
+        playerId: string;
+        firstName: string;
+        lastName: string;
+        teamName: string;
+        photoUrl?: string;
+        gp: number;
+        ip: string;
+        ipOuts: number;
+        h: number;
+        r: number;
+        er: number;
+        bb: number;
+        so: number;
+        w: number;
+        l: number;
+        era: string;
+    }
     const [battingStats, setBattingStats] = useState<BattingRow[] | null>(null);
     const [pitchingStats, setPitchingStats] = useState<PitchingRow[] | null>(null);
     const [statsLoaded, setStatsLoaded] = useState(false);
     const [statsView, setStatsView] = useState<'batting' | 'pitching'>('batting');
 
     useEffect(() => {
-        if (activeTab === 'estadisticas' && !statsLoaded) {
-            // Stats calculation is currently disabled or needs client-side implementation
-            setBattingStats([]);
-            setPitchingStats([]);
-            setStatsLoaded(true);
-        }
+        const fetchTournamentStats = async () => {
+            if (activeTab === 'estadisticas' && !statsLoaded) {
+                try {
+                    const { data: stats, error } = await supabase
+                        .from('player_stats')
+                        .select('*, player:players(first_name, last_name, photo_url), team:teams(name)')
+                        .eq('tournament_id', tournamentId);
+
+                    if (error) throw error;
+
+                    const finalizedBatting: BattingRow[] = (stats || [])
+                        .filter(s => s.at_bats > 0 || s.bb > 0)
+                        .map(s => {
+                            const p = s.player || {};
+                            const t = s.team || {};
+                            return {
+                                playerId: s.player_id,
+                                firstName: p.first_name || '',
+                                lastName: p.last_name || '',
+                                teamName: t.name || '',
+                                photoUrl: p.photo_url || null,
+                                gp: s.games_played || 0,
+                                ab: s.at_bats,
+                                h: s.hits,
+                                h2: s.h2,
+                                h3: s.h3,
+                                hr: s.hr,
+                                rbi: s.rbi,
+                                bb: s.bb,
+                                so: s.so,
+                                avg: s.at_bats > 0 ? (s.hits / s.at_bats).toFixed(3).replace(/^0/, '') : '.000'
+                            };
+                        })
+                        .sort((a, b) => parseFloat(b.avg) - parseFloat(a.avg) || b.h - a.h);
+
+                    const finalizedPitching: PitchingRow[] = (stats || [])
+                        .filter(s => s.ip_outs > 0)
+                        .map(s => {
+                            const p = s.player || {};
+                            const t = s.team || {};
+                            const innings = Math.floor(s.ip_outs / 3) + (s.ip_outs % 3) / 10;
+                            const totalInnings = s.ip_outs / 3;
+                            return {
+                                playerId: s.player_id,
+                                firstName: p.first_name || '',
+                                lastName: p.last_name || '',
+                                teamName: t.name || '',
+                                photoUrl: p.photo_url || null,
+                                gp: s.games_played || 0,
+                                ipOuts: s.ip_outs,
+                                h: s.h_allowed,
+                                r: s.er_allowed,
+                                er: s.er_allowed,
+                                bb: s.bb_allowed,
+                                so: s.so_pitching,
+                                w: s.wins,
+                                l: s.losses,
+                                ip: innings.toFixed(1),
+                                era: totalInnings > 0 ? ((s.er_allowed * 9) / totalInnings).toFixed(2) : '0.00'
+                            };
+                        })
+                        .sort((a, b) => parseFloat(a.era) - parseFloat(b.era) || b.so - a.so);
+
+                    setBattingStats(finalizedBatting);
+                    setPitchingStats(finalizedPitching);
+                    setStatsLoaded(true);
+                } catch (err: any) {
+                    console.error("Error fetching tournament stats:", err);
+                    if (err?.message) {
+                        console.error("Error details:", err.message, err.details, err.hint);
+                    }
+                    setStatsLoaded(true);
+                }
+            }
+        };
+        fetchTournamentStats();
     }, [activeTab, statsLoaded, tournamentId]);
 
     // Fetch Role on Mount
@@ -610,7 +741,7 @@ export default function TournamentProfilePage() {
 
                             <div className="flex flex-wrap items-center gap-4 text-sm font-medium">
                                 <span className="flex items-center gap-1.5 text-foreground bg-muted/10 px-3 py-1.5 rounded-full border border-muted/20">
-                                    <span className="text-base">{tournament?.rulesType?.includes('softball') ? '🥎' : '⚾'}</span> {tournament?.rulesType?.includes('softball') ? 'Softbol' : 'Béisbol'}
+                                    <span className="text-base">{tournament?.rules_type?.includes('softball_7') ? '🥎' : '⚾'}</span> {tournament?.rules_type?.includes('softball') ? 'Softbol' : 'Béisbol'}
                                 </span>
                                 {tournament?.league?.name && (
                                     <span className="flex items-center gap-1.5 text-foreground">
@@ -628,8 +759,8 @@ export default function TournamentProfilePage() {
                         {/* Tournament Avatar / Logo */}
                         <div className="w-24 h-24 sm:w-32 sm:h-32 md:w-64 md:h-64 mx-auto md:mx-0 bg-white rounded-3xl md:rounded-[2.5rem] border-4 border-surface shadow-xl overflow-hidden flex items-center justify-center shrink-0 relative group">
                             <div className="absolute inset-0 bg-primary/5 group-hover:bg-transparent transition-colors"></div>
-                            {tournament?.logoUrl ? (
-                                <img src={tournament.logoUrl} alt="Tournament Logo" className="w-full h-full object-contain p-2" />
+                            {tournament?.logo_url ? (
+                                <img src={tournament.logo_url} alt="Tournament Logo" className="w-full h-full object-contain p-2" />
                             ) : (
                                 <Image src={`https://api.dicebear.com/7.x/shapes/svg?seed=Torneo${tournamentId}`} alt="Tournament Logo" width={192} height={192} className="object-cover" />
                             )}
@@ -773,12 +904,47 @@ export default function TournamentProfilePage() {
                                     )}
                                 </section>
 
-                                {/* Noticias (Vacío para torneo nuevo) */}
+                                {/* Noticias */}
                                 <section className="bg-surface border border-muted/30 rounded-2xl p-6 shadow-sm">
                                     <h3 className="text-lg font-bold mb-6 text-foreground">Noticias</h3>
-                                    <div className="bg-muted/5 border border-muted/20 rounded-xl p-8 text-center">
-                                        <p className="text-muted-foreground text-sm font-medium">No hay noticias publicadas recientemente.</p>
-                                    </div>
+                                    {tournament?.news && tournament.news.length > 0 ? (
+                                        <div className="space-y-4">
+                                            {tournament.news
+                                                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                                                .map((item) => (
+                                                    <div key={item.id} className="p-4 bg-muted/5 border border-muted/10 rounded-xl hover:bg-muted/10 transition-colors">
+                                                        <div className="flex flex-col md:flex-row gap-4">
+                                                            {item.cover_url && (
+                                                                <div className="w-full md:w-32 h-24 shrink-0 rounded-lg overflow-hidden border border-muted/20 bg-muted/5">
+                                                                    <img src={item.cover_url} alt={item.title} className="w-full h-full object-cover" />
+                                                                </div>
+                                                            )}
+                                                            <div className="flex-1">
+                                                                <div className="flex justify-between items-start mb-2">
+                                                                    <span className="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-black uppercase rounded-md border border-primary/20">
+                                                                        {item.type}
+                                                                    </span>
+                                                                    <span className="text-[10px] text-muted-foreground font-bold">
+                                                                        {new Date(item.created_at).toLocaleDateString()}
+                                                                    </span>
+                                                                </div>
+                                                                <h4 className="font-black text-foreground mb-1">{item.title}</h4>
+                                                                <p className="text-sm text-muted-foreground line-clamp-3">{item.description}</p>
+                                                                {item.facebook_url && (
+                                                                    <a href={item.facebook_url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs text-blue-500 font-bold hover:underline">
+                                                                        Ver en Facebook ↗
+                                                                    </a>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                        </div>
+                                    ) : (
+                                        <div className="bg-muted/5 border border-muted/20 rounded-xl p-8 text-center">
+                                            <p className="text-muted-foreground text-sm font-medium">No hay noticias publicadas recientemente.</p>
+                                        </div>
+                                    )}
                                 </section>
 
                             </div>
@@ -1092,103 +1258,213 @@ export default function TournamentProfilePage() {
                         </div>
                     )}
                     {activeTab === 'estadisticas' && (
-                        <div className="animate-fade-in-up space-y-4">
+                        <div className="animate-fade-in-up space-y-8">
                             {/* Sub-tab toggle */}
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => setStatsView('batting')}
-                                    className={`px-5 py-2 text-sm font-bold rounded-full transition-all ${statsView === 'batting' ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:text-foreground bg-muted/10 border border-muted/20'}`}
-                                >
-                                    Bateo
-                                </button>
-                                <button
-                                    onClick={() => setStatsView('pitching')}
-                                    className={`px-5 py-2 text-sm font-bold rounded-full transition-all ${statsView === 'pitching' ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:text-foreground bg-muted/10 border border-muted/20'}`}
-                                >
-                                    Pitcheo
-                                </button>
+                            <div className="flex justify-center">
+                                <div className="flex gap-1 p-1 bg-surface border border-muted/30 rounded-2xl shadow-sm">
+                                    <button
+                                        onClick={() => setStatsView('batting')}
+                                        className={`px-8 py-2.5 text-sm font-black rounded-xl transition-all ${statsView === 'batting' ? 'bg-primary text-white shadow-lg' : 'text-muted-foreground hover:text-foreground hover:bg-muted/10'}`}
+                                    >
+                                        BATEO
+                                    </button>
+                                    <button
+                                        onClick={() => setStatsView('pitching')}
+                                        className={`px-8 py-2.5 text-sm font-black rounded-xl transition-all ${statsView === 'pitching' ? 'bg-primary text-white shadow-lg' : 'text-muted-foreground hover:text-foreground hover:bg-muted/10'}`}
+                                    >
+                                        PITCHEO
+                                    </button>
+                                </div>
                             </div>
 
-                            <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm">
-                                {!statsLoaded ? (
-                                    <div className="p-12 text-center text-muted-foreground text-sm">Cargando estadísticas...</div>
-                                ) : statsView === 'batting' ? (
-                                    <>
-                                        <div className="p-6 border-b border-muted/20">
-                                            <h3 className="text-lg font-bold text-foreground">Líderes de Bateo</h3>
-                                        </div>
-                                        {!battingStats || battingStats.length === 0 ? (
-                                            <div className="p-8 text-center text-muted-foreground text-sm">No hay datos de bateo disponibles.</div>
-                                        ) : (
-                                            <div className="overflow-x-auto">
-                                                <table className="w-full text-left">
-                                                    <thead className="bg-muted/5">
-                                                        <tr>
-                                                            {['#','Jugador','Equipo','JJ','AB','H','AVG','HR','RBI','BB','SO'].map(h => (
-                                                                <th key={h} className="px-4 py-3 font-bold text-muted-foreground text-xs uppercase tracking-wider text-center first:text-left">{h}</th>
+                            {!statsLoaded ? (
+                                <div className="p-20 text-center">
+                                    <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-4" />
+                                    <p className="text-muted-foreground font-bold italic">Calculando estadísticas del torneo...</p>
+                                </div>
+                            ) : statsView === 'batting' ? (
+                                <>
+                                    {/* LÍDERES DE BATEO */}
+                                    <div className="space-y-4">
+                                        <h3 className="text-xl font-black text-foreground flex items-center gap-2">
+                                            <Trophy className="w-5 h-5 text-amber-500" />
+                                            Líderes de Bateo
+                                        </h3>
+                                        
+                                        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                                            {[
+                                                { label: 'AVG', key: 'avg', sort: (a: any, b: any) => parseFloat(b.avg) - parseFloat(a.avg) },
+                                                { label: 'HITS', key: 'h', sort: (a: any, b: any) => b.h - a.h },
+                                                { label: 'HR', key: 'hr', sort: (a: any, b: any) => b.hr - a.hr },
+                                                { label: 'RBI', key: 'rbi', sort: (a: any, b: any) => b.rbi - a.rbi },
+                                                { label: 'BB', key: 'bb', sort: (a: any, b: any) => b.bb - a.bb }
+                                            ].map(cat => {
+                                                const top4 = [...(battingStats || [])].sort(cat.sort).slice(0, 4);
+                                                return (
+                                                    <div key={cat.label} className="bg-surface border border-muted/30 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow">
+                                                        <h4 className="text-[10px] font-black text-primary uppercase tracking-widest mb-3 pb-2 border-b border-muted/10">{cat.label}</h4>
+                                                        <div className="space-y-3">
+                                                            {top4.length === 0 ? <p className="text-[10px] text-muted-foreground italic">Sin datos</p> : top4.map((p, idx) => (
+                                                                <div key={idx} className="flex items-center gap-2">
+                                                                    <div className="relative">
+                                                                        <div className="w-8 h-8 rounded-full bg-muted/20 border border-muted/30 overflow-hidden shrink-0">
+                                                                            {p.photoUrl ? (
+                                                                                <img src={p.photoUrl} alt="Player" className="w-full h-full object-cover" />
+                                                                            ) : (
+                                                                                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" className="w-full h-full object-cover" />
+                                                                            )}
+                                                                        </div>
+                                                                        {idx === 0 && <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-500 rounded-full flex items-center justify-center text-[7px] text-white shadow-sm border border-surface">1</div>}
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <p className="text-[11px] font-bold text-foreground truncate">{p.lastName}</p>
+                                                                        <p className="text-[9px] text-muted-foreground truncate">{p.teamName}</p>
+                                                                    </div>
+                                                                    <span className="text-xs font-black text-primary ml-auto">{(p as any)[cat.key]}</span>
+                                                                </div>
                                                             ))}
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y divide-muted/10">
-                                                        {battingStats.map((p, i) => (
-                                                            <tr key={p.playerId} className="hover:bg-muted/5 transition-colors">
-                                                                <td className="px-4 py-3 font-black text-muted-foreground text-sm">{i + 1}</td>
-                                                                <td className="px-4 py-3 font-bold text-foreground text-sm whitespace-nowrap">{p.firstName} {p.lastName}</td>
-                                                                <td className="px-4 py-3 text-sm text-muted-foreground text-center">{p.teamName}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.gp}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.ab}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.h}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-black text-foreground">{p.avg}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.hr}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.rbi}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.bb}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.so}</td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        )}
-                                    </>
-                                ) : (
-                                    <>
-                                        <div className="p-6 border-b border-muted/20">
-                                            <h3 className="text-lg font-bold text-foreground">Líderes de Pitcheo</h3>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
-                                        {!pitchingStats || pitchingStats.length === 0 ? (
-                                            <div className="p-8 text-center text-muted-foreground text-sm">No hay datos de pitcheo disponibles.</div>
-                                        ) : (
-                                            <div className="overflow-x-auto">
-                                                <table className="w-full text-left">
-                                                    <thead className="bg-muted/5">
-                                                        <tr>
-                                                            {['#','Jugador','Equipo','JJ','IP','H','CE','BB','K','ERA'].map(h => (
-                                                                <th key={h} className="px-4 py-3 font-bold text-muted-foreground text-xs uppercase tracking-wider text-center first:text-left">{h}</th>
-                                                            ))}
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y divide-muted/10">
-                                                        {pitchingStats.map((p, i) => (
-                                                            <tr key={p.playerId} className="hover:bg-muted/5 transition-colors">
-                                                                <td className="px-4 py-3 font-black text-muted-foreground text-sm">{i + 1}</td>
-                                                                <td className="px-4 py-3 font-bold text-foreground text-sm whitespace-nowrap">{p.firstName} {p.lastName}</td>
-                                                                <td className="px-4 py-3 text-sm text-muted-foreground text-center">{p.teamName}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.gp}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.ip}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.h}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.r}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.bb}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.so}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-black text-foreground">{p.era}</td>
-                                                            </tr>
+                                    </div>
+
+                                    {/* TABLA COMPLETA DE BATEO */}
+                                    <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm mt-8">
+                                        <div className="p-6 border-b border-muted/20 flex justify-between items-center">
+                                            <h3 className="text-lg font-bold text-foreground">Estadísticas Detalladas de Bateo</h3>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left">
+                                                <thead className="bg-muted/5">
+                                                    <tr>
+                                                        <th className="px-4 py-3 font-bold text-muted-foreground text-[10px] uppercase tracking-wider">Jugador</th>
+                                                        <th className="px-4 py-3 font-bold text-center text-muted-foreground text-[10px] uppercase tracking-wider">Equipo</th>
+                                                        {['JJ', 'AB', 'H', '2B', '3B', 'HR', 'RBI', 'BB', 'SO', 'AVG'].map(h => (
+                                                            <th key={h} className="px-4 py-3 font-bold text-center text-muted-foreground text-[10px] uppercase tracking-wider">{h}</th>
                                                         ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        )}
-                                    </>
-                                )}
-                            </div>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-muted/10">
+                                                    {battingStats?.map((p, i) => (
+                                                        <tr key={`${p.playerId}-${i}`} className="hover:bg-muted/5 transition-colors">
+                                                            <td className="px-4 py-3">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="w-8 h-8 rounded-full overflow-hidden bg-muted/20 border border-muted/30 shrink-0">
+                                                                        {p.photoUrl ? <img src={p.photoUrl} alt="" className="w-full object-cover h-full" /> : <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="" className="w-full object-cover h-full" />}
+                                                                    </div>
+                                                                    <span className="text-sm font-bold text-foreground whitespace-nowrap">{p.firstName} {p.lastName}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-3 text-[11px] text-muted-foreground text-center font-medium">{p.teamName}</td>
+                                                            <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.gp}</td>
+                                                            <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.ab}</td>
+                                                            <td className="px-4 py-3 text-sm text-center font-bold text-foreground">{p.h}</td>
+                                                            <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.h2}</td>
+                                                            <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.h3}</td>
+                                                            <td className="px-4 py-3 text-sm text-center font-black text-primary">{p.hr}</td>
+                                                            <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.rbi}</td>
+                                                            <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.bb}</td>
+                                                            <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.so}</td>
+                                                            <td className="px-4 py-3 text-sm text-center font-black text-foreground bg-primary/5">{p.avg}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    {/* LÍDERES DE PITCHEO */}
+                                    <div className="space-y-4">
+                                        <h3 className="text-xl font-black text-foreground flex items-center gap-2">
+                                            <Trophy className="w-5 h-5 text-amber-500" />
+                                            Líderes de Pitcheo
+                                        </h3>
+                                        
+                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                            {[
+                                                { label: 'ERA', key: 'era', sort: (a: any, b: any) => parseFloat(a.era) - parseFloat(b.era) },
+                                                { label: 'K (PONCHES)', key: 'so', sort: (a: any, b: any) => b.so - a.so },
+                                                { label: 'IP (INNINGS)', key: 'ip', sort: (a: any, b: any) => parseFloat(b.ip) - parseFloat(a.ip) },
+                                                { label: 'W (VICTORIAS)', key: 'w', sort: (a: any, b: any) => b.w - a.w }
+                                            ].map(cat => {
+                                                const top4 = [...(pitchingStats || [])].sort(cat.sort).slice(0, 4);
+                                                return (
+                                                    <div key={cat.label} className="bg-surface border border-muted/30 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow">
+                                                        <h4 className="text-[10px] font-black text-primary uppercase tracking-widest mb-3 pb-2 border-b border-muted/10">{cat.label}</h4>
+                                                        <div className="space-y-3">
+                                                            {top4.length === 0 ? <p className="text-[10px] text-muted-foreground italic">Sin datos</p> : top4.map((p, idx) => (
+                                                                <div key={idx} className="flex items-center gap-2">
+                                                                    <div className="relative">
+                                                                        <div className="w-8 h-8 rounded-full bg-muted/20 border border-muted/30 overflow-hidden shrink-0">
+                                                                            {p.photoUrl ? (
+                                                                                <img src={p.photoUrl} alt="Player" className="w-full h-full object-cover" />
+                                                                            ) : (
+                                                                                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" className="w-full h-full object-cover" />
+                                                                            )}
+                                                                        </div>
+                                                                        {idx === 0 && <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-500 rounded-full flex items-center justify-center text-[7px] text-white shadow-sm border border-surface">1</div>}
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <p className="text-[11px] font-bold text-foreground truncate">{p.lastName}</p>
+                                                                        <p className="text-[9px] text-muted-foreground truncate">{p.teamName}</p>
+                                                                    </div>
+                                                                    <span className="text-xs font-black text-primary ml-auto">{(p as any)[cat.key]}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* TABLA COMPLETA DE PITCHEO */}
+                                    <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm mt-8">
+                                        <div className="p-6 border-b border-muted/20 flex justify-between items-center">
+                                            <h3 className="text-lg font-bold text-foreground">Estadísticas Detalladas de Pitcheo</h3>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left">
+                                                <thead className="bg-muted/5">
+                                                    <tr>
+                                                        <th className="px-4 py-3 font-bold text-muted-foreground text-[10px] uppercase tracking-wider">Lanzador</th>
+                                                        {['Equipo', 'JJ', 'IP', 'H', 'CL', 'BB', 'K', 'W', 'ERA'].map(h => (
+                                                            <th key={h} className="px-4 py-3 font-bold text-center text-muted-foreground text-[10px] uppercase tracking-wider">{h}</th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-muted/10">
+                                                    {pitchingStats?.map((p, i) => (
+                                                        <tr key={`${p.playerId}-${i}`} className="hover:bg-muted/5 transition-colors">
+                                                            <td className="px-4 py-3">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="w-8 h-8 rounded-full overflow-hidden bg-muted/20 border border-muted/30 shrink-0">
+                                                                        {p.photoUrl ? <img src={p.photoUrl} alt="" className="w-full object-cover h-full" /> : <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="" className="w-full object-cover h-full" />}
+                                                                    </div>
+                                                                    <span className="text-sm font-bold text-foreground whitespace-nowrap">{p.firstName} {p.lastName}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-3 text-[11px] text-muted-foreground text-center font-medium">{p.teamName}</td>
+                                                            <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.gp}</td>
+                                                            <td className="px-4 py-3 text-sm text-center font-bold text-foreground">{p.ip}</td>
+                                                            <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.h}</td>
+                                                            <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.er}</td>
+                                                            <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.bb}</td>
+                                                            <td className="px-4 py-3 text-sm text-center font-bold text-foreground">{p.so}</td>
+                                                            <td className="px-4 py-3 text-sm text-center font-black text-emerald-600">{p.w}</td>
+                                                            <td className="px-4 py-3 text-sm text-center font-black text-foreground bg-primary/5">{p.era}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
                         </div>
                     )}
 
@@ -1263,39 +1539,33 @@ export default function TournamentProfilePage() {
                                                 onChange={(e) => setGameForm({ ...gameForm, field: e.target.value })}
                                             >
                                                 <option value="">Selecciona Campo...</option>
-                                                <option value="Estadio Municipal">Estadio Municipal</option>
-                                                <option value="Campo Principal">Campo Principal</option>
+                                                {tournament?.fields?.map(f => (
+                                                    <option key={f.id} value={f.name}>{f.name}</option>
+                                                ))}
                                             </select>
                                         </div>
                                     </div>
 
                                     <div className="space-y-3">
                                         <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                                            <ShieldAlert className="w-4 h-4" /> Asignación de Umpires
+                                            <ShieldAlert className="w-4 h-4" /> Asignación de Umpires (Escribe los nombres)
                                         </label>
-                                        {leagueUmpires.length === 0 ? (
-                                            <p className="text-xs text-muted-foreground italic">No hay umpires registrados en esta liga.</p>
-                                        ) : (
-                                            <div className="grid grid-cols-2 gap-3">
-                                                {(['plate', 'base1', 'base2', 'base3'] as const).map(role => (
-                                                    <div key={role} className="space-y-1">
-                                                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                                                            {role === 'plate' ? 'Plato' : role === 'base1' ? '1ra Base' : role === 'base2' ? '2da Base' : '3ra Base'}
-                                                        </label>
-                                                        <select
-                                                            className="w-full bg-muted/10 border border-muted/20 text-foreground text-sm rounded-xl p-2.5 outline-none focus:border-primary transition-colors"
-                                                            value={umpireAssignment[role]}
-                                                            onChange={e => setUmpireAssignment(prev => ({ ...prev, [role]: e.target.value }))}
-                                                        >
-                                                            <option value="">— Sin asignar —</option>
-                                                            {leagueUmpires.map(u => (
-                                                                <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
-                                                            ))}
-                                                        </select>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {(['plate', 'base1', 'base2', 'base3'] as const).map(role => (
+                                                <div key={role} className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                                                        {role === 'plate' ? 'Plato' : role === 'base1' ? '1ra Base' : role === 'base2' ? '2da Base' : '3ra Base'}
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Nombre del Umpire"
+                                                        className="w-full bg-muted/10 border border-muted/20 text-foreground text-sm rounded-xl p-2.5 outline-none focus:border-primary transition-colors font-bold"
+                                                        value={umpireAssignment[role]}
+                                                        onChange={(e) => setUmpireAssignment({ ...umpireAssignment, [role]: e.target.value })}
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
                             ) : (
@@ -1319,7 +1589,10 @@ export default function TournamentProfilePage() {
                                                             value={item.playerName}
                                                             onChange={(e) => {
                                                                 const val = e.target.value;
-                                                                const player = gameTeamsData.away?.players.find(p => `${p.firstName} ${p.lastName}` === val) || null;
+                                                                const player = gameTeamsData.away?.players.find(p => {
+                                                                    const pName = p.firstName ? `${p.firstName} ${p.lastName}` : `${p.first_name} ${p.last_name}`;
+                                                                    return pName === val;
+                                                                }) || null;
                                                                 const newSetup = [...awayLineupSetup];
                                                                 newSetup[index] = { ...newSetup[index], playerName: val, playerId: player?.id || '' };
                                                                 setAwayLineupSetup(newSetup);
@@ -1327,7 +1600,7 @@ export default function TournamentProfilePage() {
                                                         />
                                                         <datalist id={`away-players-list`}>
                                                             {gameTeamsData.away?.players.map(p => (
-                                                                <option key={p.id} value={`${p.firstName} ${p.lastName}`} />
+                                                                <option key={p.id} value={p.firstName ? `${p.firstName} ${p.lastName}` : `${p.first_name} ${p.last_name}`} />
                                                             ))}
                                                         </datalist>
                                                         <select
@@ -1389,7 +1662,10 @@ export default function TournamentProfilePage() {
                                                             value={item.playerName}
                                                             onChange={(e) => {
                                                                 const val = e.target.value;
-                                                                const player = gameTeamsData.home?.players.find(p => `${p.firstName} ${p.lastName}` === val) || null;
+                                                                const player = gameTeamsData.home?.players.find(p => {
+                                                                    const pName = p.firstName ? `${p.firstName} ${p.lastName}` : `${p.first_name} ${p.last_name}`;
+                                                                    return pName === val;
+                                                                }) || null;
                                                                 const newSetup = [...homeLineupSetup];
                                                                 newSetup[index] = { ...newSetup[index], playerName: val, playerId: player?.id || '' };
                                                                 setHomeLineupSetup(newSetup);
@@ -1397,7 +1673,7 @@ export default function TournamentProfilePage() {
                                                         />
                                                         <datalist id={`home-players-list`}>
                                                             {gameTeamsData.home?.players.map(p => (
-                                                                <option key={p.id} value={`${p.firstName} ${p.lastName}`} />
+                                                                <option key={p.id} value={p.firstName ? `${p.firstName} ${p.lastName}` : `${p.first_name} ${p.last_name}`} />
                                                             ))}
                                                         </datalist>
                                                         <select
@@ -1511,12 +1787,16 @@ export default function TournamentProfilePage() {
                                 value={newsForm.description}
                                 onChange={e => setNewsForm({ ...newsForm, description: e.target.value })}
                                 rows={4}
-                                className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium resize-none"
+                                className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium"
                             ></textarea>
 
                             <div className="flex justify-end pt-2">
-                                <button className="px-6 py-2.5 rounded-xl font-black bg-emerald-600 text-white hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-500/20 text-sm flex items-center gap-2" onClick={() => { alert('Noticia Publicada'); setIsCreatingNews(false); }}>
-                                    + Publicar Ahora
+                                <button
+                                    disabled={saving}
+                                    className={`px-6 py-2.5 rounded-xl font-black transition-colors shadow-lg text-sm flex items-center gap-2 ${saving ? 'bg-muted text-muted-foreground' : 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-emerald-500/20'}`}
+                                    onClick={handleCreateNews}
+                                >
+                                    {saving ? 'Publicando...' : '+ Publicar Ahora'}
                                 </button>
                             </div>
                         </div>
@@ -1566,7 +1846,7 @@ export default function TournamentProfilePage() {
                                                     location: fieldForm.address,
                                                     tournament_id: tournamentId
                                                 });
-                                            
+
                                             if (error) throw error;
 
                                             alert('Campo Registrado');

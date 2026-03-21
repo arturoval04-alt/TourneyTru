@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 interface BattingStats {
-    atBats: number; runs: number; hits: number; h2: number; h3: number; hr: number; rbi: number; bb: number; so: number; hbp: number; sac: number;
+    games: number; atBats: number; runs: number; hits: number; h2: number; h3: number; hr: number; rbi: number; bb: number; so: number; hbp: number; sac: number;
     avg: string; obp: string; slg: string; ops: string;
 }
 
@@ -203,8 +203,20 @@ export default function TeamProfilePage() {
                         *,
                         tournament:tournaments(id, name, category),
                         players(*),
-                        gamesAsHome:games!home_team_id(*, homeTeam:teams!home_team_id(id, name), awayTeam:teams!away_team_id(id, name)),
-                        gamesAsAway:games!away_team_id(*, homeTeam:teams!home_team_id(id, name), awayTeam:teams!away_team_id(id, name))
+                        gamesAsHome:games!home_team_id(*, 
+                            homeTeam:teams!home_team_id(id, name), 
+                            awayTeam:teams!away_team_id(id, name),
+                            winningPitcher:players!winning_pitcher_id(first_name, last_name),
+                            mvpBatter1:players!mvp_batter1_id(first_name, last_name),
+                            mvpBatter2:players!mvp_batter2_id(first_name, last_name)
+                        ),
+                        gamesAsAway:games!away_team_id(*, 
+                            homeTeam:teams!home_team_id(id, name), 
+                            awayTeam:teams!away_team_id(id, name),
+                            winningPitcher:players!winning_pitcher_id(first_name, last_name),
+                            mvpBatter1:players!mvp_batter1_id(first_name, last_name),
+                            mvpBatter2:players!mvp_batter2_id(first_name, last_name)
+                        )
                     `)
                     .eq('id', teamId)
                     .single();
@@ -221,6 +233,101 @@ export default function TeamProfilePage() {
                     if (won) wins++; else losses++;
                 });
 
+                const mapGame = (g: any) => ({
+                    ...g,
+                    scheduledDate: g.scheduled_date,
+                    homeScore: g.home_score,
+                    awayScore: g.away_score,
+                    currentInning: g.current_inning,
+                    winningPitcher: g.winningPitcher ? { firstName: g.winningPitcher.first_name, lastName: g.winningPitcher.last_name } : null,
+                    mvpBatter1: g.mvpBatter1 ? { firstName: g.mvpBatter1.first_name, lastName: g.mvpBatter1.last_name } : null,
+                    mvpBatter2: g.mvpBatter2 ? { firstName: g.mvpBatter2.first_name, lastName: g.mvpBatter2.last_name } : null,
+                });
+
+                const gamesAsHome = (data.gamesAsHome || []).map(mapGame);
+                const gamesAsAway = (data.gamesAsAway || []).map(mapGame);
+
+                // Aggregation for stats
+                const { data: teamStats, error: statsError } = await supabase
+                    .from('player_stats')
+                    .select('*')
+                    .eq('team_id', teamId);
+                
+                if (statsError) console.error("Error fetching team stats:", statsError);
+
+                const bMap: Record<string, any> = {};
+                const pMap: Record<string, any> = {};
+
+                // Map stats to players
+                data.players.forEach((p: any) => {
+                    const st = teamStats?.find(s => s.player_id === p.id);
+                    if (st) {
+                        bMap[p.id] = { games: st.games_played || 0, atBats: st.at_bats, runs: st.runs, hits: st.hits, h2: st.h2, h3: st.h3, hr: st.hr, rbi: st.rbi, bb: st.bb, so: st.so, hbp: st.hbp, sac: st.sac };
+                        pMap[p.id] = { games: st.games_played || 0, wins: st.wins, losses: st.losses, ipOuts: st.ip_outs, h: st.h_allowed, r: st.er_allowed, er: st.er_allowed, bb: st.bb_allowed, so: st.so_pitching };
+                    } else {
+                        bMap[p.id] = { games: 0, atBats: 0, runs: 0, hits: 0, h2: 0, h3: 0, hr: 0, rbi: 0, bb: 0, so: 0, hbp: 0, sac: 0 };
+                        pMap[p.id] = { games: 0, wins: 0, losses: 0, ipOuts: 0, h: 0, r: 0, er: 0, bb: 0, so: 0 };
+                    }
+                });
+
+                // Finalize stats per player
+                const playersWithStats = data.players.map((p: any) => {
+                    const b = bMap[p.id];
+                    const pt = pMap[p.id];
+                    
+                    const avg = b.atBats > 0 ? (b.hits / b.atBats).toFixed(3).replace(/^0/, '') : '.000';
+                    const obp = (b.atBats + b.bb + b.hbp + b.sac) > 0 ? 
+                        ((b.hits + b.bb + b.hbp) / (b.atBats + b.bb + b.hbp + b.sac)).toFixed(3).replace(/^0/, '') : '.000';
+                    const slgValue = b.atBats > 0 ? 
+                        ((b.hits - b.h2 - b.h3 - b.hr) + (b.h2 * 2) + (b.h3 * 3) + (b.hr * 4)) / b.atBats : 0;
+                    const ops = (parseFloat(obp) + slgValue).toFixed(3).replace(/^0/, '');
+
+                    const totalInnings = pt.ipOuts / 3;
+                    const ip = (Math.floor(pt.ipOuts / 3) + (pt.ipOuts % 3) / 10).toFixed(1);
+                    const era = totalInnings > 0 ? ((pt.er * 9) / totalInnings).toFixed(2) : '0.00';
+                    const whip = totalInnings > 0 ? ((pt.bb + pt.h) / totalInnings).toFixed(2) : '0.00';
+
+                    return {
+                        ...p,
+                        firstName: p.first_name,
+                        lastName: p.last_name,
+                        photoUrl: p.photo_url,
+                        stats: {
+                            batting: { ...b, avg, obp, ops, slg: slgValue.toFixed(3).replace(/^0/, '') },
+                            pitching: { ...pt, ip, era, whip }
+                        }
+                    };
+                });
+
+                // Team Totals
+                const teamBatting = playersWithStats.reduce((acc: any, p: any) => {
+                    acc.atBats += p.stats.batting.atBats;
+                    acc.hits += p.stats.batting.hits;
+                    acc.runs += p.stats.batting.runs;
+                    acc.h2 += p.stats.batting.h2;
+                    acc.h3 += p.stats.batting.h3;
+                    acc.hr += p.stats.batting.hr;
+                    acc.rbi += p.stats.batting.rbi;
+                    acc.bb += p.stats.batting.bb;
+                    acc.so += p.stats.batting.so;
+                    return acc;
+                }, { atBats: 0, hits: 0, runs: 0, h2: 0, h3: 0, hr: 0, rbi: 0, bb: 0, so: 0 });
+                teamBatting.avg = teamBatting.atBats > 0 ? (teamBatting.hits / teamBatting.atBats).toFixed(3).replace(/^0/, '') : '.000';
+
+                const teamPitching = playersWithStats.reduce((acc: any, p: any) => {
+                    acc.ipOuts += p.stats.pitching.ipOuts;
+                    acc.h += p.stats.pitching.h;
+                    acc.r += p.stats.pitching.r;
+                    acc.er += p.stats.pitching.er;
+                    acc.bb += p.stats.pitching.bb;
+                    acc.so += p.stats.pitching.so;
+                    return acc;
+                }, { ipOuts: 0, h: 0, r: 0, er: 0, bb: 0, so: 0 });
+                const teamTotalInnings = teamPitching.ipOuts / 3;
+                teamPitching.ip = (Math.floor(teamPitching.ipOuts / 3) + (teamPitching.ipOuts % 3) / 10).toFixed(1);
+                teamPitching.era = teamTotalInnings > 0 ? ((teamPitching.er * 9) / teamTotalInnings).toFixed(2) : '0.00';
+                teamPitching.whip = teamTotalInnings > 0 ? ((teamPitching.bb + teamPitching.h) / teamTotalInnings).toFixed(2) : '0.00';
+
                 setTeam({
                     ...data,
                     name: data.name,
@@ -231,12 +338,13 @@ export default function TeamProfilePage() {
                     wins,
                     losses,
                     gamesPlayed: games.length,
-                    players: data.players.map((p: any) => ({
-                        ...p,
-                        firstName: p.first_name,
-                        lastName: p.last_name,
-                        photoUrl: p.photo_url
-                    }))
+                    gamesAsHome,
+                    gamesAsAway,
+                    players: playersWithStats,
+                    stats: {
+                        batting: teamBatting,
+                        pitching: teamPitching
+                    }
                 } as any);
                 setLoading(false);
             } catch (err) {
@@ -726,6 +834,7 @@ export default function TeamProfilePage() {
                                                 <th className="px-6 py-4 text-xs font-black text-muted-foreground uppercase tracking-widest sticky left-0 bg-surface z-10 w-48">Jugador</th>
                                                 {statsType === 'bateo' ? (
                                                     <>
+                                                        <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">JJ</th>
                                                         <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">VB</th>
                                                         <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">C</th>
                                                         <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">H</th>
@@ -741,6 +850,7 @@ export default function TeamProfilePage() {
                                                     </>
                                                 ) : (
                                                     <>
+                                                        <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">JJ</th>
                                                         <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">JG</th>
                                                         <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">JP</th>
                                                         <th className="px-4 py-4 text-xs font-black text-primary text-center bg-primary/5">IP</th>
@@ -776,6 +886,7 @@ export default function TeamProfilePage() {
                                                     </td>
                                                     {statsType === 'bateo' ? (
                                                         <>
+                                                            <td className="px-3 py-4 text-sm font-medium text-foreground text-center">{p.stats?.batting.games}</td>
                                                             <td className="px-3 py-4 text-sm font-medium text-foreground text-center">{p.stats?.batting.atBats}</td>
                                                             <td className="px-3 py-4 text-sm font-medium text-foreground text-center">{p.stats?.batting.runs}</td>
                                                             <td className="px-3 py-4 text-sm font-medium text-foreground text-center">{p.stats?.batting.hits}</td>
@@ -791,6 +902,7 @@ export default function TeamProfilePage() {
                                                         </>
                                                     ) : (
                                                         <>
+                                                            <td className="px-3 py-4 text-sm font-medium text-foreground text-center">{p.stats?.pitching.games}</td>
                                                             <td className="px-3 py-4 text-sm font-medium text-foreground text-center">{p.stats?.pitching.wins}</td>
                                                             <td className="px-3 py-4 text-sm font-medium text-foreground text-center">{p.stats?.pitching.losses}</td>
                                                             <td className="px-4 py-4 text-sm font-black text-primary text-center bg-primary/5">{p.stats?.pitching.ip}</td>
@@ -810,6 +922,7 @@ export default function TeamProfilePage() {
                                                 <td className="px-6 py-4 sticky left-0 bg-[#f8fafc] dark:bg-[#0f172a] z-10 font-black text-primary uppercase text-xs">TOTAL EQUIPO</td>
                                                 {statsType === 'bateo' ? (
                                                     <>
+                                                        <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.gamesPlayed}</td>
                                                         <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.stats?.batting.atBats}</td>
                                                         <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.stats?.batting.runs}</td>
                                                         <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.stats?.batting.hits}</td>
@@ -825,6 +938,7 @@ export default function TeamProfilePage() {
                                                     </>
                                                 ) : (
                                                     <>
+                                                        <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.gamesPlayed}</td>
                                                         <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.wins}</td>
                                                         <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.losses}</td>
                                                         <td className="px-4 py-4 text-sm font-black text-primary text-center bg-primary/5">{team.stats?.pitching.ip}</td>

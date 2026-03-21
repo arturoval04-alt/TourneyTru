@@ -127,7 +127,6 @@ export default function AdminDashboard() {
                                 role_id: publicRole?.id,
                                 password_hash: 'OAUTH_USER', // Evitar error de NOT NULL
                                 created_at: new Date().toISOString(),
-                                updated_at: new Date().toISOString()
                             })
                             .select('*, roles(name)')
                             .single();
@@ -368,8 +367,7 @@ export default function AdminDashboard() {
                     away_team_id: awayTeamId,
                     scheduled_date: now,
                     status: 'scheduled',
-                    created_at: now,
-                    updated_at: now
+                    created_at: now
                 })
                 .select()
                 .single();
@@ -512,7 +510,6 @@ export default function AdminDashboard() {
                     name: teamForm.name,
                     tournament_id: teamForm.tournament_id,
                     created_at: now,
-                    updated_at: now
                 });
             
             if (error) throw error;
@@ -548,7 +545,6 @@ export default function AdminDashboard() {
                     team_id: playerForm.team_id,
                     position: playerForm.position,
                     created_at: now,
-                    updated_at: now
                 });
 
             if (error) throw error;
@@ -597,7 +593,6 @@ export default function AdminDashboard() {
                     team_id: playerForm.team_id,
                     position: playerForm.position,
                     photo_url: playerForm.photoUrl,
-                    updated_at: new Date().toISOString()
                 })
                 .eq('id', editingPlayer.id);
 
@@ -655,7 +650,6 @@ export default function AdminDashboard() {
                         phone: '', 
                         role_id: (await supabase.from('roles').select('id').eq('name', userForm.role).single()).data?.id,
                         created_at: now,
-                        updated_at: now
                     });
                 if (profileError) throw profileError;
             }
@@ -687,7 +681,6 @@ export default function AdminDashboard() {
                     name: leagueName,
                     admin_id: currentUser.id,
                     created_at: now,
-                    updated_at: now
                 });
 
             if (error) throw error;
@@ -729,7 +722,6 @@ export default function AdminDashboard() {
                 .from('users')
                 .update({ 
                     phone: newPhone,
-                    updated_at: new Date().toISOString()
                 })
                 .eq('id', currentUser.id);
 
@@ -757,7 +749,6 @@ export default function AdminDashboard() {
                     .from('users')
                     .update({ 
                         profile_picture: base64String,
-                        updated_at: new Date().toISOString()
                     })
                     .eq('id', currentUser.id);
 
