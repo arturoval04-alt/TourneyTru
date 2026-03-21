@@ -9,60 +9,39 @@ Aplicación para llevar la puntuación y el tablero en vivo de partidos deportiv
 
 ## Estructura del Proyecto
 
-El proyecto se divide en dos partes principales:
-- **`backend`**: API construida con NestJS y Prisma para la base de datos (SQLite en modo desarrollo y WebSockets para tiempo real).
-- **`frontend`**: Interfaz de usuario construida con Next.js y React.
+El proyecto ha sido migrado a una arquitectura **Serverless con Supabase**:
+- **`frontend`**: Aplicación principal construida con Next.js, React y Tailwind CSS. Utiliza Supabase para autenticación, base de datos y tiempo real.
+- **`backend`**: (Legacy) Anteriormente utilizado para la lógica de servidor, ahora reemplazado por Supabase y Route Handlers nativos de Next.js.
 
-## Instalación Inicial
+## Configuración y Ejecución
 
-Si es la primera vez que clonas o descargas el proyecto, necesitas instalar las dependencias en ambas carpetas.
+Ya no es necesario ejecutar un servidor backend por separado. Todo funciona a través del frontend conectado a Supabase.
 
-Desde la carpeta raíz del proyecto (`ScoreKeeper`):
+### Paso 1: Configurar Variables de Entorno
+Asegúrate de tener un archivo `.env.local` dentro de la carpeta `frontend` con las siguientes variables:
+```env
+NEXT_PUBLIC_SUPABASE_URL=tu_url_de_supabase
+NEXT_PUBLIC_SUPABASE_ANON_KEY=tu_llave_anon_de_supabase
+```
 
-1. **Dependencias del Backend:**
-   ```bash
-   cd backend
-   npm install
-   ```
-2. **Dependencias del Frontend:**
-   ```bash
-   cd ../frontend
-   npm install
-   ```
-
-*Nota: La base de datos local SQLite ya se encuentra en el proyecto (`backend/dev.db`), pero si necesitas reiniciarla puedes ejecutar `npx prisma db push` o `npx prisma migrate dev` dentro de la carpeta `backend`.*
-
----
-
-## Instrucciones para Ejecutar el Proyecto (Paso a Paso)
-
-Para que la aplicación funcione correctamente, debes ejecutar **tanto el backend como el frontend al mismo tiempo**. Para esto se recomienda abrir dos terminales distintas.
-
-### Paso 1: Iniciar el Backend
-
-1. Abre una terminal.
-2. Navega a la carpeta del backend:
-   ```bash
-   cd backend
-   ```
-3. Inicia el servidor:
-   ```bash
-   npm run start:dev
-   ```
-4. Verás en la consola mensajes indicando que NestJS y los servicios de WebSockets (Socket.io) se han iniciado correctamente. Deja esta terminal abierta.
-
-### Paso 2: Iniciar el Frontend
-
-1. Abre una **nueva** terminal (o pestaña).
+### Paso 2: Ejecutar el Proyecto
+1. Abre una terminal en la raíz del proyecto.
 2. Navega a la carpeta del frontend:
    ```bash
    cd frontend
    ```
-3. Inicia la aplicación:
+3. Instala las dependencias (si no lo has hecho):
+   ```bash
+   npm install
+   ```
+4. Inicia la aplicación en modo desarrollo:
    ```bash
    npm run dev
    ```
-4.
+
+### Paso 3: Abrir la Aplicación
+Abre [http://localhost:3000](http://localhost:3000) en tu navegador.
+
 
 ### Paso 3: Abrir la Aplicación
 
