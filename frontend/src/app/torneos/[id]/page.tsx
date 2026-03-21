@@ -324,9 +324,9 @@ export default function TournamentProfilePage() {
         if (tournament) {
             setProfileForm({
                 name: tournament.name,
-                season: tournament.season,
+                season: tournament.season || '',
                 description: tournament.description || '',
-                rulesType: tournament.rules_type,
+                rulesType: tournament.rules_type || '',
                 category: tournament.category || '',
                 logoUrl: tournament.logo_url || ''
             });

@@ -486,7 +486,7 @@ export default function AdminDashboard() {
         setEditingTourn(tourn);
         setTournForm({
             name: tourn.name,
-            season: tourn.season,
+            season: tourn.season || '',
             location_city: tourn.locationCity || '',
             location_state: tourn.locationState || '',
             sport: tourn.sport || (tourn.branch === 'Softbol' ? 'Softbol' : 'Béisbol'),
