@@ -16,7 +16,27 @@ export class CreateGameDto {
 
     @IsOptional()
     @IsString()
+    status?: string;
+
+    @IsOptional()
+    @IsString()
     field?: string;
+
+    @IsOptional()
+    @IsString()
+    umpirePlate?: string;
+
+    @IsOptional()
+    @IsString()
+    umpireBase1?: string;
+
+    @IsOptional()
+    @IsString()
+    umpireBase2?: string;
+
+    @IsOptional()
+    @IsString()
+    umpireBase3?: string;
 }
 
 export class UpdateGameDto {
@@ -58,31 +78,28 @@ export class UpdateGameDto {
 }
 
 export class CreateLineupDto {
-    @IsInt()
+    @IsOptional()
     battingOrder: number;
 
-    @IsString()
+    @IsOptional()
     position: string;
 
     @IsOptional()
-    @IsString()
     dhForPosition?: string;
 
     @IsOptional()
-    @IsBoolean()
     isStarter?: boolean;
 
-    @IsUUID()
-    teamId: string;
+    @IsOptional()
+    teamId?: string;
 
-    @IsUUID()
+    @IsOptional()
     playerId: string;
 }
 
 export class SetGameLineupDto {
+    @IsOptional()
     @IsArray()
-    @ValidateNested({ each: true })
-    @Type(() => CreateLineupDto)
     lineups: CreateLineupDto[];
 }
 

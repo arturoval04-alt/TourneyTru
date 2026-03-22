@@ -168,7 +168,8 @@ export default function ScorekeeperLivePanel() {
     useEffect(() => {
         const gameId = params.id as string;
         if (gameId && playLogs.length > 0 && isMountedRef.current) {
-            const timer = setTimeout(() => fetchBoxscore(gameId), 800);
+            console.log(`[Boxscore Refresh] Triggered by playLogs.length=${playLogs.length}, fetching in 2s...`);
+            const timer = setTimeout(() => fetchBoxscore(gameId), 2000);
             return () => clearTimeout(timer);
         }
     }, [playLogs.length, params.id, fetchBoxscore]);

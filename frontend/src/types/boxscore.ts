@@ -5,6 +5,7 @@ export interface PlayCell {
     outsBeforePlay?: number;
     runsScored: number;
     rbi: number;
+    scored?: boolean;
 }
 
 export interface BoxscoreBatterProps {

@@ -18,11 +18,8 @@ export default function ScoreCard({ forceStoreData }: ScoreCardProps) {
     const defaultStore = useGameStore();
     const storeData = forceStoreData || defaultStore;
 
-    const { inning, half, outs, balls, strikes, homeScore, awayScore } = storeData;
-
-    // The instruction mentioned `if (!fielders) return null;` but `fielders` is not a prop in the original component.
-    // If this conditional render is desired, the component signature and props need to be updated accordingly.
-    // For now, I'm omitting it as it doesn't fit the current component structure.
+    const { inning, half, outs, balls, strikes, homeScore, awayScore, homeTeamName, awayTeamName } = storeData as any;
+    console.log("[ScoreCard] Rendering with:", { homeTeamName, awayTeamName, homeScore, awayScore });
 
     return (
         <div className="bg-[#0b1320] border-b border-slate-800 p-2 text-white flex justify-center shadow-lg font-sans h-16 w-full">
@@ -31,11 +28,11 @@ export default function ScoreCard({ forceStoreData }: ScoreCardProps) {
                 {/* Equipos y Cuentas */}
                 <div className="flex flex-col justify-center gap-1 w-28">
                     <div className="flex justify-between items-center font-bold text-xs">
-                        <span className="text-slate-300 tracking-wider">AWAY</span>
+                        <span className="text-slate-300 tracking-wider truncate max-w-[80px]">{awayTeamName}</span>
                         <span className="text-base font-mono text-white leading-none">{awayScore}</span>
                     </div>
                     <div className="flex justify-between items-center font-bold text-xs">
-                        <span className="text-white tracking-wider">HOME</span>
+                        <span className="text-white tracking-wider truncate max-w-[80px]">{homeTeamName}</span>
                         <span className="text-base font-mono text-amber-400 leading-none">{homeScore}</span>
                     </div>
                 </div>

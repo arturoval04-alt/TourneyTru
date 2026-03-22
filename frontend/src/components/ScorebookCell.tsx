@@ -20,85 +20,84 @@ interface ParsedPlay {
 }
 
 function parsePlay(result: string): ParsedPlay {
-    // Support code|description format
-    const cleanResult = result.includes('|') ? result.split('|')[0] : result;
-    const r = cleanResult.trim().toUpperCase();
+    const parts = result.split('|');
+    let totalBases = 0;
+    let label = '';
+    let labelColor = 'text-gray-800';
+    let isOut = false;
+    let isKS = false;
+    let isKL = false;
 
-    // ── Hits (H1/H2/H3/HR — notación WBSC del usuario) ──────────────────────
-    if (r === 'HR') return { label: 'HR', labelColor: 'text-indigo-600', basesReached: 4, isOut: false, isStrikeoutSwinging: false, isStrikeoutLooking: false };
-    if (r === 'H3' || r === '3B') return { label: 'H3', labelColor: 'text-sky-600', basesReached: 3, isOut: false, isStrikeoutSwinging: false, isStrikeoutLooking: false };
-    if (r === 'H2' || r === '2B') return { label: 'H2', labelColor: 'text-sky-600', basesReached: 2, isOut: false, isStrikeoutSwinging: false, isStrikeoutLooking: false };
-    if (r === 'H1' || r === '1B') return { label: 'H1', labelColor: 'text-sky-600', basesReached: 1, isOut: false, isStrikeoutSwinging: false, isStrikeoutLooking: false };
+    parts.forEach((part, index) => {
+        const r = part.trim().toUpperCase();
+        if (!r) return;
 
-    // ── Base on balls / HBP ───────────────────────────────────────────────────
-    if (r === 'BB') return { label: 'BB', labelColor: 'text-emerald-600', basesReached: 1, isOut: false, isStrikeoutSwinging: false, isStrikeoutLooking: false };
-    if (r === 'HBP' || r === 'HP') return { label: 'HBP', labelColor: 'text-emerald-600', basesReached: 1, isOut: false, isStrikeoutSwinging: false, isStrikeoutLooking: false };
+        // Base hits
+        if (r === 'HR') { totalBases = Math.max(totalBases, 4); if (index === 0) { label = 'HR'; labelColor = 'text-indigo-600'; } }
+        else if (r === 'H3' || r === '3B') { totalBases = Math.max(totalBases, 3); if (index === 0) { label = 'H3'; labelColor = 'text-sky-600'; } }
+        else if (r === 'H2' || r === '2B') { totalBases = Math.max(totalBases, 2); if (index === 0) { label = 'H2'; labelColor = 'text-sky-600'; } }
+        else if (r === 'H1' || r === '1B') { totalBases = Math.max(totalBases, 1); if (index === 0) { label = 'H1'; labelColor = 'text-sky-600'; } }
+        
+        // BB / HBP
+        else if (r === 'BB' || r === 'HBP' || r === 'HP') { 
+            totalBases = Math.max(totalBases, 1); 
+            if (index === 0) { label = r === 'BB' ? 'BB' : 'HBP'; labelColor = 'text-emerald-600'; } 
+        }
 
-    // ── Strikeouts ────────────────────────────────────────────────────────────
-    if (r === 'KS' || r.includes('(K)')) return { label: 'KS', labelColor: 'text-red-700', basesReached: 0, isOut: true, isStrikeoutSwinging: true, isStrikeoutLooking: false };
-    if (r === 'K' || r.includes('(ꓘ)')) return { label: 'K', labelColor: 'text-red-700', basesReached: 0, isOut: true, isStrikeoutSwinging: false, isStrikeoutLooking: true };
+        // Advancements (SB, WP, ADV)
+        else if (r.startsWith('SB')) totalBases += 1;
+        else if (r.startsWith('ADV')) totalBases += 1;
+        else if (r.startsWith('WP_RUN')) totalBases = 4;
 
-    // ── Fielder's choice ──────────────────────────────────────────────────────
-    if (r.includes("FIELDER") || r === 'FC') return { label: 'FC', labelColor: 'text-amber-600', basesReached: 1, isOut: false, isStrikeoutSwinging: false, isStrikeoutLooking: false };
+        // Outs
+        else if (r === 'KS' || r === 'K' || r === 'KL' || r.includes('(K)') || r.includes('(ꓘ)')) { 
+            isOut = true; 
+            isKS = r === 'KS';
+            isKL = r === 'K' || r === 'KL' || r.includes('(ꓘ)');
+            if (index === 0 || !label) { 
+                label = r === 'KS' ? 'KS' : (r === 'KL' || r === 'K' || r.includes('(ꓘ)') ? 'K' : r); 
+                labelColor = 'text-red-700'; 
+            } 
+        }
+        else if (r === 'FC') { totalBases = Math.max(totalBases, 1); if (index === 0 || !label) { label = 'FC'; labelColor = 'text-amber-600'; } }
+        else if (r.startsWith('E')) { totalBases = Math.max(totalBases, 1); if (index === 0 || !label) { label = r.split(' ')[0]; labelColor = 'text-amber-500'; } }
+        
+        // Advancements: Set label if nothing else set
+        else if (r.startsWith('SB') || r.startsWith('ADV') || r.startsWith('WP_RUN')) {
+            const advLabel = r.startsWith('SB') ? 'SB' : (r.startsWith('ADV') ? 'ADV' : 'WP');
+            if (index === 0 || !label) {
+                label = advLabel;
+                labelColor = r.startsWith('SB') ? 'text-emerald-600' : 'text-sky-600';
+            }
+            if (r.startsWith('SB') || r.startsWith('ADV')) totalBases += 1;
+            else if (r.startsWith('WP_RUN')) totalBases = 4;
+        }
 
-    // ── Errors (E1–E9) ────────────────────────────────────────────────────────
-    const errorMatch = r.match(/\bE(\d)\b/);
-    if (errorMatch || r.includes('ERROR')) {
-        const pos = errorMatch ? errorMatch[1] : '?';
-        return { label: `E${pos}`, labelColor: 'text-amber-500', basesReached: 1, isOut: false, isStrikeoutSwinging: false, isStrikeoutLooking: false };
-    }
+        else if (r.includes('SAC') || r.includes('SF') || r.includes('SH') || r.includes('TS')) {
+            isOut = true;
+            if (index === 0 || !label) {
+                label = r.includes('FLY') || r === 'SF' ? 'SF' : 'TS';
+                labelColor = 'text-purple-600';
+            }
+        }
+        else if (index === 0 || !label) {
+            // Generic out/label
+            label = r.length > 5 ? r.substring(0, 5) : r;
+            if (r.match(/^[1-9- ]+$/) || r.startsWith('F') || r.startsWith('L') || r.startsWith('P') || r.startsWith('K')) {
+                labelColor = 'text-red-600';
+                isOut = true;
+            }
+        }
+    });
 
-    // ── Sacrifice fly ─────────────────────────────────────────────────────────
-    if (r.includes('SAC') || r.includes('SACRIFICIO') || r.includes('SACRIFICE')) {
-        const label = r.includes('FLY') || r.includes('VUELO') ? 'SF' : 'SH';
-        return { label, labelColor: 'text-purple-600', basesReached: 0, isOut: true, isStrikeoutSwinging: false, isStrikeoutLooking: false };
-    }
-
-    // ── Fly ball: F7, F8, F9 etc. ─────────────────────────────────────────────
-    const flyMatch = r.match(/^F(\d)$/);
-    if (flyMatch) return { label: `F${flyMatch[1]}`, labelColor: 'text-red-600', basesReached: 0, isOut: true, isStrikeoutSwinging: false, isStrikeoutLooking: false };
-
-    // ── Line drive: L4, L7, etc. ──────────────────────────────────────────────
-    const lineMatch = r.match(/^L(\d)$/);
-    if (lineMatch) return { label: `L${lineMatch[1]}`, labelColor: 'text-red-600', basesReached: 0, isOut: true, isStrikeoutSwinging: false, isStrikeoutLooking: false };
-
-    // ── Pop up: P2, P3, etc. ─────────────────────────────────────────────────
-    const popMatch = r.match(/^P(\d)$/);
-    if (popMatch) return { label: `P${popMatch[1]}`, labelColor: 'text-red-600', basesReached: 0, isOut: true, isStrikeoutSwinging: false, isStrikeoutLooking: false };
-
-    // ── Groundout sequence: 6-3, 5-4-3, 1-3, etc. ────────────────────────────
-    const groundMatch = r.match(/^(\d[-\d]+)$/);
-    if (groundMatch) return { label: groundMatch[1], labelColor: 'text-red-600', basesReached: 0, isOut: true, isStrikeoutSwinging: false, isStrikeoutLooking: false };
-
-    // ── Flyout notation found within longer text ──────────────────────────────
-    const posInText = r.match(/\b([1-9])\b/);
-
-    if (r.includes('ELEV') || r.includes('FLY')) {
-        const pos = posInText ? posInText[1] : '';
-        return { label: pos ? `F${pos}` : 'FO', labelColor: 'text-red-600', basesReached: 0, isOut: true, isStrikeoutSwinging: false, isStrikeoutLooking: false };
-    }
-
-    if (r.includes('ROLA') || r.includes('GROUND')) {
-        const seqMatch = result.match(/(\d[-\d]+)/);
-        if (seqMatch) return { label: seqMatch[1], labelColor: 'text-red-600', basesReached: 0, isOut: true, isStrikeoutSwinging: false, isStrikeoutLooking: false };
-        const pos = posInText ? posInText[1] : '';
-        return { label: pos ? `${pos}-3` : 'GO', labelColor: 'text-red-600', basesReached: 0, isOut: true, isStrikeoutSwinging: false, isStrikeoutLooking: false };
-    }
-
-    if (r.includes('LÍNEA') || r.includes('LINEA') || r.includes('LINE')) {
-        const pos = posInText ? posInText[1] : '';
-        return { label: pos ? `L${pos}` : 'LD', labelColor: 'text-red-600', basesReached: 0, isOut: true, isStrikeoutSwinging: false, isStrikeoutLooking: false };
-    }
-
-    if (r.includes('DOBLE PLAY') || r.includes('DOUBLE PLAY') || r.includes('DP')) {
-        const seqMatch = result.match(/(\d[-\d]+)/);
-        return { label: seqMatch ? `DP ${seqMatch[1]}` : 'DP', labelColor: 'text-orange-500', basesReached: 0, isOut: true, isStrikeoutSwinging: false, isStrikeoutLooking: false };
-    }
-
-    if (r === 'OUT') return { label: 'OUT', labelColor: 'text-red-600', basesReached: 0, isOut: true, isStrikeoutSwinging: false, isStrikeoutLooking: false };
-
-    const shortened = result.slice(0, 6);
-    return { label: shortened, labelColor: 'text-gray-500', basesReached: 0, isOut: false, isStrikeoutSwinging: false, isStrikeoutLooking: false };
+    return {
+        label: label || '?',
+        labelColor,
+        basesReached: totalBases,
+        isOut,
+        isStrikeoutSwinging: isKS,
+        isStrikeoutLooking: isKL
+    };
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -146,18 +145,15 @@ export const ScorebookCell: React.FC<ScorebookCellProps> = ({ plays, currentBase
                 // Solo aplica en el último play del listado (el más reciente de este inning).
                 const isLastPlay = index === plays.length - 1;
                 const liveBase = isLastPlay && currentBase != null ? currentBase : null;
+                const basesReached = Math.max(parsed.basesReached, liveBase || 0);
 
-                // If run scored this at-bat, treat as reaching home
-                const rawBasesReached = play.runsScored > 0 && !parsed.isOut
-                    ? Math.max(parsed.basesReached, 4)
-                    : parsed.basesReached;
-                // Override con la base actual del corredor si viene del store en tiempo real
-                const effectiveBasesReached = liveBase != null ? Math.max(rawBasesReached, liveBase) : rawBasesReached;
-
-                const reachedFirst = effectiveBasesReached >= 1;
-                const reachedSecond = effectiveBasesReached >= 2;
-                const reachedThird = effectiveBasesReached >= 3;
-                const scored = effectiveBasesReached >= 4;
+                const reachedFirst = basesReached >= 1;
+                const reachedSecond = basesReached >= 2;
+                const reachedThird = basesReached >= 3;
+                
+                // CRITICAL: Only fill the diamond to home if explicit "scored" flag exists 
+                // or if it was a home run.
+                const scored = play.scored === true || basesReached >= 4;
 
                 // Path line color — blue for safe, red for out path
                 const pathColor = scored ? '#2563eb' : '#1e293b';

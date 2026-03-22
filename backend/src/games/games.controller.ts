@@ -46,6 +46,7 @@ export class GamesController {
         @Param('teamId') teamId: string,
         @Body() lineupData: SetGameLineupDto
     ) {
+        console.log(`[GamesController] Entering setLineup for game ${id}, team ${teamId}`);
         return this.gamesService.setLineup(id, teamId, lineupData);
     }
 

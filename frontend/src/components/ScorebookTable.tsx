@@ -61,7 +61,7 @@ export const ScorebookTable: React.FC<ScorebookTableProps> = ({ teamBoxscore, ba
                         const runnerCurrentBase = getCurrentBaseForPlayer(batter.playerId, baseIds);
 
                         return (
-                            <tr key={batter.playerId} className="hover:bg-gray-50">
+                            <tr key={`${batter.playerId}-${index}`} className="hover:bg-gray-50">
                                 <td className="px-3 py-2 whitespace-nowrap font-medium text-gray-800 border-r border-gray-100">
                                     {index + 1}. {batter.firstName} {batter.lastName}
                                 </td>

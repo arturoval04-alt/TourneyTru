@@ -22,7 +22,7 @@ export default function BaseActionModal({ isOpen, onClose, baseOrigin, runnerNam
         let dest: null | 'second' | 'third' | 'home' = null;
 
         if (action === 'StolenBase') {
-            desc = `${runnerName} roba la base.`;
+            desc = `SB|${runnerName} roba la base`;
             dest = baseOrigin === 'first' ? 'second' : (baseOrigin === 'second' ? 'third' : 'home');
             executeBaseAction(baseOrigin, dest, isOut, desc);
         } else if (action === 'WildPitch') {
@@ -30,7 +30,7 @@ export default function BaseActionModal({ isOpen, onClose, baseOrigin, runnerNam
         } else if (action === 'PassedBall') {
             executeWildPitchOrPassedBall("Passed Ball");
         } else if (action === 'CaughtStealing') {
-            desc = `${runnerName} es puesto Out intentando robar. Pickoff/CS.`;
+            desc = `CS|${runnerName} es out intentando robar`;
             isOut = true;
             executeBaseAction(baseOrigin, dest, isOut, desc);
         }

@@ -39,6 +39,7 @@ export class GamesService {
             const defensivePos = this.normalizeDefensivePosition(lineup.position);
             if (defensivePos) {
                 if (defensiveUsed.has(defensivePos)) {
+                    console.error(`[Lineup Validation] Duplicated position: ${defensivePos}`);
                     throw new BadRequestException(`Posición defensiva duplicada: ${defensivePos}.`);
                 }
                 defensiveUsed.add(defensivePos);
@@ -53,9 +54,11 @@ export class GamesService {
             const dh = dhEntries[0];
             const anchor = this.normalizeDefensivePosition(dh.dhForPosition);
             if (!anchor) {
+                console.error(`[Lineup Validation] DH anchor missing or invalid for role ${dh.dhForPosition}`);
                 throw new BadRequestException('Si se usa DH, debe anclarse a una posición defensiva válida.');
             }
             if (!defensiveUsed.has(anchor)) {
+                console.error(`[Lineup Validation] DH anchored to ${anchor} but ${anchor} is not in defensive lineup`);
                 throw new BadRequestException(`El DH debe anclarse a una posición defensiva presente en el lineup (${anchor}).`);
             }
         }
@@ -131,42 +134,49 @@ export class GamesService {
     }
 
     async setLineup(gameId: string, teamId: string, lineupData: SetGameLineupDto) {
-        const game = await this.findOne(gameId);
+        console.log(`[GamesService] Starting setLineup for game ${gameId}, team ${teamId}`);
+        try {
+            const game = await this.findOne(gameId);
 
-        if (teamId !== game.homeTeamId && teamId !== game.awayTeamId) {
-            throw new BadRequestException('El equipo no pertenece a este juego.');
-        }
-
-        this.validateLineup(lineupData.lineups);
-
-        // Primero, eliminar todo el lineup existente de este equipo en este juego
-        await this.prisma.lineup.deleteMany({
-            where: {
-                gameId: gameId,
-                teamId: teamId
+            if (teamId !== game.homeTeamId && teamId !== game.awayTeamId) {
+                console.error(`[Lineup Error] Team ${teamId} is not part of game ${gameId}`);
+                throw new BadRequestException('El equipo no pertenece a este juego.');
             }
-        });
 
-        // Ahora insertamos los nuevos
-        const dataToInsert = lineupData.lineups.map(l => ({
-            gameId: gameId,
-            teamId: teamId,
-            playerId: l.playerId,
-            battingOrder: l.battingOrder,
-            position: l.position,
-            dhForPosition: this.normalizePosition(l.position) === 'DH' ? this.normalizeDefensivePosition(l.dhForPosition) : null,
-            isStarter: l.isStarter !== undefined ? l.isStarter : true,
-        }));
+            this.validateLineup(lineupData.lineups);
 
-        const result = await this.prisma.lineup.createMany({
-            data: dataToInsert
-        });
+            // Primero, eliminar todo el lineup existente de este equipo en este juego
+            await this.prisma.lineup.deleteMany({
+                where: { gameId, teamId }
+            });
 
-        return {
-            status: 'success',
-            message: `Lineup guardado. Jugadores insertados: ${result.count}`,
-            gameId
-        };
+            if (!lineupData.lineups || lineupData.lineups.length === 0) {
+                console.log(`[GamesService] Lineup empty for team ${teamId}, deletion complete.`);
+                return { success: true, message: 'Lineup cleared' };
+            }
+
+            const dataToInsert = lineupData.lineups.map(l => ({
+                gameId: gameId,
+                teamId: teamId,
+                playerId: l.playerId,
+                position: l.position,
+                battingOrder: l.battingOrder,
+                dhForPosition: l.dhForPosition || null,
+                isStarter: l.isStarter !== undefined ? l.isStarter : true
+            }));
+
+            await this.prisma.lineup.createMany({
+                data: dataToInsert
+            });
+
+            console.log(`[GamesService] Lineup saved successfully for team ${teamId}`);
+            return { success: true };
+        } catch (error) {
+            console.error(`[SET_LINEUP_FATAL_ERROR] Game: ${gameId}, Team: ${teamId}`);
+            console.error(error);
+            if (error instanceof BadRequestException) throw error;
+            throw new BadRequestException(`Error interno al procesar lineups: ${error.message}`);
+        }
     }
 
     async changeLineup(gameId: string, change: ChangeLineupDto) {
@@ -293,32 +303,58 @@ export class GamesService {
             const isTop = play.half === 'top';
             const battingBox = isTop ? awayBox : homeBox;
 
-            // Increment run by inning
+            // Find batter in lineup (robust comparison)
+            const batter = battingBox.lineup.find((b: any) => 
+                b.playerId?.toString().trim() === play.batterId?.toString().trim()
+            );
+
+            // WP_RUN / RUN_SCORED / SB / CS / ADV: updates to a runner's existing play entry.
+            // These should modify the runner's existing diamond, NOT create new cells.
+            const resultUpper = (play.result || '').toUpperCase();
+            const isRunScore = resultUpper.startsWith('WP_RUN') || resultUpper.startsWith('RUN_SCORED');
+            const isStolenBase = resultUpper.startsWith('SB');
+            const isCaughtStealing = resultUpper.startsWith('CS');
+            const isAdvance = resultUpper.startsWith('ADV');
+            
+            if (isRunScore || isStolenBase || isCaughtStealing || isAdvance) {
+                if (batter) {
+                    if (isRunScore) {
+                        batter.runs += 1;
+                    }
+                    // Find the runner's most recent play in this (or any) inning and update it
+                    let updated = false;
+                    for (let inn = play.inning; inn >= 1 && !updated; inn--) {
+                        const existingPlays = batter.plays[inn];
+                        if (existingPlays && existingPlays.length > 0) {
+                            const lastPlay = existingPlays[existingPlays.length - 1];
+                            
+                            // Merge the new result (e.g. "BB|SB")
+                            if (!lastPlay.result.includes(play.result)) {
+                                lastPlay.result = `${lastPlay.result}|${play.result}`;
+                            }
+
+                            if (isRunScore) {
+                                lastPlay.runsScored = 1; // Mark THIS individual play as a score
+                                lastPlay.scored = true;  // Explicit flag for the frontend
+                            }
+                            updated = true;
+                        }
+                    }
+                }
+                // Even if not merged (e.g. pinch runner with no AB yet), don't create a new diamond
+                continue;
+            }
+
+            // Increment run by inning (only for non-RUN_SCORED plays)
             if (play.runsScored > 0) {
                 battingBox.runsByInning[play.inning] = (battingBox.runsByInning[play.inning] || 0) + play.runsScored;
                 battingBox.totalRuns += play.runsScored;
             }
 
-            // Find batter in lineup
-            const batter = battingBox.lineup.find((b: any) => b.playerId === play.batterId);
             if (batter) {
-                // WP_RUN / RUN_SCORED: corredor anotó — actualizar su play existente en este inning
-                // para cerrar su rombo SIN crear una celda extra en el boxscore.
-                const isRunScore = play.result === 'WP_RUN' || play.result === 'RUN_SCORED';
-                if (isRunScore) {
-                    batter.runs += 1;
-                    // Buscar el play existente del corredor en este inning y sumarle la carrera
-                    const existingInningPlays = batter.plays[play.inning];
-                    if (existingInningPlays && existingInningPlays.length > 0) {
-                        // Actualizar el último play del corredor en ese inning (su PA más reciente)
-                        existingInningPlays[existingInningPlays.length - 1].runsScored += 1;
-                    }
-                    // Si no hay play previo, no se crea celda (el corredor llegó a base en un inning anterior)
-                    continue;
-                }
-
-                // Update stats (SF y SH no cuentan como turno oficial al bate)
-                const isAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH'].includes(play.result);
+                // Update stats (SF, SH, errors no cuentan como turno oficial al bate)
+                const isError = play.result.match(/^E\d$/);
+                const isAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH'].includes(play.result) && !isError;
                 if (isAtBat) batter.atBats += 1;
 
                 // Hits — frontend now emits H1/H2/H3/HR (WBSC notation)
@@ -345,7 +381,6 @@ export class GamesService {
                     rbi: play.rbi
                 });
             }
-
         }
 
         return {
@@ -395,7 +430,6 @@ export class GamesService {
         });
 
         // Compute current outs from the last play's state
-        // We'll compute outs from plays in the current half-inning
         const currentHalfPlays = game.plays.filter(
             (p) => p.inning === game.currentInning && p.half === game.half,
         );
@@ -418,12 +452,33 @@ export class GamesService {
             : 'Esperando Bateador...';
         const currentBatterId = currentLineupItem?.playerId || null;
 
+        // Build lineups array with snake_case keys for frontend compatibility
+        const lineups = game.lineups.map((l) => ({
+            player_id: l.playerId,
+            team_id: l.teamId,
+            position: l.position,
+            batting_order: l.battingOrder,
+            dh_for_position: l.dhForPosition,
+            player: l.player ? {
+                id: l.player.id,
+                firstName: l.player.firstName,
+                lastName: l.player.lastName,
+            } : null,
+        }));
+
         return {
             gameId: game.id,
             status: game.status,
+            home_team_id: game.homeTeamId,
+            away_team_id: game.awayTeamId,
+            home_team_name: game.homeTeam?.name || 'HOME',
+            away_team_name: game.awayTeam?.name || 'AWAY',
+            current_inning: game.currentInning,
             inning: game.currentInning,
             half: game.half,
             outs: currentOuts,
+            home_score: game.homeScore,
+            away_score: game.awayScore,
             homeScore: game.homeScore,
             awayScore: game.awayScore,
             playLogs,
@@ -431,6 +486,9 @@ export class GamesService {
             homeBatterIndex,
             currentBatter,
             currentBatterId,
+            playback_id: null,
+            lineups,
+            plays: game.plays,
             // bases are not stored in DB — safe to reset to empty on refresh
             bases: { first: null, second: null, third: null },
             balls: 0,
@@ -465,8 +523,12 @@ export class GamesService {
         if (['H1', 'H2', 'H3', 'HR', '1B', '2B', '3B'].includes(result)) return 'hit';
         if (result === 'BB' || result === 'HBP') return 'walk';
         if (result.startsWith('K')) return 'out';
-        if (['FO', 'GO', 'LO', 'DP', 'TP', 'SAC', 'SF', 'SH'].includes(result)) return 'out';
-        if (result.match(/^\d+-\d+/)) return 'out'; // e.g. "6-3"
+        if (['FO', 'GO', 'LO', 'DP', 'TP', 'SAC', 'SF', 'SH', 'OUT'].includes(result)) return 'out';
+        if (result.startsWith('DP ')) return 'out'; // e.g. "DP 6-4-3"
+        if (result.match(/^F\d$/)) return 'out';    // e.g. "F7"
+        if (result.match(/^L\d$/)) return 'out';    // e.g. "L5"
+        if (result.match(/^\d[-\d]+$/)) return 'out'; // e.g. "6-3", "4-6-3"
+        if (result.match(/^E\d$/)) return 'info';   // errors
         return 'info';
     }
 }

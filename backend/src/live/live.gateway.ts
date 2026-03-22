@@ -113,13 +113,21 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // 2. Guardar en DB
     let play: any = null;
     try {
-      if (!playInfo.batterId) {
-        console.warn("⚠️ Advertencia: playInfo.batterId no fue proporcionado. Asignando jugada a bateador por defecto.");
+      // Support both snake_case (frontend sends) and camelCase field names
+      const batterId = playInfo.batter_id || playInfo.batterId;
+      const pitcherId = playInfo.pitcher_id || playInfo.pitcherId;
+      const outsBeforePlay = playInfo.outs_before_play ?? playInfo.outsBeforePlay ?? 0;
+      const runsScored = playInfo.runs_scored ?? playInfo.runsScored ?? 0;
+      const outsRecorded = playInfo.outs_recorded ?? playInfo.outsRecorded ?? 0;
+      const rbi = playInfo.rbi ?? 0;
+
+      if (!batterId) {
+        console.warn("⚠️ Advertencia: batter_id no fue proporcionado. Asignando jugada a bateador por defecto.");
       }
 
       // Buscar un fallback real en base de datos si falta el batter o pitcher
-      let validBatterId = playInfo.batterId;
-      let validPitcherId = playInfo.pitcherId;
+      let validBatterId = batterId;
+      let validPitcherId = pitcherId;
 
       if (!validBatterId) {
         const fallbackPlayer = await this.prisma.player.findFirst();
@@ -131,21 +139,25 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
         validPitcherId = fallbackPlayer ? fallbackPlayer.id : undefined;
       }
 
+      // Extract just the play code from "CODE|Description" format
+      const rawResult = playInfo.result || '';
+      const resultCode = rawResult.includes('|') ? rawResult.split('|')[0] : rawResult;
+
       play = await this.prisma.play.create({
         data: {
           gameId,
           inning: playInfo.inning,
           half: playInfo.half,
-          outsBeforePlay: playInfo.outsBeforePlay,
-          result: playInfo.result,
-          rbi: playInfo.rbi || 0,
-          runsScored: playInfo.runsScored || 0,
-          outsRecorded: playInfo.outsRecorded !== undefined ? playInfo.outsRecorded : 0,
+          outsBeforePlay: outsBeforePlay,
+          result: resultCode,
+          rbi: rbi,
+          runsScored: runsScored,
+          outsRecorded: outsRecorded,
           batterId: validBatterId,
           pitcherId: validPitcherId,
         }
       });
-      console.log(`[DB] Jugada guardada en SQLite (Play ID: ${play?.id})`);
+      console.log(`[DB] Jugada guardada (Play ID: ${play?.id}, Batter: ${validBatterId}, Result: ${resultCode})`);
     } catch (e) {
       console.error("Error guardando play en DB:", e);
     }

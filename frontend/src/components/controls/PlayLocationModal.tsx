@@ -61,11 +61,20 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
             }
         } else if (playType === 'Out') {
             const batter = useGameStore.getState().currentBatter;
+            // Build a WBSC-style code using the actual fielding sequence
             let code = 'OUT';
-            if (playName === 'Rola') code = 'GO';
-            else if (playName === 'Elevado') code = 'FO';
-            else if (playName === 'Línea') code = 'LO';
-            else if (playName === 'Doble Play') code = 'DP';
+            if (playName === 'Rola') {
+                // Use the actual sequence e.g. "6-4", "5-3", "4-6-3"
+                code = selectedPositions.length > 0 ? selectedPositions.join('-') : 'GO';
+            } else if (playName === 'Elevado') {
+                // WBSC: F7, F8, F9, etc.
+                code = selectedPositions.length === 1 ? `F${selectedPositions[0]}` : 'FO';
+            } else if (playName === 'Línea') {
+                // WBSC: L4, L6, etc.
+                code = selectedPositions.length === 1 ? `L${selectedPositions[0]}` : 'LO';
+            } else if (playName === 'Doble Play') {
+                code = selectedPositions.length > 0 ? `DP ${selectedPositions.join('-')}` : 'DP';
+            }
 
             if (selectedPositions.length === 1) {
                 // Preposiciones ajustadas para outs directos

@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider      = "prisma-client-js"
   binaryTargets = ["native"]
@@ -11,92 +8,71 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-
-// ==========================================
-// 1. SISTEMA DE USUARIOS Y ROLES (AUTH)
-// ==========================================
-
 model User {
-  id            String   @id @default(uuid())
-  email         String   @unique
-  passwordHash  String   @map("password_hash")
-  firstName     String   @map("first_name")
-  lastName      String   @map("last_name")
-  phone         String?  @map("phone")
-  profilePicture String? @map("profile_picture")
-  
-  roleId        String   @map("role_id")
-  role          Role     @relation(fields: [roleId], references: [id])
-
-  passwordResetToken  String?   @map("password_reset_token")
-  passwordResetExpiry DateTime? @map("password_reset_expiry")
-
-  leaguesAdmin  League[] @relation("LeagueAdmin")
-  tournamentsAdmin Tournament[] @relation("TournamentAdmin")
+  id                   String                @id @default(uuid())
+  email                String                @unique
+  passwordHash         String                @map("password_hash")
+  firstName            String                @map("first_name")
+  lastName             String                @map("last_name")
+  phone                String?               @map("phone")
+  profilePicture       String?               @map("profile_picture") @db.NVarChar(Max)
+  roleId               String                @map("role_id")
+  passwordResetToken   String?               @map("password_reset_token")
+  passwordResetExpiry  DateTime?             @map("password_reset_expiry")
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @default(now()) @updatedAt @map("updated_at")
+  leaguesAdmin         League[]              @relation("LeagueAdmin")
+  tournamentNews       TournamentNews[]
   tournamentOrganizers TournamentOrganizer[]
-  tournamentNews TournamentNews[]
-
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  tournamentsAdmin     Tournament[]          @relation("TournamentAdmin")
+  role                 Role                  @relation(fields: [roleId], references: [id])
 
   @@map("users")
 }
 
 model Role {
-  id          String   @id @default(uuid())
-  name        String   @unique // Ej. 'admin', 'scorekeeper', 'public'
-  users       User[]
+  id    String @id @default(uuid())
+  name  String @unique
+  users User[]
 
   @@map("roles")
 }
 
-// ==========================================
-// 2. ESTRUCTURA DEL TORNEO
-// ==========================================
-
 model League {
   id          String       @id @default(uuid())
   name        String
-  logoUrl     String?      @map("logo_url")
-  
+  logoUrl     String?      @map("logo_url") @db.NVarChar(Max)
   adminId     String       @map("admin_id")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @default(now()) @updatedAt @map("updated_at")
   admin       User         @relation("LeagueAdmin", fields: [adminId], references: [id])
-  
   tournaments Tournament[]
   umpires     Umpire[]
-
-  createdAt   DateTime     @default(now()) @map("created_at")
-  updatedAt   DateTime     @updatedAt @map("updated_at")
 
   @@map("leagues")
 }
 
 model Tournament {
-  id          String   @id @default(uuid())
-  name        String
-  season      String
-  description String?  
-  category    String?  // Libre, 1era Fuerza, etc.
-  logoUrl     String?  @map("logo_url") 
-  rulesType   String   @map("rules_type") @default("baseball_9") // baseball_9, softball_7
-  
-  adminId       String   @map("admin_id")
-  leagueId      String   @map("league_id")
-  
-  locationCity  String?  @map("location_city")
-  locationState String?  @map("location_state")
-
-  league      League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
-  admin       User     @relation("TournamentAdmin", fields: [adminId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  
-  teams       Team[]
-  games       Game[]
-  fields      Field[]
-  organizers  TournamentOrganizer[]
-  news        TournamentNews[]
-  playerStats PlayerStat[]
-  
-  createdAt   DateTime @default(now()) @map("created_at")
+  id            String                @id @default(uuid())
+  name          String
+  season        String
+  description   String?               @db.NVarChar(Max)
+  category      String?
+  logoUrl       String?               @map("logo_url") @db.NVarChar(Max)
+  rulesType     String                @default("baseball_9") @map("rules_type")
+  adminId       String                @map("admin_id")
+  leagueId      String                @map("league_id")
+  locationCity  String?               @map("location_city")
+  locationState String?               @map("location_state")
+  createdAt     DateTime              @default(now()) @map("created_at")
+  fields        Field[]
+  games         Game[]
+  playerStats   PlayerStat[]
+  teams         Team[]
+  news          TournamentNews[]
+  organizers    TournamentOrganizer[]
+  admin         User                  @relation("TournamentAdmin", fields: [adminId], references: [id], onUpdate: NoAction)
+  league        League                @relation(fields: [leagueId], references: [id], onDelete: Cascade)
 
   @@map("tournaments")
 }
@@ -105,13 +81,11 @@ model TournamentOrganizer {
   id           String     @id @default(uuid())
   tournamentId String     @map("tournament_id")
   userId       String     @map("user_id")
+  createdAt    DateTime   @default(now(), map: "to_created_at_df") @map("created_at")
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onUpdate: NoAction, map: "to_tournament_id_fkey")
+  user         User       @relation(fields: [userId], references: [id], onUpdate: NoAction, map: "to_user_id_fkey")
 
-  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  user         User       @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  createdAt    DateTime   @default(now()) @map("created_at")
-
-  @@unique([tournamentId, userId])
+  @@unique([tournamentId, userId], map: "tournament_organizers_unique")
   @@map("tournament_organizers")
 }
 
@@ -119,168 +93,133 @@ model Field {
   id           String     @id @default(uuid())
   name         String
   location     String?
-
   tournamentId String     @map("tournament_id")
-  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-
-  teamsAsHome  Team[]
-
   createdAt    DateTime   @default(now()) @map("created_at")
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  teamsAsHome  Team[]
 
   @@map("fields")
 }
 
 model Team {
-  id            String       @id @default(uuid())
+  id            String         @id @default(uuid())
   name          String
-  shortName     String?      @map("short_name")
-  logoUrl       String?      @map("logo_url") 
-  managerName   String?      @map("manager_name")
-  
-  tournamentId  String       @map("tournament_id")
-  tournament    Tournament   @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-
-  homeFieldId   String?      @map("home_field_id")
-  homeField     Field?       @relation(fields: [homeFieldId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  
-  players       Player[]     // Roster
-
-  gamesAsHome   Game[]       @relation("HomeTeam")
-  gamesAsAway   Game[]       @relation("AwayTeam")
-  lineups       Lineup[]
+  shortName     String?        @map("short_name")
+  logoUrl       String?        @map("logo_url") @db.NVarChar(Max)
+  managerName   String?        @map("manager_name")
+  tournamentId  String         @map("tournament_id")
+  homeFieldId   String?        @map("home_field_id")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  gamesAsAway   Game[]         @relation("AwayTeam")
+  gamesAsHome   Game[]         @relation("HomeTeam")
   lineupChanges LineupChange[]
+  lineups       Lineup[]
   playerStats   PlayerStat[]
-
-  createdAt     DateTime     @default(now()) @map("created_at")
+  players       Player[]
+  homeField     Field?         @relation(fields: [homeFieldId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tournament    Tournament     @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
 
   @@map("teams")
 }
 
 model Player {
-  id            String   @id @default(uuid())
-  firstName     String   @map("first_name")
-  lastName      String   @map("last_name")
-  number        Int?
-  position      String?  // P, C, 1B, 2B, 3B, SS, LF, CF, RF
-  photoUrl      String?  @map("photo_url")
-  bats          String?  @default("R") // R, L, S
-  throws        String?  @default("R") // R, L
-  
-  teamId        String   @map("team_id")
-  team          Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  
-  lineupEntries Lineup[] // En cuantas posiciones de lineup ha estado
-  lineupChangesOut LineupChange[] @relation("LineupChangePlayerOut")
-  lineupChangesIn  LineupChange[] @relation("LineupChangePlayerIn")
-
-  // Acciones en el Play-by-play
-  playsAsBatter Play[]   @relation("BatterPlay")
-  playsAsPitcher Play[]  @relation("PitcherPlay")
-
-  playerStats   PlayerStat[]
-
-  // Premios de juego (MVPs)
-  gamesWonAsPitcher Game[] @relation("GameWinningPitcher")
-  gamesMvp1         Game[] @relation("GameMvpBatter1")
-  gamesMvp2         Game[] @relation("GameMvpBatter2")
-
-  createdAt     DateTime @default(now()) @map("created_at")
+  id                String         @id @default(uuid())
+  firstName         String         @map("first_name")
+  lastName          String         @map("last_name")
+  number            Int?
+  position          String?
+  photoUrl          String?        @map("photo_url") @db.NVarChar(Max)
+  bats              String?        @default("R") @db.NVarChar(10)
+  throws            String?        @default("R") @db.NVarChar(10)
+  teamId            String         @map("team_id")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  gamesMvp1         Game[]         @relation("GameMvpBatter1")
+  gamesMvp2         Game[]         @relation("GameMvpBatter2")
+  gamesWonAsPitcher Game[]         @relation("GameWinningPitcher")
+  lineupChangesIn   LineupChange[] @relation("LineupChangePlayerIn")
+  lineupChangesOut  LineupChange[] @relation("LineupChangePlayerOut")
+  lineupEntries     Lineup[]
+  playerStats       PlayerStat[]
+  team              Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  playsAsBatter     Play[]         @relation("BatterPlay")
+  playsAsPitcher    Play[]         @relation("PitcherPlay")
 
   @@map("players")
 }
 
 model Umpire {
-  id          String   @id @default(uuid())
-  firstName   String   @map("first_name")
-  lastName    String   @map("last_name")
-
-  leagueId    String   @map("league_id")
-  league      League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
-
+  id          String       @id @default(uuid())
+  firstName   String       @map("first_name")
+  lastName    String       @map("last_name")
+  leagueId    String       @map("league_id")
   gameUmpires GameUmpire[]
+  league      League       @relation(fields: [leagueId], references: [id], onDelete: Cascade)
 
   @@map("umpires")
 }
 
 model GameUmpire {
-  id       String @id @default(uuid())
-  role     String @default("plate") // plate, base1, base2, base3
-
-  gameId   String @map("game_id")
-  game     Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
-
-  umpireId String @map("umpire_id")
-  umpire   Umpire @relation(fields: [umpireId], references: [id], onDelete: Cascade)
-
+  id        String   @id @default(uuid())
+  role      String   @default("plate") @db.NVarChar(100)
+  gameId    String   @map("game_id")
+  umpireId  String   @map("umpire_id")
   createdAt DateTime @default(now()) @map("created_at")
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  umpire    Umpire   @relation(fields: [umpireId], references: [id], onDelete: Cascade)
 
-  @@unique([gameId, umpireId])
+  @@unique([gameId, umpireId], map: "game_umpires_unique")
   @@map("game_umpires")
 }
 
-// ==========================================
-// 3. MOTOR DE JUEGOS Y LOGICA
-// ==========================================
-
 model Game {
-  id            String     @id @default(uuid())
-  field         String?
-  scheduledDate DateTime   @map("scheduled_date")
-  startTime     DateTime?  @map("start_time")
-  endTime       DateTime?  @map("end_time")
-  
-  status        String     @default("scheduled") // scheduled, in_progress, finished, canceled
-  
-  homeScore     Int        @default(0) @map("home_score")
-  awayScore     Int        @default(0) @map("away_score")
-  currentInning Int        @default(1) @map("current_inning")
-  half          String     @default("top") // top, bottom
-  
-  tournamentId  String     @map("tournament_id")
-  tournament    Tournament @relation(fields: [tournamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  
-  homeTeamId    String     @map("home_team_id")
-  homeTeam      Team       @relation("HomeTeam", fields: [homeTeamId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  
-  awayTeamId    String     @map("away_team_id")
-  awayTeam      Team       @relation("AwayTeam", fields: [awayTeamId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  
-  lineups       Lineup[]
-  plays         Play[]
-  lineupChanges LineupChange[]
-  gameUmpires   GameUmpire[]
-
-  winningPitcherId String? @map("winning_pitcher_id")
-  winningPitcher   Player? @relation("GameWinningPitcher", fields: [winningPitcherId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  mvpBatter1Id     String? @map("mvp_batter1_id")
-  mvpBatter1       Player? @relation("GameMvpBatter1", fields: [mvpBatter1Id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  mvpBatter2Id     String? @map("mvp_batter2_id")
-  mvpBatter2       Player? @relation("GameMvpBatter2", fields: [mvpBatter2Id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  createdAt     DateTime   @default(now()) @map("created_at")
+  id               String         @id @default(uuid())
+  field            String?
+  scheduledDate    DateTime       @map("scheduled_date")
+  startTime        DateTime?      @map("start_time")
+  endTime          DateTime?      @map("end_time")
+  status           String         @default("scheduled")
+  homeScore        Int            @default(0) @map("home_score")
+  awayScore        Int            @default(0) @map("away_score")
+  currentInning    Int            @default(1) @map("current_inning")
+  half             String         @default("top") @db.NVarChar(10)
+  tournamentId     String         @map("tournament_id")
+  homeTeamId       String         @map("home_team_id")
+  awayTeamId       String         @map("away_team_id")
+  winningPitcherId String?        @map("winning_pitcher_id")
+  mvpBatter1Id     String?        @map("mvp_batter1_id")
+  mvpBatter2Id     String?        @map("mvp_batter2_id")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  umpireBase1      String?        @map("umpire_base1")
+  umpireBase2      String?        @map("umpire_base2")
+  umpireBase3      String?        @map("umpire_base3")
+  umpirePlate      String?        @map("umpire_plate")
+  gameUmpires      GameUmpire[]
+  awayTeam         Team           @relation("AwayTeam", fields: [awayTeamId], references: [id], onUpdate: NoAction)
+  homeTeam         Team           @relation("HomeTeam", fields: [homeTeamId], references: [id], onUpdate: NoAction)
+  mvpBatter1       Player?        @relation("GameMvpBatter1", fields: [mvpBatter1Id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  mvpBatter2       Player?        @relation("GameMvpBatter2", fields: [mvpBatter2Id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tournament       Tournament     @relation(fields: [tournamentId], references: [id], onUpdate: NoAction)
+  winningPitcher   Player?        @relation("GameWinningPitcher", fields: [winningPitcherId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lineupChanges    LineupChange[]
+  lineups          Lineup[]
+  plays            Play[]
 
   @@map("games")
 }
 
 model Lineup {
   id            String   @id @default(uuid())
-  battingOrder  Int      @map("batting_order") // 1-11
-  position      String   // Posicion real en el campo en ese momento
-  dhForPosition String?  @map("dh_for_position") // Posición defensiva por la que batea el DH
+  battingOrder  Int      @map("batting_order")
+  position      String   @db.NVarChar(10)
+  dhForPosition String?  @map("dh_for_position") @db.NVarChar(10)
   isStarter     Boolean  @default(true) @map("is_starter")
-  
   gameId        String   @map("game_id")
-  game          Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  
   teamId        String   @map("team_id")
-  team          Team     @relation(fields: [teamId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  
   playerId      String   @map("player_id")
-  player        Player   @relation(fields: [playerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
   createdAt     DateTime @default(now()) @map("created_at")
+  game          Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  player        Player   @relation(fields: [playerId], references: [id], onUpdate: NoAction)
+  team          Team     @relation(fields: [teamId], references: [id], onUpdate: NoAction)
 
   @@map("lineups")
 }
@@ -288,22 +227,17 @@ model Lineup {
 model LineupChange {
   id            String   @id @default(uuid())
   battingOrder  Int      @map("batting_order")
-  position      String
-  dhForPosition String?  @map("dh_for_position")
-
+  position      String   @db.NVarChar(10)
+  dhForPosition String?  @map("dh_for_position") @db.NVarChar(10)
   gameId        String   @map("game_id")
-  game          Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
-
   teamId        String   @map("team_id")
-  team          Team     @relation(fields: [teamId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
   playerOutId   String?  @map("player_out_id")
-  playerOut     Player?  @relation("LineupChangePlayerOut", fields: [playerOutId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
   playerInId    String   @map("player_in_id")
-  playerIn      Player   @relation("LineupChangePlayerIn", fields: [playerInId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  createdAt     DateTime @default(now()) @map("created_at")
+  createdAt     DateTime @default(now(), map: "lc_created_at_df") @map("created_at")
+  game          Game     @relation(fields: [gameId], references: [id], onDelete: Cascade, map: "lc_game_id_fkey")
+  playerIn      Player   @relation("LineupChangePlayerIn", fields: [playerInId], references: [id], onUpdate: NoAction, map: "lc_player_in_id_fkey")
+  playerOut     Player?  @relation("LineupChangePlayerOut", fields: [playerOutId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "lc_player_out_id_fkey")
+  team          Team     @relation(fields: [teamId], references: [id], onUpdate: NoAction, map: "lc_team_id_fkey")
 
   @@map("lineup_changes")
 }
@@ -311,80 +245,69 @@ model LineupChange {
 model PlayerStat {
   id           String      @id @default(uuid())
   playerId     String      @map("player_id")
-  player       Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
   teamId       String      @map("team_id")
-  team         Team        @relation(fields: [teamId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   tournamentId String?     @map("tournament_id")
-  tournament   Tournament? @relation(fields: [tournamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  atBats       Int         @default(0, map: "ps_at_bats_df") @map("at_bats")
+  runs         Int         @default(0, map: "ps_runs_df")
+  hits         Int         @default(0, map: "ps_hits_df")
+  h2           Int         @default(0, map: "ps_h2_df")
+  h3           Int         @default(0, map: "ps_h3_df")
+  hr           Int         @default(0, map: "ps_hr_df")
+  rbi          Int         @default(0, map: "ps_rbi_df")
+  bb           Int         @default(0, map: "ps_bb_df")
+  so           Int         @default(0, map: "ps_so_df")
+  hbp          Int         @default(0, map: "ps_hbp_df")
+  sac          Int         @default(0, map: "ps_sac_df")
+  wins         Int         @default(0, map: "ps_wins_df")
+  losses       Int         @default(0, map: "ps_losses_df")
+  ipOuts       Int         @default(0, map: "ps_ip_outs_df") @map("ip_outs")
+  hAllowed     Int         @default(0, map: "ps_h_allowed_df") @map("h_allowed")
+  erAllowed    Int         @default(0, map: "ps_er_allowed_df") @map("er_allowed")
+  bbAllowed    Int         @default(0, map: "ps_bb_allowed_df") @map("bb_allowed")
+  soPitching   Int         @default(0, map: "ps_so_pitching_df") @map("so_pitching")
+  createdAt    DateTime    @default(now(), map: "ps_created_at_df") @map("created_at")
+  updatedAt    DateTime    @default(now(), map: "ps_updated_at_df") @updatedAt @map("updated_at")
+  player       Player      @relation(fields: [playerId], references: [id], onDelete: Cascade, map: "ps_player_id_fkey")
+  team         Team        @relation(fields: [teamId], references: [id], onUpdate: NoAction, map: "ps_team_id_fkey")
+  tournament   Tournament? @relation(fields: [tournamentId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "ps_tournament_id_fkey")
 
-  // Batting
-  atBats   Int @default(0) @map("at_bats")
-  runs     Int @default(0)
-  hits     Int @default(0)
-  h2       Int @default(0)
-  h3       Int @default(0)
-  hr       Int @default(0)
-  rbi      Int @default(0)
-  bb       Int @default(0)
-  so       Int @default(0)
-  hbp      Int @default(0)
-  sac      Int @default(0)
-
-  // Pitching
-  wins       Int @default(0)
-  losses     Int @default(0)
-  ipOuts     Int @default(0) @map("ip_outs")
-  hAllowed   Int @default(0) @map("h_allowed")
-  erAllowed  Int @default(0) @map("er_allowed")
-  bbAllowed  Int @default(0) @map("bb_allowed")
-  soPitching Int @default(0) @map("so_pitching")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@unique([playerId, teamId, tournamentId])
+  @@unique([playerId, teamId, tournamentId], map: "player_stats_unique")
   @@map("player_stats")
 }
 
 model TournamentNews {
   id           String     @id @default(uuid())
   tournamentId String     @map("tournament_id")
-  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   authorId     String?    @map("author_id")
-  author       User?      @relation(fields: [authorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   title        String
   description  String?    @db.NVarChar(Max)
   coverUrl     String?    @map("cover_url")
   facebookUrl  String?    @map("facebook_url")
-  type         String     @default("Noticia")
-  hasVideo     Boolean    @default(false) @map("has_video")
-  createdAt    DateTime   @default(now()) @map("created_at")
+  type         String     @default("Noticia", map: "tn_type_df") @db.NVarChar(100)
+  hasVideo     Boolean    @default(false, map: "tn_has_video_df") @map("has_video")
+  createdAt    DateTime   @default(now(), map: "tn_created_at_df") @map("created_at")
+  author       User?      @relation(fields: [authorId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "tn_author_id_fkey")
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade, map: "tn_tournament_id_fkey")
 
   @@map("tournament_news")
 }
 
-// Registro histórico de cada acción -> Fundamental para sabermetría y recrear juegos
 model Play {
-  id            String   @id @default(uuid())
-  inning        Int
-  half          String // top, bottom
-  outsBeforePlay Int     @map("outs_before_play")
-  
-  result        String   // Ej. SINGLE, DOUBLE, K_SWINGING, BB, 6-3, E5, HR
-  rbi           Int      @default(0)
-  runsScored    Int      @default(0) @map("runs_scored")
-  outsRecorded  Int      @default(0) @map("outs_recorded")
-  
-  gameId        String   @map("game_id")
-  game          Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  
-  batterId      String   @map("batter_id")
-  batter        Player   @relation("BatterPlay", fields: [batterId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  
-  pitcherId     String   @map("pitcher_id")
-  pitcher       Player   @relation("PitcherPlay", fields: [pitcherId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  timestamp     DateTime @default(now())
+  id             String   @id @default(uuid())
+  inning         Int
+  half           String   @db.NVarChar(10)
+  outsBeforePlay Int      @map("outs_before_play")
+  result         String
+  rbi            Int      @default(0)
+  runsScored     Int      @default(0) @map("runs_scored")
+  outsRecorded   Int      @default(0) @map("outs_recorded")
+  gameId         String   @map("game_id")
+  batterId       String   @map("batter_id")
+  pitcherId      String   @map("pitcher_id")
+  timestamp      DateTime @default(now())
+  batter         Player   @relation("BatterPlay", fields: [batterId], references: [id], onUpdate: NoAction)
+  game           Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  pitcher        Player   @relation("PitcherPlay", fields: [pitcherId], references: [id], onUpdate: NoAction)
 
   @@map("plays")
 }

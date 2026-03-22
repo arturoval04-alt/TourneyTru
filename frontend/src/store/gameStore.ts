@@ -52,6 +52,8 @@ type BaseState = {
     awayLineup: LineupItem[];
     homeBatterIndex: number;
     awayBatterIndex: number;
+    homeTeamName: string;
+    awayTeamName: string;
 };
 
 export interface GameState extends BaseState {
@@ -189,6 +191,8 @@ export const useGameStore = create<GameState>()(
             gameId: null,
             homeTeamId: null,
             awayTeamId: null,
+            homeTeamName: 'HOME',
+            awayTeamName: 'AWAY',
             playbackId: null,
             plays: [],
             playLogs: [{ text: "Inicio del partido", inningString: "▲ 1" }],
@@ -208,6 +212,8 @@ export const useGameStore = create<GameState>()(
                     gameId: id,
                     homeTeamId: null,
                     awayTeamId: null,
+                    homeTeamName: 'HOME',
+                    awayTeamName: 'AWAY',
                     playbackId: null,
                     inning: 1,
                     half: 'top',
@@ -244,6 +250,7 @@ export const useGameStore = create<GameState>()(
                     playLogs: [...state.playLogs], homeLineup: [...state.homeLineup],
                     awayLineup: [...state.awayLineup], homeBatterIndex: state.homeBatterIndex,
                     awayBatterIndex: state.awayBatterIndex,
+                    homeTeamName: state.homeTeamName, awayTeamName: state.awayTeamName,
                 };
                 set((s) => ({ history: [...s.history.slice(-20), snapshot] }));
             },
@@ -263,6 +270,7 @@ export const useGameStore = create<GameState>()(
                 if (!gameId) return;
                 try {
                     const { data: gameData } = await api.get(`/games/${gameId}/state`);
+                    console.log("[fetchGameConfig] Data received:", gameData);
 
                     if (gameData) {
                         const sanitizeLineup = (lp: any[]) => lp.map(l => ({
@@ -284,6 +292,8 @@ export const useGameStore = create<GameState>()(
                             awayLineup: awayLp,
                             homeTeamId: gameData.home_team_id,
                             awayTeamId: gameData.away_team_id,
+                            homeTeamName: gameData.home_team_name || 'HOME',
+                            awayTeamName: gameData.away_team_name || 'AWAY',
                             playbackId: gameData.playback_id,
                             plays: gameData.plays || []
                         });
@@ -364,6 +374,27 @@ export const useGameStore = create<GameState>()(
                 });
 
                 gameSocket.on('disconnect', () => console.log('Socket disconnected'));
+
+                // Listen for game state updates from the backend (broadcast by the scorekeeper)
+                gameSocket.on('gameStateUpdate', (data: any) => {
+                    const fs = data?.fullState;
+                    if (!fs) return;
+                    console.log('[Gamecast] gameStateUpdate received:', fs.lastPlay?.result);
+                    set({
+                        inning: fs.inning ?? get().inning,
+                        half: fs.half ?? get().half,
+                        outs: fs.outs ?? get().outs,
+                        balls: fs.balls ?? get().balls,
+                        strikes: fs.strikes ?? get().strikes,
+                        homeScore: fs.homeScore ?? get().homeScore,
+                        awayScore: fs.awayScore ?? get().awayScore,
+                        bases: fs.bases ?? get().bases,
+                        currentBatter: fs.currentBatter ?? get().currentBatter,
+                        currentBatterId: fs.currentBatterId ?? get().currentBatterId,
+                        playLogs: fs.playLogs ?? get().playLogs,
+                        playbackId: fs.playbackId ?? get().playbackId,
+                    });
+                });
             },
 
             disconnectSocket: () => {
@@ -402,8 +433,12 @@ export const useGameStore = create<GameState>()(
                     const newBases = { ...state.bases };
                     const newBaseIds = { ...state.baseIds };
                     let runs = 0;
+                    let scoredRunnerId: string | null = null;
                     if (state.bases.first && state.bases.second && state.bases.third) {
-                        runs = 1; newBases.third = state.bases.second; newBaseIds.third = state.baseIds.second;
+                        // Bases loaded walk — runner on 3rd scores
+                        runs = 1;
+                        scoredRunnerId = state.baseIds.third;
+                        newBases.third = state.bases.second; newBaseIds.third = state.baseIds.second;
                         newBases.second = state.bases.first; newBaseIds.second = state.baseIds.first;
                     } else if (state.bases.first && state.bases.second) {
                         newBases.third = state.bases.second; newBaseIds.third = state.baseIds.second;
@@ -417,13 +452,20 @@ export const useGameStore = create<GameState>()(
                     const cid = state.currentBatterId;
                     get().cycleBatter();
                     emitPlayToBackend(get, "BB", runs, 0, cid);
+                    // Emit RUN_SCORED for the runner who scored from 3rd
+                    if (scoredRunnerId) {
+                        emitPlayToBackend(get, 'RUN_SCORED|Corredor anota por BB', 1, 0, scoredRunnerId, state.inning, state.half, state.outs);
+                    }
                 } else set({ balls });
             },
 
             addStrike: () => {
                 get().saveHistory();
                 const strikes = get().strikes + 1;
-                if (strikes >= 3) get().addOut(`${get().currentBatter} ponchado (K)`);
+                if (strikes >= 3) {
+                    const batter = get().currentBatter;
+                    get().addOut(`KS|${batter} es Ponchado Tirándole (K)`);
+                }
                 else set({ strikes });
             },
 
@@ -451,20 +493,50 @@ export const useGameStore = create<GameState>()(
                 const newBaseIds = { first: null as string | null, second: null as string | null, third: null as string | null };
                 let runs = 0;
                 const activeId = state.currentBatterId;
+                // Track which runners scored so we can emit individual RUN_SCORED plays
+                const scoredRunnerIds: string[] = [];
+
                 if (bases === 1) {
-                    if (state.bases.third) runs++;
+                    if (state.bases.third) { runs++; if (state.baseIds.third) scoredRunnerIds.push(state.baseIds.third); }
                     newBases.third = state.bases.second; newBases.second = state.bases.first; newBases.first = state.currentBatter;
                     newBaseIds.third = state.baseIds.second; newBaseIds.second = state.baseIds.first; newBaseIds.first = activeId;
                 } else if (bases === 2) {
-                    if (state.bases.third) runs++; if (state.bases.second) runs++;
+                    if (state.bases.third) { runs++; if (state.baseIds.third) scoredRunnerIds.push(state.baseIds.third); }
+                    if (state.bases.second) { runs++; if (state.baseIds.second) scoredRunnerIds.push(state.baseIds.second); }
                     newBases.third = state.bases.first; newBases.second = state.currentBatter;
                     newBaseIds.third = state.baseIds.first; newBaseIds.second = activeId;
+                } else if (bases === 3) {
+                    if (state.bases.third) { runs++; if (state.baseIds.third) scoredRunnerIds.push(state.baseIds.third); }
+                    if (state.bases.second) { runs++; if (state.baseIds.second) scoredRunnerIds.push(state.baseIds.second); }
+                    if (state.bases.first) { runs++; if (state.baseIds.first) scoredRunnerIds.push(state.baseIds.first); }
+                    newBases.third = state.currentBatter;
+                    newBaseIds.third = activeId;
                 } else if (bases === 4) {
-                    runs = 1 + (state.bases.first ? 1 : 0) + (state.bases.second ? 1 : 0) + (state.bases.third ? 1 : 0);
+                    if (state.bases.third) { runs++; if (state.baseIds.third) scoredRunnerIds.push(state.baseIds.third); }
+                    if (state.bases.second) { runs++; if (state.baseIds.second) scoredRunnerIds.push(state.baseIds.second); }
+                    if (state.bases.first) { runs++; if (state.baseIds.first) scoredRunnerIds.push(state.baseIds.first); }
+                    runs++; // batter scores too
                 }
                 set({ balls: 0, strikes: 0, bases: newBases, baseIds: newBaseIds, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore });
                 get().cycleBatter();
+                // Emit the batter's play (HR/H3/H2/H1)
                 emitPlayToBackend(get, customLogText || `H${bases}`, runs, 0, activeId);
+                
+                // Emit individual RUN_SCORED plays for each runner who scored
+                for (const runnerId of scoredRunnerIds) {
+                    emitPlayToBackend(get, 'RUN_SCORED|Corredor anota', 1, 0, runnerId, state.inning, state.half, state.outs);
+                }
+
+                // Emit individual ADV plays for runners who just advanced
+                if (state.bases.third && newBaseIds.third !== state.baseIds.third) {
+                    emitPlayToBackend(get, 'ADV|Corredor avanza a 3ra', 0, 0, state.baseIds.third, state.inning, state.half, state.outs);
+                }
+                if (state.bases.second && newBaseIds.second !== state.baseIds.second) {
+                    emitPlayToBackend(get, 'ADV|Corredor avanza a 2da', 0, 0, state.baseIds.second, state.inning, state.half, state.outs);
+                }
+                if (state.bases.first && newBaseIds.first !== state.baseIds.first) {
+                    emitPlayToBackend(get, 'ADV|Corredor avanza a 1ra', 0, 0, state.baseIds.first, state.inning, state.half, state.outs);
+                }
             },
 
             executeAdvancedPlay: (newBases, newBaseIds, runs, outs, desc) => {
@@ -495,7 +567,37 @@ export const useGameStore = create<GameState>()(
 
             executeWildPitchOrPassedBall: (desc) => {
                 get().saveHistory();
-                get().addBall();
+                const state = get();
+                const newBases = { ...state.bases };
+                const newBaseIds = { ...state.baseIds };
+                let runs = 0;
+                let scoredRunnerId: string | null = null;
+                // Advance all runners 1 base
+                if (state.bases.third) {
+                    runs = 1;
+                    scoredRunnerId = state.baseIds.third;
+                    newBases.third = null; newBaseIds.third = null;
+                }
+                if (state.bases.second) {
+                    newBases.third = state.bases.second; newBaseIds.third = state.baseIds.second;
+                    newBases.second = null; newBaseIds.second = null;
+                }
+                if (state.bases.first) {
+                    newBases.second = state.bases.first; newBaseIds.second = state.baseIds.first;
+                    newBases.first = null; newBaseIds.first = null;
+                }
+                set({ bases: newBases, baseIds: newBaseIds, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore });
+                // Emit WP_RUN if runner scored from 3rd
+                if (scoredRunnerId) {
+                    emitPlayToBackend(get, 'WP_RUN|Carrera por Wild Pitch / Passed Ball', 1, 0, scoredRunnerId, state.inning, state.half, state.outs);
+                }
+                // Emit advancements for others
+                if (state.bases.second && newBaseIds.third) {
+                    emitPlayToBackend(get, 'ADV|Avanza a 3ra por WP/PB', 0, 0, state.baseIds.second, state.inning, state.half, state.outs);
+                }
+                if (state.bases.first && newBaseIds.second) {
+                    emitPlayToBackend(get, 'ADV|Avanza a 2da por WP/PB', 0, 0, state.baseIds.first, state.inning, state.half, state.outs);
+                }
             },
 
             executeFieldersChoice: (outRunnerId) => {
@@ -518,10 +620,45 @@ export const useGameStore = create<GameState>()(
                 const totalOuts = state.outs + 1;
                 const activeId = state.currentBatterId;
                 let runs = 0;
-                if (state.bases.third) runs = 1;
+                let scoredRunnerId: string | null = null;
+                const newBases = { ...state.bases };
+                const newBaseIds = { ...state.baseIds };
+                // Runner on 3rd scores on sacrifice
+                if (state.bases.third) {
+                    runs = 1;
+                    scoredRunnerId = state.baseIds.third;
+                    newBases.third = null; newBaseIds.third = null;
+                }
+                // Advance remaining runners (for bunt sacrifices mainly)
+                if (type === 'bunt') {
+                    if (state.bases.second && !newBases.third) {
+                        newBases.third = state.bases.second; newBaseIds.third = state.baseIds.second;
+                        newBases.second = null; newBaseIds.second = null;
+                    }
+                    if (state.bases.first && !newBases.second) {
+                        newBases.second = state.bases.first; newBaseIds.second = state.baseIds.first;
+                        newBases.first = null; newBaseIds.first = null;
+                    }
+                }
                 if (totalOuts >= 3) get().nextHalfInning();
-                else { set({ outs: totalOuts, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore }); get().cycleBatter(); }
-                emitPlayToBackend(get, type === 'fly' ? 'SF|Fly de Sacrificio' : 'SH|Toque de Sacrificio', runs, 1, activeId);
+                else { 
+                    set({ outs: totalOuts, bases: newBases, baseIds: newBaseIds, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore }); 
+                    get().cycleBatter(); 
+                }
+                const res = type === 'fly' ? 'SF|Fly de Sacrificio' : 'SH|Toque de Sacrificio';
+                emitPlayToBackend(get, res, runs, 1, activeId);
+                if (scoredRunnerId) {
+                    emitPlayToBackend(get, 'RUN_SCORED|Anote por Sacrificio', 1, 0, scoredRunnerId, state.inning, state.half, state.outs);
+                }
+                // Advancements on bunt sacrifice
+                if (type === 'bunt') {
+                    if (state.bases.second && newBaseIds.third) {
+                        emitPlayToBackend(get, 'ADV|Avanza a 3ra por Sacrificio', 0, 0, state.baseIds.second, state.inning, state.half, state.outs);
+                    }
+                    if (state.bases.first && newBaseIds.second) {
+                        emitPlayToBackend(get, 'ADV|Avanza a 2da por Sacrificio', 0, 0, state.baseIds.first, state.inning, state.half, state.outs);
+                    }
+                }
             },
 
             registerCustomPlay: (desc) => {

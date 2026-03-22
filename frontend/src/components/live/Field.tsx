@@ -47,7 +47,7 @@ const POSITION_MAP: Record<string, { pos: string; top: string; left: string }> =
     'RF': { pos: 'RF', top: '25%', left: '82%' },
 };
 
-export default function Field({ forceStoreData }: { forceStoreData?: FieldStoreData }) {
+export default function Field({ forceStoreData, readOnly = false }: { forceStoreData?: FieldStoreData; readOnly?: boolean }) {
     const defaultStore = useGameStore();
     const storeData = forceStoreData || defaultStore;
     const { bases } = storeData;
@@ -106,7 +106,7 @@ export default function Field({ forceStoreData }: { forceStoreData?: FieldStoreD
                 {bases.first && (
                     <div className="absolute top-10 flex flex-col items-center gap-1 w-32">
                         <div className="text-[11px] uppercase font-black tracking-wide text-amber-300 bg-slate-900/90 border border-slate-700 px-3 py-0.5 rounded shadow whitespace-nowrap">{bases.first}</div>
-                        {!forceStoreData && (
+                        {!readOnly && !forceStoreData && (
                             <button onClick={() => openAction('first', bases.first!)} className="bg-sky-600 hover:bg-sky-500 text-white text-[9px] px-3 py-1 rounded-full uppercase font-bold shadow-lg cursor-pointer active:scale-90 transition-all z-30 pointer-events-auto">Avance/Robo ►</button>
                         )}
                     </div>
@@ -119,7 +119,7 @@ export default function Field({ forceStoreData }: { forceStoreData?: FieldStoreD
                 {bases.second && (
                     <div className="absolute top-10 flex flex-col items-center gap-1 w-32">
                         <div className="text-[11px] uppercase font-black tracking-wide text-amber-300 bg-slate-900/90 border border-slate-700 px-3 py-0.5 rounded shadow whitespace-nowrap">{bases.second}</div>
-                        {!forceStoreData && (
+                        {!readOnly && !forceStoreData && (
                             <button onClick={() => openAction('second', bases.second!)} className="bg-sky-600 hover:bg-sky-500 text-white text-[9px] px-3 py-1 rounded-full uppercase font-bold shadow-lg cursor-pointer active:scale-90 transition-all z-30 pointer-events-auto">Avance/Robo ►</button>
                         )}
                     </div>
@@ -132,7 +132,7 @@ export default function Field({ forceStoreData }: { forceStoreData?: FieldStoreD
                 {bases.third && (
                     <div className="absolute top-10 flex flex-col items-center gap-1 w-32">
                         <div className="text-[11px] uppercase font-black tracking-wide text-amber-300 bg-slate-900/90 border border-slate-700 px-3 py-0.5 rounded shadow whitespace-nowrap">{bases.third}</div>
-                        {!forceStoreData && (
+                        {!readOnly && !forceStoreData && (
                             <button onClick={() => openAction('third', bases.third!)} className="bg-sky-600 hover:bg-sky-500 text-white text-[9px] px-3 py-1 rounded-full uppercase font-bold shadow-lg cursor-pointer active:scale-90 transition-all z-30 pointer-events-auto">Anota/Robo ►</button>
                         )}
                     </div>
