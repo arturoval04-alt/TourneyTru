@@ -464,8 +464,29 @@ export const useGameStore = create<GameState>()(
                 const { half, inning } = get();
                 const newHalf = half === 'top' ? 'bottom' : 'top';
                 const newInning = half === 'bottom' ? inning + 1 : inning;
-                set({ outs: 0, balls: 0, strikes: 0, bases: { first: null, second: null, third: null }, baseIds: { first: null, second: null, third: null }, half: newHalf, inning: newInning });
-                get().cycleBatter();
+                
+                // Update basic state
+                set({ 
+                    outs: 0, 
+                    balls: 0, 
+                    strikes: 0, 
+                    bases: { first: null, second: null, third: null }, 
+                    baseIds: { first: null, second: null, third: null }, 
+                    half: newHalf, 
+                    inning: newInning 
+                });
+
+                // Update current batter to whoever is up NEXT in the NEW half without incrementing their index!
+                const stateAfterHalfChange = get();
+                if (newHalf === 'top') {
+                    const idx = stateAfterHalfChange.awayBatterIndex;
+                    const item = stateAfterHalfChange.awayLineup[idx];
+                    set({ currentBatter: item?.player ? `${item.player.firstName} ${item.player.lastName}` : 'Bateador', currentBatterId: item?.playerId || null });
+                } else {
+                    const idx = stateAfterHalfChange.homeBatterIndex;
+                    const item = stateAfterHalfChange.homeLineup[idx];
+                    set({ currentBatter: item?.player ? `${item.player.firstName} ${item.player.lastName}` : 'Bateador', currentBatterId: item?.playerId || null });
+                }
             },
 
             addBall: () => {
@@ -538,9 +559,13 @@ export const useGameStore = create<GameState>()(
                 // 2. Update local state
                 if (totalOuts >= 3) {
                     get().nextHalfInning();
+                    // Force a broadcast of the newly wiped clean inning so fans don't get stuck on "2 outs pre-strikeout"
+                    syncStateToBackend(get); 
                 } else {
                     set({ outs: totalOuts, balls: 0, strikes: 0 });
                     get().cycleBatter();
+                    // Just 1 or 2 outs: sync so fans see the new count and batter
+                    syncStateToBackend(get);
                 }
             },
 
@@ -602,9 +627,17 @@ export const useGameStore = create<GameState>()(
                 const state = get();
                 const totalOuts = state.outs + outs;
                 const activeId = state.currentBatterId;
-                if (totalOuts >= 3) get().nextHalfInning();
-                else set({ outs: totalOuts, bases: newBases, baseIds: newBaseIds, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore });
-                emitPlayToBackend(get, desc, runs, outs, activeId);
+                
+                // Emitir la jugada ANTES de cambiar el inning para que la DB tenga el inning/outs correcto
+                emitPlayToBackend(get, desc, runs, outs, activeId, state.inning, state.half, state.outs);
+                
+                if (totalOuts >= 3) {
+                    get().nextHalfInning();
+                    syncStateToBackend(get);
+                } else {
+                    set({ outs: totalOuts, bases: newBases, baseIds: newBaseIds, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore });
+                    syncStateToBackend(get);
+                }
             },
 
             executeBaseAction: (origin, dest, isOut, desc) => {
@@ -618,12 +651,16 @@ export const useGameStore = create<GameState>()(
                 let runs = 0;
                 if (dest && !isOut) { if (dest === 'home') runs++; else { newBases[dest] = runner; newBaseIds[dest] = rid; } }
                 const totalOuts = state.outs + (isOut ? 1 : 0);
-                if (totalOuts >= 3) get().nextHalfInning();
-                else {
+                
+                emitPlayToBackend(get, desc, runs, isOut ? 1 : 0, rid, state.inning, state.half, state.outs);
+
+                if (totalOuts >= 3) {
+                    get().nextHalfInning();
+                    syncStateToBackend(get);
+                } else {
                     set({ outs: totalOuts, bases: newBases, baseIds: newBaseIds, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore });
                     syncStateToBackend(get);
                 }
-                emitPlayToBackend(get, desc, runs, isOut ? 1 : 0, rid);
             },
 
             executeWildPitchOrPassedBall: (desc) => {
@@ -671,9 +708,17 @@ export const useGameStore = create<GameState>()(
                 newBases.first = state.currentBatter; newBaseIds.first = state.currentBatterId;
                 const totalOuts = state.outs + 1;
                 const activeId = state.currentBatterId;
-                if (totalOuts >= 3) get().nextHalfInning();
-                else { set({ outs: totalOuts, bases: newBases, baseIds: newBaseIds }); get().cycleBatter(); }
-                emitPlayToBackend(get, "FC|Bola Ocupada", 0, 1, activeId);
+                
+                emitPlayToBackend(get, "FC|Bola Ocupada", 0, 1, activeId, state.inning, state.half, state.outs);
+
+                if (totalOuts >= 3) {
+                    get().nextHalfInning();
+                    syncStateToBackend(get);
+                } else { 
+                    set({ outs: totalOuts, bases: newBases, baseIds: newBaseIds }); 
+                    get().cycleBatter(); 
+                    syncStateToBackend(get);
+                }
             },
 
             executeSacrifice: (type) => {
@@ -702,16 +747,22 @@ export const useGameStore = create<GameState>()(
                         newBases.first = null; newBaseIds.first = null;
                     }
                 }
-                if (totalOuts >= 3) get().nextHalfInning();
-                else { 
-                    set({ outs: totalOuts, bases: newBases, baseIds: newBaseIds, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore }); 
-                    get().cycleBatter(); 
-                }
+                
                 const res = type === 'fly' ? 'SF|Fly de Sacrificio' : 'SH|Toque de Sacrificio';
-                emitPlayToBackend(get, res, runs, 1, activeId);
+                emitPlayToBackend(get, res, runs, 1, activeId, state.inning, state.half, state.outs);
                 if (scoredRunnerId) {
                     emitPlayToBackend(get, 'RUN_SCORED|Anote por Sacrificio', 1, 0, scoredRunnerId, state.inning, state.half, state.outs);
                 }
+
+                if (totalOuts >= 3) {
+                    get().nextHalfInning();
+                    syncStateToBackend(get);
+                } else { 
+                    set({ outs: totalOuts, bases: newBases, baseIds: newBaseIds, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore }); 
+                    get().cycleBatter(); 
+                    syncStateToBackend(get);
+                }
+                
                 // Advancements on bunt sacrifice
                 if (type === 'bunt') {
                     if (state.bases.second && newBaseIds.third) {

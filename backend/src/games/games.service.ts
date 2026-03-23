@@ -521,6 +521,7 @@ export class GamesService {
                 id: l.player.id,
                 firstName: l.player.firstName,
                 lastName: l.player.lastName,
+                photoUrl: l.player.photoUrl,
             } : null,
         }));
 
