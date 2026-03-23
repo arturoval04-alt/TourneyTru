@@ -44,9 +44,9 @@ interface GameRecord {
     round?: string;
     homeTeam?: { id: string; name: string; shortName?: string; logoUrl?: string; wins?: number; losses?: number };
     awayTeam?: { id: string; name: string; shortName?: string; logoUrl?: string; wins?: number; losses?: number };
-    winningPitcher?: { firstName: string; lastName: string; photoUrl?: string };
-    mvpBatter1?: { firstName: string; lastName: string; photoUrl?: string };
-    mvpBatter2?: { firstName: string; lastName: string; photoUrl?: string };
+    winningPitcher?: { id: string; firstName: string; lastName: string; photoUrl?: string };
+    mvpBatter1?: { id: string; firstName: string; lastName: string; photoUrl?: string };
+    mvpBatter2?: { id: string; firstName: string; lastName: string; photoUrl?: string };
 }
 
 interface TeamData {
@@ -246,16 +246,16 @@ export default function TeamProfilePage() {
 
             <Navbar />
 
-            <main className="max-w-7xl mx-auto md:px-4 md:py-8 animate-fade-in-up">
+            <main className="max-w-7xl mx-auto md:px-1 py-4 px-1 md:py-6 animate-fade-in-up">
 
                 {/* Header Section (Unified Container) */}
                 <div className="bg-surface border border-muted/30 md:rounded-xl overflow-hidden shadow-md mb-8 flex flex-col relative animate-fade-in-up">
 
                     {/* Top Banner (Participating In...) */}
-                    <div className="bg-[#1a2d42] text-white py-6 md:py-24 px-6 md:px-8 text-center pl-6 md:pl-38 relative">
-                        <div className="text-[1px] md:text-sm font-black tracking-widest uppercase text-white/70 mb-1">Participando En:</div>
+                    <div className="bg-[#1a2d42] text-white py-12 md:py-24 px-6 md:px-8 text-center pl-6 md:pl-80 relative">
+                        <div className="text-[10px] md:text-sm text-center md:text-left md:pl-60 font-black tracking-widest uppercase text-white/70 mb-1">Participando En:</div>
                         <h1 className="text-xl md:text-4xl font-black italic tracking-tighter uppercase drop-shadow-md flex flex-wrap items-center justify-center md:justify-start gap-2">
-                            Torneo "{team.tournament?.name || 'Amistoso'}" {team.tournament?.category || ''}
+                            "{team.tournament?.name || 'Amistoso'}"
                             {team.tournament?.id && (
                                 <Link href={`/tournaments/${team.tournament.id}`} className="hover:text-blue-300 transition-colors">
                                     <ExternalLink className="w-5 h-5 md:w-6 md:h-6" />
@@ -265,7 +265,7 @@ export default function TeamProfilePage() {
                     </div>
 
                     {/* Main Info Row (Grey Section) */}
-                    <div className="bg-[#2a303c] p-6 md:pt-1 pt-20  flex flex-col md:flex-row items-center md:items-start gap-6 relative z-10">
+                    <div className="bg-[#2a303c] p-5 md:pt-1 pt-24 flex flex-col md:flex-row items-center md:items-start gap-4 relative z-10">
                         {/* Logo Overlapping */}
                         <div className="absolute -top-7 left-1/2 -translate-x-1/2 md:translate-x-0 md:left-8 w-32 h-32 md:w-56 md:h-56 bg-white rounded-lg md:rounded-2xl border-4 border-[#2a303c] shadow-xl overflow-hidden flex items-center justify-center shrink-0 text-[#2a303c] font-black text-4xl z-20">
                             {team.logoUrl ? (
@@ -275,21 +275,38 @@ export default function TeamProfilePage() {
                             )}
                         </div>
 
+                        {/* Share button next to logo on mobile */}
+                        <div className="absolute top-20 right-4 md:hidden flex gap-2 z-30">
+                            {(userRole === 'admin' || userRole === 'scorekeeper') && (
+                                <button onClick={() => setIsEditingProfile(true)} className="w-9 h-9 rounded-full border border-white/20 bg-white/10 flex items-center justify-center transition-colors shrink-0 text-white/70" title="Configuración">
+                                    <Settings className="w-4 h-4" />
+                                </button>
+                            )}
+                            <button onClick={() => {
+                                navigator.clipboard.writeText(window.location.href);
+                                setShowCopiedToast(true);
+                                setTimeout(() => setShowCopiedToast(false), 2000);
+                            }} className="w-9 h-9 rounded-full border border-white/20 bg-white/10 flex items-center justify-center transition-colors shrink-0 text-white" title="Compartir Perfil">
+                                <Share2 className="w-4 h-4" />
+                            </button>
+                        </div>
+
                         {/* Info Section */}
-                        <div className="flex-1 flex flex-col items-center md:items-start md:ml-64 w-full text-center md:text-left mt-0">
-                            <div className="flex flex-col md:flex-row justify-between w-full md:items-start gap-4">
+                        <div className="flex-1 flex flex-col items-center md:items-start md:ml-64 w-full text-center md:text-left">
+                            <div className="flex flex-col md:flex-row justify-between w-full md:items-start gap-2">
                                 <div className="space-y-1">
-                                    <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-white leading-tight mb-1 tracking-tight">{team.name}</h1>
+                                    <h1 className="text-2xl sm:text-4xl md:text-5xl font-black text-white leading-tight mb-1 tracking-tight">{team.name}</h1>
                                     <div className="text-white/80 text-xs font-bold uppercase tracking-widest flex items-center justify-center md:justify-start gap-2">
                                         <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
                                         {team.tournament?.category || team.tournament?.name || 'SEMIRÁPIDA'}
                                     </div>
                                 </div>
 
-                                <div className="flex justify-center md:justify-end gap-3 shrink-0">
+                                {/* Desktop-only share buttons */}
+                                <div className="hidden md:flex justify-end gap-3 shrink-0">
                                     {(userRole === 'admin' || userRole === 'scorekeeper') && (
                                         <button onClick={() => setIsEditingProfile(true)} className="w-10 h-10 rounded-full border border-white/20 bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors shrink-0 text-white/70 hover:text-white" title="Configuración">
-                                            <Settings className="w-4 h-4 md:w-5 md:h-5" />
+                                            <Settings className="w-5 h-5" />
                                         </button>
                                     )}
                                     <button onClick={() => {
@@ -297,7 +314,7 @@ export default function TeamProfilePage() {
                                         setShowCopiedToast(true);
                                         setTimeout(() => setShowCopiedToast(false), 2000);
                                     }} className="w-10 h-10 rounded-full border border-white/20 bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors shrink-0 text-white" title="Compartir Perfil">
-                                        <Share2 className="w-4 h-4 md:w-5 md:h-5" />
+                                        <Share2 className="w-5 h-5" />
                                     </button>
                                 </div>
                             </div>
@@ -307,32 +324,32 @@ export default function TeamProfilePage() {
 
                             {/* Informacion Grid */}
                             <h3 className="text-white/70 font-bold text-xs mt-0 mb-3 tracking-widest uppercase text-center md:text-left">Información</h3>
-                            <div className="flex flex-wrap items-center justify-center md:justify-start gap-6 md:gap-14 w-full">
-                                <div className="flex items-center gap-3 group bg-white/5 px-4 py-2 border border-white/10 rounded-xl md:bg-transparent md:border-none md:p-0 flex-1 min-w-[140px] md:flex-none justify-center md:justify-start">
-                                    <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-blue-400 group-hover:bg-blue-400 group-hover:text-white transition-colors border border-white/5">
-                                        <Users className="w-5 h-5" />
+                            <div className="grid grid-cols-3 md:flex md:flex-wrap items-center justify-center md:justify-start gap-3 md:gap-14 w-full">
+                                <div className="flex flex-col md:flex-row items-center gap-1 md:gap-3 group bg-white/5 px-2 py-2 md:px-4 border border-white/10 rounded-xl md:bg-transparent md:border-none md:p-0 justify-center md:justify-start">
+                                    <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-white/5 flex items-center justify-center text-blue-400 group-hover:bg-blue-400 group-hover:text-white transition-colors border border-white/5">
+                                        <Users className="w-4 h-4 md:w-5 md:h-5" />
                                     </div>
-                                    <div className="text-left">
-                                        <p className="text-[10px] text-white/50 font-black uppercase tracking-wider mb-0.5">ROSTER</p>
-                                        <p className="text-sm font-medium text-white">{team.players?.length || 0} Jugadores</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-3 group bg-white/5 px-4 py-2 border border-white/10 rounded-xl md:bg-transparent md:border-none md:p-0 flex-1 min-w-[140px] md:flex-none justify-center md:justify-start">
-                                    <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-slate-300 group-hover:bg-slate-300 group-hover:text-[#1f2937] transition-colors border border-white/5">
-                                        <Flag className="w-5 h-5" />
-                                    </div>
-                                    <div className="text-left w-full overflow-hidden">
-                                        <p className="text-[10px] text-white/50 font-black uppercase tracking-wider mb-0.5">MANAGER</p>
-                                        <p className="text-sm font-medium text-white line-clamp-1">{team.managerName || 'Sin asignar'}</p>
+                                    <div className="text-center md:text-left">
+                                        <p className="text-[9px] md:text-[10px] text-white/50 font-black uppercase tracking-wider mb-0.5">ROSTER</p>
+                                        <p className="text-xs md:text-sm font-medium text-white">{team.players?.length || 0} Jugadores</p>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-3 group bg-white/5 px-4 py-2 border border-white/10 rounded-xl md:bg-transparent md:border-none md:p-0 flex-1 min-w-[140px] md:flex-none justify-center md:justify-start">
-                                    <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-amber-400 group-hover:bg-amber-400 group-hover:text-[#1f2937] transition-colors border border-white/5">
-                                        <Trophy className="w-5 h-5" />
+                                <div className="flex flex-col md:flex-row items-center gap-1 md:gap-3 group bg-white/5 px-2 py-2 md:px-4 border border-white/10 rounded-xl md:bg-transparent md:border-none md:p-0 justify-center md:justify-start">
+                                    <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-white/5 flex items-center justify-center text-slate-300 group-hover:bg-slate-300 group-hover:text-[#1f2937] transition-colors border border-white/5">
+                                        <Flag className="w-4 h-4 md:w-5 md:h-5" />
                                     </div>
-                                    <div className="text-left">
-                                        <p className="text-[10px] text-white/50 font-black uppercase tracking-wider mb-0.5">RÉCORD</p>
-                                        <p className="text-sm font-medium text-white">{team.wins}G - {team.losses}P</p>
+                                    <div className="text-center md:text-left w-full overflow-hidden">
+                                        <p className="text-[9px] md:text-[10px] text-white/50 font-black uppercase tracking-wider mb-0.5">MANAGER</p>
+                                        <p className="text-xs md:text-sm font-medium text-white line-clamp-1">{team.managerName || 'Sin asignar'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex flex-col md:flex-row items-center gap-1 md:gap-3 group bg-white/5 px-2 py-2 md:px-4 border border-white/10 rounded-xl md:bg-transparent md:border-none md:p-0 justify-center md:justify-start">
+                                    <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-white/5 flex items-center justify-center text-amber-400 group-hover:bg-amber-400 group-hover:text-[#1f2937] transition-colors border border-white/5">
+                                        <Trophy className="w-4 h-4 md:w-5 md:h-5" />
+                                    </div>
+                                    <div className="text-center md:text-left">
+                                        <p className="text-[9px] md:text-[10px] text-white/50 font-black uppercase tracking-wider mb-0.5">RÉCORD</p>
+                                        <p className="text-xs md:text-sm font-medium text-white">{team.wins}G - {team.losses}P</p>
                                     </div>
                                 </div>
                             </div>
@@ -418,13 +435,13 @@ export default function TeamProfilePage() {
                                                 }
 
                                                 return (
-                                                    <div key={game.id} className={`${bgGradient} border ${borderClass}  rounded-2xl overflow-hidden shadow-sm flex flex-col hover:shadow-md transition-shadow relative`}>
+                                                    <div key={game.id} onClick={() => router.push(`/gamecast/${game.id}`)} className={`${bgGradient} border ${borderClass} rounded-2xl overflow-hidden shadow-sm flex flex-col hover:shadow-md transition-shadow relative cursor-pointer`}>
                                                         {game.status === 'in_progress' && (
                                                             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 to-orange-500" />
                                                         )}
 
                                                         {/* Game Header */}
-                                                        <div className="px-4 py-2 border-b border-black/5 dark:border-white/5 flex justify-between items-center bg-black/5 dark:bg-white/5">
+                                                        <div className="px-4 py-1 border-b border-black/5 dark:border-white/5 flex justify-between items-center bg-black/5 dark:bg-white/5">
                                                             <div className="text-xs font-bold opacity-70 flex items-center gap-2">
                                                                 <Clock className="w-3.5 h-3.5" />
                                                                 {new Date(game.scheduledDate).toLocaleDateString('es-MX', { month: 'short', day: 'numeric' })} &bull; {new Date(game.scheduledDate).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
@@ -436,11 +453,11 @@ export default function TeamProfilePage() {
                                                         </div>
 
                                                         {/* Game Body */}
-                                                        <div className="p-4 md:p-6 flex flex-col sm:flex-row gap-4 items-center flex-1">
+                                                        <div className="flex flex-col flex-1">
                                                             {/* Score & Logos Section */}
-                                                            <div className="flex-1 w-full flex items-center justify-between px-2">
+                                                            <div className="p-4 md:p-6 flex items-center justify-between px-4 md:px-6">
                                                                 {/* Team A (Away) */}
-                                                                <Link href={`/equipos/${game.awayTeam?.id}`} className="flex flex-col items-center gap-2 flex-1 relative z-10 w-24 group hover:-translate-y-1 transition-transform">
+                                                                <Link href={`/equipos/${game.awayTeam?.id}`} onClick={(e) => e.stopPropagation()} className="flex flex-col items-center gap-2 flex-1 relative z-10 w-24 group hover:-translate-y-1 transition-transform">
                                                                     <div className="w-14 h-14 md:w-20 md:h-20 bg-surface rounded-full shadow-md flex items-center justify-center border-2 border-muted/20 overflow-hidden font-black text-2xl shrink-0 group-hover:border-primary/50 transition-colors">
                                                                         {game.awayTeam?.logoUrl ? <img src={game.awayTeam.logoUrl} alt="A" className="w-full h-full object-cover" /> : game.awayTeam?.shortName || game.awayTeam?.name?.substring(0, 2)}
                                                                     </div>
@@ -467,7 +484,7 @@ export default function TeamProfilePage() {
                                                                 </div>
 
                                                                 {/* Team B (Home) */}
-                                                                <Link href={`/equipos/${game.homeTeam?.id}`} className="flex flex-col items-center gap-2 flex-1 relative z-10 w-24 group hover:-translate-y-1 transition-transform">
+                                                                <Link href={`/equipos/${game.homeTeam?.id}`} onClick={(e) => e.stopPropagation()} className="flex flex-col items-center gap-2 flex-1 relative z-10 w-24 group hover:-translate-y-1 transition-transform">
                                                                     <div className="w-14 h-14 md:w-20 md:h-20 bg-surface rounded-full shadow-md flex items-center justify-center border-2 border-muted/20 overflow-hidden font-black text-2xl shrink-0 group-hover:border-primary/50 transition-colors">
                                                                         {game.homeTeam?.logoUrl ? <img src={game.homeTeam.logoUrl} alt="H" className="w-full h-full object-cover" /> : game.homeTeam?.shortName || game.homeTeam?.name?.substring(0, 2)}
                                                                     </div>
@@ -475,58 +492,72 @@ export default function TeamProfilePage() {
                                                                 </Link>
                                                             </div>
 
-                                                            {/* Info & Divider */}
-                                                            <div className="max-sm:w-full max-sm:h-px sm:w-px sm:h-24 bg-black/10 dark:bg-white/10 my-2 sm:my-0 sm:mx-2 block"></div>
-
-                                                            {/* Stats & Actions Area */}
-                                                            <div className="flex w-full sm:w-32 flex-col justify-between items-center sm:items-end shrink-0 gap-3">
-
-                                                                {/* Highlights area */}
-                                                                <div className="flex flex-col gap-1.5 items-center sm:items-end w-full">
+                                                            {/* Bottom Stats Bar */}
+                                                            <div className="flex border-t border-black/10 dark:border-white/10">
+                                                                <div className="flex-1 p-3 md:p-4 flex items-center gap-3 md:gap-4">
                                                                     {winStatus === 'live' ? (
-                                                                        <span className="text-xs font-black text-red-500 uppercase tracking-widest bg-red-500/10 px-2 py-1 rounded w-full text-center sm:text-right border border-red-500/20">
-                                                                            {game.half === 'top' ? 'Alta' : 'Baja'} {game.currentInning || 1}
-                                                                        </span>
+                                                                        <>
+                                                                            {/* Live: Current inning info */}
+                                                                            <div className="flex items-center gap-2 w-full">
+                                                                                <span className="text-xs font-black text-red-500 uppercase tracking-widest bg-red-500/10 px-2 py-1 rounded border border-red-500/20 flex items-center gap-1 animate-pulse">
+                                                                                    <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                                                                    {game.half === 'top' ? 'Alta' : 'Baja'} {game.currentInning || 1}
+                                                                                </span>
+                                                                            </div>
+                                                                        </>
                                                                     ) : game.status === 'finished' ? (
                                                                         <>
-                                                                            {game.winningPitcher ? (
-                                                                                <div className="flex items-center gap-1.5 text-[10px] md:text-sm bg-amber-500/10 px-2 py-1 rounded w-full sm:w-auto sm:justify-end border border-amber-500/20">
-                                                                                    <Trophy className="w-5 h-5 text-amber-500 shrink-0" />
-                                                                                    <span className="font-bold text-amber-600 dark:text-amber-400 capitalize truncate w-full sm:w-auto">{game.winningPitcher.firstName.charAt(0) + '. ' + game.winningPitcher.lastName}</span>
-                                                                                </div>
-                                                                            ) : (
-                                                                                <div className="text-[10px] text-muted-foreground italic h-[22px]"></div>
+                                                                            {/* Winning Pitcher Section */}
+                                                                            <div className="flex-1 flex items-center justify-start">
+                                                                                {game.winningPitcher && (
+                                                                                    <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                                                                        <Link href={`/jugadores/${game.winningPitcher.id}`}>
+                                                                                            <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-surface border-2 border-amber-500/50 overflow-hidden shadow-md shrink-0 hover:border-amber-400 transition-colors">
+                                                                                                <img src={game.winningPitcher.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${game.winningPitcher.firstName}`} alt="PG" className="w-full h-full object-cover" />
+                                                                                            </div>
+                                                                                        </Link>
+                                                                                        <div className="flex flex-col min-w-0">
+                                                                                            <span className="text-[12px] font-black text-amber-500 uppercase tracking-wider flex items-center gap-1">
+                                                                                                <Trophy className="w-3 h-3" /> P. Ganador
+                                                                                            </span>
+                                                                                            <span className="text-xs md:text-sm font-bold text-foreground capitalize truncate">{game.winningPitcher.firstName.charAt(0)}. {game.winningPitcher.lastName}</span>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+
+                                                                            {/* Divider */}
+                                                                            {game.winningPitcher && (game.mvpBatter1 || game.mvpBatter2) && (
+                                                                                <div className="w-px h-10 bg-white/10 shrink-0"></div>
                                                                             )}
 
-                                                                            <div className="flex items-center sm:mt-0 md:mt-2 gap-3 justify-center sm:justify-end md:justify-center w-full">
+                                                                            {/* MVPs Section */}
+                                                                            <div className="flex-1 flex items-center justify-end">
                                                                                 {(game.mvpBatter1 || game.mvpBatter2) && (
-                                                                                    <span className="text-[9px] font-black uppercase text-blue-500 tracking-wider">MVP</span>
-                                                                                )}
-                                                                                {game.mvpBatter1 && (
-                                                                                    <div className="w-6 h-6 md:w-12 md:h-12 rounded-full bg-surface border border-blue-400 overflow-hidden" title={game.mvpBatter1.firstName + ' ' + game.mvpBatter1.lastName}>
-                                                                                        <img src={game.mvpBatter1.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${game.mvpBatter1.firstName}`} alt="MVP" className="w-full h-full object-cover" />
+                                                                                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                                                                        <span className="text-[12px] font-black uppercase text-blue-500 tracking-wider">MVP</span>
+                                                                                        <div className="flex md:space-x-15 space-x-2">
+                                                                                            {game.mvpBatter1 && (
+                                                                                                <Link href={`/jugadores/${game.mvpBatter1.id}`}>
+                                                                                                    <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-surface border-2 border-blue-400 overflow-hidden shadow-md hover:border-blue-300 transition-colors" title={game.mvpBatter1.firstName + ' ' + game.mvpBatter1.lastName}>
+                                                                                                        <img src={game.mvpBatter1.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${game.mvpBatter1.firstName}`} alt="MVP" className="w-full h-full object-cover" />
+                                                                                                    </div>
+                                                                                                </Link>
+                                                                                            )}
+                                                                                            {game.mvpBatter2 && (
+                                                                                                <Link href={`/jugadores/${game.mvpBatter2.id}`}>
+                                                                                                    <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-surface border-2 border-blue-400 overflow-hidden shadow-md hover:border-blue-300 transition-colors" title={game.mvpBatter2.firstName + ' ' + game.mvpBatter2.lastName}>
+                                                                                                        <img src={game.mvpBatter2.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${game.mvpBatter2.firstName}`} alt="MVP2" className="w-full h-full object-cover" />
+                                                                                                    </div>
+                                                                                                </Link>
+                                                                                            )}
+                                                                                        </div>
                                                                                     </div>
-                                                                                )}
-                                                                                {game.mvpBatter2 && (
-                                                                                    <div className="w-6 h-6 md:w-12 md:h-12 rounded-full bg-surface border border-blue-400 overflow-hidden" title={game.mvpBatter2.firstName + ' ' + game.mvpBatter2.lastName}>
-                                                                                        <img src={game.mvpBatter2.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${game.mvpBatter2.firstName}`} alt="MVP2" className="w-full h-full object-cover" />
-                                                                                    </div>
-                                                                                )}
-                                                                                {!(game.mvpBatter1 || game.mvpBatter2) && (
-                                                                                    <div className="h-8 md:h-8 w-full"></div>
                                                                                 )}
                                                                             </div>
                                                                         </>
                                                                     ) : null}
                                                                 </div>
-
-                                                                {/* Main button */}
-                                                                <Link href={`/gamecast/${game.id}`} className="w-full">
-                                                                    <button className={`w-full px-4 py-2.5 text-[10px] md:text-xs font-black rounded-lg uppercase tracking-widest transition shadow-sm border ${winStatus === 'live' ? 'bg-red-600 hover:bg-red-500 text-white border-red-500' : 'bg-surface hover:bg-muted/5 border-muted/30 text-foreground hover:border-primary/50'
-                                                                        }`}>
-                                                                        {winStatus === 'live' ? 'Ver en Vivo' : 'Boxscore'}
-                                                                    </button>
-                                                                </Link>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -614,21 +645,21 @@ export default function TeamProfilePage() {
 
                     {/* JUGADORES (ROSTER) TAB */}
                     {activeTab === 'jugadores' && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 animate-fade-in-up">
+                        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 animate-fade-in-up">
                             {team.players.length === 0 ? (
                                 <div className="col-span-full py-12 text-center bg-surface border border-muted/30 rounded-2xl">
                                     <p className="text-muted-foreground">No hay jugadores registrados.</p>
                                 </div>
                             ) : team.players.map((p) => (
                                 <div key={p.id} onClick={() => setSelectedPlayer(p)} className="bg-surface border border-muted/30 rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 group cursor-pointer flex flex-col items-center p-6 hover:-translate-y-1">
-                                    <div className="w-24 h-24 bg-muted/5 rounded-full mb-4 flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-primary/50 transition-colors shadow-inner">
+                                    <div className="w-20 h-20 bg-muted/5 rounded-full mb-4 flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-primary/50 transition-colors shadow-inner">
                                         {p.photoUrl ? (
                                             <img src={p.photoUrl} alt={`${p.firstName} ${p.lastName}`} className="w-full h-full object-cover group-hover:scale-110 duration-300" />
                                         ) : (
                                             <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={96} height={96} className="opacity-90 group-hover:opacity-100 transition-opacity group-hover:scale-110 duration-300" />
                                         )}
                                     </div>
-                                    <h3 className="font-bold text-center group-hover:text-primary transition-colors text-lg">{p.firstName} {p.lastName}</h3>
+                                    <h3 className="font-bold text-center group-hover:text-primary transition-colors text-sm">{p.firstName} {p.lastName}</h3>
                                     <div className="flex gap-2 items-center mt-2">
                                         {p.number && <span className="text-sm text-muted-foreground font-black text-center w-6">#{p.number}</span>}
                                         <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs font-bold rounded">
