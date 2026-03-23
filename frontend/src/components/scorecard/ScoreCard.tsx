@@ -19,54 +19,83 @@ export default function ScoreCard({ forceStoreData }: ScoreCardProps) {
     const storeData = forceStoreData || defaultStore;
 
     const { inning, half, outs, balls, strikes, homeScore, awayScore, homeTeamName, awayTeamName } = storeData as any;
-    console.log("[ScoreCard] Rendering with:", { homeTeamName, awayTeamName, homeScore, awayScore });
 
     return (
-        <div className="bg-[#0b1320] border-b border-slate-800 p-2 text-white flex justify-center shadow-lg font-sans h-16 w-full">
-            <div className="flex items-center gap-4 pl-4 w-full max-w-[1400px] mx-auto h-full">
+        <div className="w-full gap-1">
+            <div className="max-w-[1400px] mx-auto px-2 sm:px-4 py-3">
+                <div className="bg-slate-900/80 backdrop-blur-md border border-slate-700/50 rounded-2xl shadow-2xl shadow-black/30 px-3 sm:px-6 py-3 sm:py-4">
+                    <div className="flex items-center justify-between gap-2 sm:gap-4 flex-wrap sm:flex-nowrap">
 
-                {/* Equipos y Cuentas */}
-                <div className="flex flex-col justify-center gap-1 w-28">
-                    <div className="flex justify-between items-center font-bold text-xs">
-                        <span className="text-slate-300 tracking-wider truncate max-w-[80px]">{awayTeamName}</span>
-                        <span className="text-base font-mono text-white leading-none">{awayScore}</span>
-                    </div>
-                    <div className="flex justify-between items-center font-bold text-xs">
-                        <span className="text-white tracking-wider truncate max-w-[80px]">{homeTeamName}</span>
-                        <span className="text-base font-mono text-amber-400 leading-none">{homeScore}</span>
-                    </div>
-                </div>
+                        {/* Teams & Score */}
+                        <div className="flex items-center gap-3 sm:gap-5 flex-1 min-w-0">
+                            {/* Away Team */}
+                            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center text-[15px] sm:text-xs font-black text-slate-300 shrink-0 uppercase">
+                                    {(awayTeamName || 'V').slice(0, 3)}
+                                </div>
+                                <span className="text-lg sm:text-lg font-bold text-slate-300 truncate hidden sm:block">{awayTeamName || 'Visitante'}</span>
+                            </div>
 
-                {/* Separador vertical */}
-                <div className="w-[1px] h-8 bg-slate-700/50"></div>
+                            {/* Score */}
+                            <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+                                <span className="score-number text-2xl sm:text-4xl text-white tabular-nums">{awayScore}</span>
+                                <span className="text-lg sm:text-2xl font-bold text-slate-500">-</span>
+                                <span className="score-number text-2xl sm:text-4xl text-white tabular-nums">{homeScore}</span>
+                            </div>
 
-                {/* Inning y Outs Central */}
-                <div className="flex flex-col items-center justify-center min-w-[60px]">
-                    <div className="flex items-center gap-2 text-base font-black mb-1 leading-none">
-                        <span className={cn("text-[10px]", half === 'top' ? 'text-amber-400' : 'text-slate-700')}>▲</span>
-                        <span className="text-white">{inning}</span>
-                        <span className={cn("text-[10px]", half === 'bottom' ? 'text-amber-400' : 'text-slate-700')}>▼</span>
-                    </div>
+                            {/* Home Team */}
+                            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 justify-end">
+                                <span className="text-lg sm:text-lg font-bold text-white truncate hidden sm:block">{homeTeamName || 'Local'}</span>
+                                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center text-[10px] sm:text-xs font-black text-white shrink-0 uppercase">
+                                    {(homeTeamName || 'L').slice(0, 3)}
+                                </div>
+                            </div>
+                        </div>
 
-                    <div className="flex gap-1 mt-0.5">
-                        <div className={cn("w-2.5 h-2.5 rounded-full border border-red-500", outs >= 1 ? "bg-red-500" : "bg-transparent")} />
-                        <div className={cn("w-2.5 h-2.5 rounded-full border border-red-500", outs >= 2 ? "bg-red-500" : "bg-transparent")} />
-                    </div>
-                    <span className="text-[8px] text-slate-400 font-bold mt-1 tracking-widest leading-none">OUTS</span>
-                </div>
+                        {/* Divider */}
+                        <div className="hidden sm:block w-px h-10 bg-slate-700/60" />
 
-                {/* Separador vertical tenue */}
-                <div className="w-[1px] h-8 bg-slate-700/50"></div>
+                        {/* Game State Indicators */}
+                        <div className="flex items-center gap-4 sm:gap-6 shrink-0">
+                            {/* Inning */}
+                            <div className="flex flex-col items-center">
+                                <span className="text-[9px] sm:text-[10px] stat-label mb-0.5">Inning</span>
+                                <div className="flex items-center gap-1">
+                                    <span className={cn("text-[10px]", half === 'top' ? 'text-amber-400' : 'text-slate-700')}>▲</span>
+                                    <span className="stat-value text-lg sm:text-xl">{inning}</span>
+                                    <span className={cn("text-[10px]", half === 'bottom' ? 'text-amber-400' : 'text-slate-700')}>▼</span>
+                                </div>
+                            </div>
 
-                {/* Count (B-S) Derecha - Pega al Inning */}
-                <div className="flex items-center gap-5">
-                    <div className="flex flex-col items-center">
-                        <span className="text-emerald-400 font-mono text-lg font-bold leading-none">{balls}</span>
-                        <span className="text-[8px] text-slate-400 font-bold mt-1 tracking-widest leading-none">BALLS</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                        <span className="text-rose-500 font-mono text-lg font-bold leading-none">{strikes}</span>
-                        <span className="text-[8px] text-slate-400 font-bold mt-1 tracking-widest leading-none">STRIKES</span>
+                            {/* Outs */}
+                            <div className="flex flex-col items-center">
+                                <span className="text-[9px] sm:text-[10px] stat-label mb-1">Outs</span>
+                                <div className="flex gap-1">
+                                    <div className={cn("w-3 h-3 rounded-full border-2 border-red-500 transition-all", outs >= 1 ? "bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.6)]" : "bg-transparent")} />
+                                    <div className={cn("w-3 h-3 rounded-full border-2 border-red-500 transition-all", outs >= 2 ? "bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.6)]" : "bg-transparent")} />
+                                    <div className={cn("w-3 h-3 rounded-full border-2 border-red-500 transition-all", outs >= 3 ? "bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.6)]" : "bg-transparent")} />
+                                </div>
+                            </div>
+
+                            {/* Balls */}
+                            <div className="flex flex-col items-center">
+                                <span className="text-[9px] sm:text-[10px] stat-label mb-1">Balls</span>
+                                <div className="flex gap-1">
+                                    <div className={cn("w-3 h-3 rounded-full border-2 border-emerald-500 transition-all", balls >= 1 ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]" : "bg-transparent")} />
+                                    <div className={cn("w-3 h-3 rounded-full border-2 border-emerald-500 transition-all", balls >= 2 ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]" : "bg-transparent")} />
+                                    <div className={cn("w-3 h-3 rounded-full border-2 border-emerald-500 transition-all", balls >= 3 ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]" : "bg-transparent")} />
+                                </div>
+                            </div>
+
+                            {/* Strikes */}
+                            <div className="flex flex-col items-center">
+                                <span className="text-[9px] sm:text-[10px] stat-label mb-1">Strikes</span>
+                                <div className="flex gap-1">
+                                    <div className={cn("w-3 h-3 rounded-full border-2 border-rose-500 transition-all", strikes >= 1 ? "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.6)]" : "bg-transparent")} />
+                                    <div className={cn("w-3 h-3 rounded-full border-2 border-rose-500 transition-all", strikes >= 2 ? "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.6)]" : "bg-transparent")} />
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -14,6 +14,7 @@ export interface Player {
     id: string;
     firstName: string;
     lastName: string;
+    photoUrl?: string;
 }
 
 export interface LineupItem {
@@ -90,6 +91,7 @@ export interface GameState extends BaseState {
     resetCount: () => void;
     clearBases: () => void;
     addLog: (log: PlayLog) => void;
+    syncStateToBackend: () => void;
 
     // Time Travel (Undo)
     history: BaseState[];
@@ -99,8 +101,6 @@ export interface GameState extends BaseState {
 
 let gameSocket: Socket | null = null;
 
-// Helper: envía la jugada al backend via Socket.io.
-// El backend persiste en DB, actualiza el game y hace broadcast a todos los clientes.
 const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsScored: number = 0, outsOffensive: number = 0, currentBatterIdOverride: string | null = null, inningOverride: number | null = null, halfOverride: string | null = null, outsBeforeOverride: number | null = null) => {
     const stateSnapshot = get();
     if (!stateSnapshot.gameId) return;
@@ -113,13 +113,15 @@ const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsSc
     const payloadInning = inningOverride !== null ? inningOverride : stateSnapshot.inning;
     const payloadHalf = halfOverride !== null ? halfOverride : stateSnapshot.half;
     const payloadOutsBefore = outsBeforeOverride !== null ? outsBeforeOverride : Math.max(0, stateSnapshot.outs - outsOffensive);
-
+    
     const logText = resultStr.includes('|') ? resultStr.split('|')[1] : resultStr;
     const resCode = resultStr.includes('|') ? resultStr.split('|')[0] : resultStr;
+    const timestamp = Date.now().toString();
 
-    // Actualizar log local inmediatamente (sin esperar respuesta del backend)
+    // Actualizar log local y playbackId inmediatamente
     useGameStore.setState(state => ({
-        playLogs: [{ text: `Inning ${payloadInning}: ${logText}` }, ...state.playLogs]
+        playLogs: [{ text: `Inning ${payloadInning}: ${logText}` }, ...state.playLogs],
+        playbackId: timestamp
     }));
 
     const nextState = get();
@@ -139,10 +141,12 @@ const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsSc
                 outs_recorded: outsOffensive,
                 batter_id: activeBatterId,
                 pitcher_id: activePitcherId,
+                scored: resultStr.includes('RUN_SCORED') || (resCode === 'HR' && activeBatterId === stateSnapshot.currentBatterId),
+                playbackId: timestamp
             },
             fullState: {
-                inning: nextState.inning,
-                half: nextState.half,
+                inning: payloadInning,
+                half: payloadHalf,
                 outs: nextState.outs,
                 balls: nextState.balls,
                 strikes: nextState.strikes,
@@ -154,7 +158,7 @@ const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsSc
                 playLogs: nextState.playLogs,
                 homeLineup: nextState.homeLineup,
                 awayLineup: nextState.awayLineup,
-                playbackId: nextState.playbackId,
+                playbackId: timestamp,
                 lastPlay: { result: resCode, description: logText, inning: payloadInning, half: payloadHalf },
             },
         });
@@ -170,6 +174,34 @@ const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsSc
         } catch (e) {
             console.error("Fallback HTTP play failed:", e);
         }
+    }
+};
+
+const syncStateToBackend = (get: () => GameState) => {
+    const state = get();
+    if (!state.gameId) return;
+
+    if (gameSocket?.connected) {
+        gameSocket.emit('syncState', {
+            gameId: state.gameId,
+            token: getAccessToken(),
+            fullState: {
+                inning: state.inning,
+                half: state.half,
+                outs: state.outs,
+                balls: state.balls,
+                strikes: state.strikes,
+                homeScore: state.homeScore,
+                awayScore: state.awayScore,
+                bases: state.bases,
+                currentBatter: state.currentBatter,
+                currentBatterId: state.currentBatterId,
+                playLogs: state.playLogs,
+                homeLineup: state.homeLineup,
+                awayLineup: state.awayLineup,
+                playbackId: Date.now().toString()
+            }
+        });
     }
 };
 
@@ -280,7 +312,8 @@ export const useGameStore = create<GameState>()(
                             player: l.player ? { 
                                 id: l.player.id, 
                                 firstName: l.player.first_name || l.player.firstName, 
-                                lastName: l.player.last_name || l.player.lastName 
+                                lastName: l.player.last_name || l.player.lastName,
+                                photoUrl: l.player.photo_url || l.player.photoUrl || undefined
                             } : undefined
                         }));
 
@@ -379,6 +412,16 @@ export const useGameStore = create<GameState>()(
                 gameSocket.on('gameStateUpdate', (data: any) => {
                     const fs = data?.fullState;
                     if (!fs) return;
+
+                    // Only update if the incoming state is newer than our local state
+                    const currentPlaybackId = get().playbackId || 0;
+                    const newPlaybackId = fs.playbackId || 0;
+                    
+                    if (newPlaybackId <= currentPlaybackId && currentPlaybackId !== 0) {
+                        console.log('[GameStore] Ignoring stale update:', fs.lastPlay?.result);
+                        return;
+                    }
+
                     console.log('[Gamecast] gameStateUpdate received:', fs.lastPlay?.result);
                     set({
                         inning: fs.inning ?? get().inning,
@@ -392,7 +435,7 @@ export const useGameStore = create<GameState>()(
                         currentBatter: fs.currentBatter ?? get().currentBatter,
                         currentBatterId: fs.currentBatterId ?? get().currentBatterId,
                         playLogs: fs.playLogs ?? get().playLogs,
-                        playbackId: fs.playbackId ?? get().playbackId,
+                        playbackId: newPlaybackId,
                     });
                 });
             },
@@ -429,13 +472,13 @@ export const useGameStore = create<GameState>()(
                 get().saveHistory();
                 const balls = get().balls + 1;
                 if (balls >= 4) {
+                    // ... (lógica de BB existente)
                     const state = get();
                     const newBases = { ...state.bases };
                     const newBaseIds = { ...state.baseIds };
                     let runs = 0;
                     let scoredRunnerId: string | null = null;
                     if (state.bases.first && state.bases.second && state.bases.third) {
-                        // Bases loaded walk — runner on 3rd scores
                         runs = 1;
                         scoredRunnerId = state.baseIds.third;
                         newBases.third = state.bases.second; newBaseIds.third = state.baseIds.second;
@@ -452,11 +495,13 @@ export const useGameStore = create<GameState>()(
                     const cid = state.currentBatterId;
                     get().cycleBatter();
                     emitPlayToBackend(get, "BB", runs, 0, cid);
-                    // Emit RUN_SCORED for the runner who scored from 3rd
                     if (scoredRunnerId) {
                         emitPlayToBackend(get, 'RUN_SCORED|Corredor anota por BB', 1, 0, scoredRunnerId, state.inning, state.half, state.outs);
                     }
-                } else set({ balls });
+                } else {
+                    set({ balls });
+                    syncStateToBackend(get);
+                }
             },
 
             addStrike: () => {
@@ -466,23 +511,36 @@ export const useGameStore = create<GameState>()(
                     const batter = get().currentBatter;
                     get().addOut(`KS|${batter} es Ponchado Tirándole (K)`);
                 }
-                else set({ strikes });
+                else {
+                    set({ strikes });
+                    syncStateToBackend(get);
+                }
             },
 
-            addFoul: () => { if (get().strikes < 2) set({ strikes: get().strikes + 1 }); },
+            addFoul: () => { 
+                if (get().strikes < 2) {
+                    set({ strikes: get().strikes + 1 }); 
+                    syncStateToBackend(get);
+                }
+            },
 
             addOut: (customLogText, isGroundout, emitPlay = true) => {
                 get().saveHistory();
                 const state = get();
                 const totalOuts = state.outs + 1;
                 const activeBatterId = state.currentBatterId;
+                
+                // 1. Emit the play BEFORE resetting the state (important for the 3rd out context)
+                if (emitPlay) {
+                    emitPlayToBackend(get, customLogText || "OUT", 0, 1, activeBatterId, state.inning, state.half, state.outs);
+                }
+
+                // 2. Update local state
                 if (totalOuts >= 3) {
                     get().nextHalfInning();
-                    if (emitPlay) emitPlayToBackend(get, customLogText || "OUT", 0, 1, activeBatterId);
                 } else {
                     set({ outs: totalOuts, balls: 0, strikes: 0 });
                     get().cycleBatter();
-                    if (emitPlay) emitPlayToBackend(get, customLogText || "OUT", 0, 1, activeBatterId);
                 }
             },
 
@@ -561,7 +619,10 @@ export const useGameStore = create<GameState>()(
                 if (dest && !isOut) { if (dest === 'home') runs++; else { newBases[dest] = runner; newBaseIds[dest] = rid; } }
                 const totalOuts = state.outs + (isOut ? 1 : 0);
                 if (totalOuts >= 3) get().nextHalfInning();
-                else set({ outs: totalOuts, bases: newBases, baseIds: newBaseIds, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore });
+                else {
+                    set({ outs: totalOuts, bases: newBases, baseIds: newBaseIds, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore });
+                    syncStateToBackend(get);
+                }
                 emitPlayToBackend(get, desc, runs, isOut ? 1 : 0, rid);
             },
 
@@ -587,6 +648,7 @@ export const useGameStore = create<GameState>()(
                     newBases.first = null; newBaseIds.first = null;
                 }
                 set({ bases: newBases, baseIds: newBaseIds, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore });
+                syncStateToBackend(get);
                 // Emit WP_RUN if runner scored from 3rd
                 if (scoredRunnerId) {
                     emitPlayToBackend(get, 'WP_RUN|Carrera por Wild Pitch / Passed Ball', 1, 0, scoredRunnerId, state.inning, state.half, state.outs);
@@ -664,6 +726,10 @@ export const useGameStore = create<GameState>()(
             registerCustomPlay: (desc) => {
                 get().saveHistory();
                 emitPlayToBackend(get, desc, 0, 0, get().currentBatterId);
+            },
+
+            syncStateToBackend: () => {
+                syncStateToBackend(get);
             }
         }),
         {

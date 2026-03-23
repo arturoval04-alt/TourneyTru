@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useGameStore } from '@/store/gameStore';
 
 interface FieldersChoiceModalProps {
@@ -10,15 +11,18 @@ export default function FieldersChoiceModal({ isOpen, onClose }: FieldersChoiceM
     const { bases, executeFieldersChoice } = useGameStore();
     const [selectedOut, setSelectedOut] = useState<'first' | 'second' | 'third' | null>(null);
 
+    const [mounted, setMounted] = useState(false);
+
     // Resetear el estado al abrir
     useEffect(() => {
+        setMounted(true);
         if (isOpen) {
             // Removing the setSelectedOut(null) call here, as initializing state should be handled differently
             // or we clear it after a confirmed submission.
         }
     }, [isOpen]);
 
-    if (!isOpen) return null;
+    if (!isOpen || !mounted) return null;
 
     const baserunners = [
         { id: 'first', name: bases.first, label: '1ra Base' },
@@ -39,9 +43,9 @@ export default function FieldersChoiceModal({ isOpen, onClose }: FieldersChoiceM
         onClose();
     };
 
-    return (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-sm w-full p-6 shadow-2xl">
+    const modalContent = (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] p-4">
+            <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-sm w-full p-6 shadow-2xl relative z-[10000]">
                 <h2 className="text-xl font-black text-amber-500 mb-2 uppercase tracking-wide">Bola Ocupada <span className="text-sm font-bold text-slate-400 capitalize">(Fielder&apos;s Choice)</span></h2>
 
                 {baserunners.length > 0 ? (
@@ -81,4 +85,6 @@ export default function FieldersChoiceModal({ isOpen, onClose }: FieldersChoiceM
             </div>
         </div>
     );
+
+    return createPortal(modalContent, document.body);
 }

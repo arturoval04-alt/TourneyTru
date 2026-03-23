@@ -153,9 +153,10 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
           rbi: rbi,
           runsScored: runsScored,
           outsRecorded: outsRecorded,
+          scored: playInfo.scored || false,
           batterId: validBatterId,
           pitcherId: validPitcherId,
-        }
+        } as any
       });
       console.log(`[DB] Jugada guardada (Play ID: ${play?.id}, Batter: ${validBatterId}, Result: ${resultCode})`);
     } catch (e) {

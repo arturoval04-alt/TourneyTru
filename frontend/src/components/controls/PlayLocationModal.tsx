@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useGameStore } from '@/store/gameStore';
 import clsx from 'clsx';
 
@@ -13,8 +14,13 @@ interface PlayLocationModalProps {
 export default function PlayLocationModal({ isOpen, onClose, playType, hitType, playName }: PlayLocationModalProps) {
     const { addOut, registerHit } = useGameStore();
     const [selectedPositions, setSelectedPositions] = useState<number[]>([]);
+    const [mounted, setMounted] = useState(false);
 
-    if (!isOpen) return null;
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    if (!isOpen || !mounted) return null;
 
     const positions = [
         { id: 1, label: 'P', top: '55%', left: '50%' },
@@ -90,10 +96,6 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
 
             const isGroundout = playName === 'Rola';
             addOut(`${code}|${description}`, isGroundout);
-
-            if (playName === 'Doble Play') {
-                addOut("DP|Doble Play completado", false, false); // No emite plate appearance, solo suma el out a pizarra
-            }
         } else if (playType === 'Error') {
             const batter = useGameStore.getState().currentBatter;
             const posNum = selectedPositions[0] || 0;
@@ -112,8 +114,8 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
         onClose();
     };
 
-    return (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+    const modalContent = (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
             <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-sm w-full p-6 shadow-2xl flex flex-col">
                 <h2 className="text-xl font-black justify-center flex text-emerald-400 mb-2 uppercase tracking-wide">
                     Dirección: {playName}
@@ -164,4 +166,6 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
             </div>
         </div>
     );
+
+    return createPortal(modalContent, document.body);
 }

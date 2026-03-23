@@ -78,7 +78,7 @@ export class GamesService {
             include: {
                 homeTeam: true,
                 awayTeam: true,
-                tournament: { select: { name: true, id: true } },
+                tournament: { select: { name: true, id: true, logoUrl: true } },
             },
             orderBy: { scheduledDate: 'desc' },
             ...(filters?.limit ? { take: filters.limit } : {}),
@@ -254,6 +254,7 @@ export class GamesService {
             include: {
                 homeTeam: true,
                 awayTeam: true,
+                tournament: true,
                 winningPitcher: true,
                 mvpBatter1: true,
                 mvpBatter2: true,
@@ -278,6 +279,7 @@ export class GamesService {
                 totalHits: 0,
                 totalErrors: 0,
                 runsByInning: {},
+                lastBatterByInning: {}, // Track who was the last to have a main play in each inning
                 lineup: teamLineup.map(l => ({
                     playerId: l.player.id,
                     firstName: l.player.firstName,
@@ -299,7 +301,8 @@ export class GamesService {
         const awayBox = initTeamBoxscore(game.awayTeam, game.lineups);
 
         // Process plays
-        for (const play of game.plays) {
+        for (const playObj of game.plays) {
+            const play = playObj as any; // Temporary cast until prisma generate succeeds
             const isTop = play.half === 'top';
             const battingBox = isTop ? awayBox : homeBox;
 
@@ -341,9 +344,15 @@ export class GamesService {
                         }
                     }
                 }
-                // Even if not merged (e.g. pinch runner with no AB yet), don't create a new diamond
+                // Even if not merged, don't create a new diamond for runner-only actions
                 continue;
             }
+
+            // Smart Consolidation for At-Bats: 
+            // If the same batter has multiple plays in the SAME inning and NO other batter 
+            // came in between, it's just an update to the current plate appearance.
+            const lastBatterInInning = battingBox.lastBatterByInning?.[play.inning];
+            const isSameAppearance = lastBatterInInning === play.batterId;
 
             // Increment run by inning (only for non-RUN_SCORED plays)
             if (play.runsScored > 0) {
@@ -352,18 +361,61 @@ export class GamesService {
             }
 
             if (batter) {
-                // Update stats (SF, SH, errors no cuentan como turno oficial al bate)
-                const isError = play.result.match(/^E\d$/);
-                const isAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH'].includes(play.result) && !isError;
+                // Smart Consolidation: If this is the same consecutive appearance in the inning
+                if (isSameAppearance && (batter.plays[play.inning] || []).length > 0) {
+                    const inningPlays = batter.plays[play.inning];
+                    const lastPlay = inningPlays[inningPlays.length - 1];
+                    const isGeneric = ['OUT', 'GO', 'FO', 'LO', '?', 'H', 'H1', 'PO'].includes(lastPlay.result.toUpperCase());
+
+                    if (isGeneric && !['BB', 'SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED'].includes(play.result.toUpperCase())) {
+                        // REVERSE previous stats if they counted
+                        const oldIsAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'FC'].includes(lastPlay.result.toUpperCase()) && !lastPlay.result.toUpperCase().match(/^E\d$/);
+                        if (oldIsAtBat) batter.atBats = Math.max(0, batter.atBats - 1);
+                        if (lastPlay.result.toUpperCase() === 'BB') batter.bb = Math.max(0, batter.bb - 1);
+                        if (lastPlay.result.toUpperCase().startsWith('K')) batter.so = Math.max(0, batter.so - 1);
+                        if (['H1', 'H2', 'H3', 'HR', '1B', '2B', '3B'].includes(lastPlay.result.toUpperCase())) {
+                            batter.hits = Math.max(0, batter.hits - 1);
+                            battingBox.totalHits = Math.max(0, battingBox.totalHits - 1);
+                        }
+                        batter.rbi = Math.max(0, batter.rbi - lastPlay.rbi);
+
+                        // REPLACE the record
+                        lastPlay.result = play.result;
+                        lastPlay.outsRecorded = play.outsRecorded;
+                        lastPlay.outsBeforePlay = play.outsBeforePlay;
+                        lastPlay.runsScored = play.runsScored;
+                        lastPlay.rbi = play.rbi;
+                        lastPlay.scored = play.scored || false;
+
+                        // FORWARD new stats
+                        const isError = play.result.toUpperCase().match(/^E\d$/);
+                        const isAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'FC', 'SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED'].includes(play.result.toUpperCase()) && !isError;
+                        if (isAtBat) batter.atBats += 1;
+                        if (['H1', 'H2', 'H3', 'HR', '1B', '2B', '3B'].includes(play.result.toUpperCase())) {
+                            batter.hits += 1;
+                            battingBox.totalHits += 1;
+                        }
+                        if (play.result.toUpperCase() === 'BB') batter.bb += 1;
+                        if (play.result.toUpperCase().startsWith('K')) batter.so += 1;
+                        batter.rbi += play.rbi;
+                        if (play.runsScored > 0) batter.runs += play.runsScored;
+
+                        // Don't add a new play entry
+                        continue;
+                    }
+                }
+
+                // Normal At-Bat processing
+                const isError = play.result.toUpperCase().match(/^E\d$/);
+                const isAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'FC', 'SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED'].includes(play.result.toUpperCase()) && !isError;
                 if (isAtBat) batter.atBats += 1;
 
-                // Hits — frontend now emits H1/H2/H3/HR (WBSC notation)
-                if (['H1', 'H2', 'H3', 'HR', '1B', '2B', '3B'].includes(play.result)) {
+                if (['H1', 'H2', 'H3', 'HR', '1B', '2B', '3B'].includes(play.result.toUpperCase())) {
                     batter.hits += 1;
                     battingBox.totalHits += 1;
                 }
-                if (play.result === 'BB') batter.bb += 1;
-                if (play.result.startsWith('K')) batter.so += 1;
+                if (play.result.toUpperCase() === 'BB') batter.bb += 1;
+                if (play.result.toUpperCase().startsWith('K')) batter.so += 1;
                 batter.rbi += play.rbi;
 
                 if (play.runsScored > 0) {
@@ -378,8 +430,13 @@ export class GamesService {
                     outsRecorded: play.outsRecorded,
                     outsBeforePlay: play.outsBeforePlay,
                     runsScored: play.runsScored,
-                    rbi: play.rbi
+                    rbi: play.rbi,
+                    scored: play.scored || false
                 });
+
+                // Update last batter tracker for the next consolidation check
+                if (!battingBox.lastBatterByInning) battingBox.lastBatterByInning = {};
+                battingBox.lastBatterByInning[play.inning] = play.batterId;
             }
         }
 
@@ -404,6 +461,7 @@ export class GamesService {
             include: {
                 homeTeam: true,
                 awayTeam: true,
+                tournament: true,
                 lineups: {
                     include: { player: true },
                     orderBy: { battingOrder: 'asc' },

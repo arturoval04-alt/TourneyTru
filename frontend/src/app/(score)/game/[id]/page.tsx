@@ -59,7 +59,7 @@ export default function ScorekeeperLivePanel() {
 
     const handleFinalizarJuego = () => {
         if (!window.confirm("¿Deseas finalizar el juego oficialmente? Pasaremos a seleccionar los MVP's.")) return;
-        
+
         if (boxscore) {
             const isHomeWin = homeScore > awayScore;
             const winningTeamBox = isHomeWin ? boxscore.homeTeam : boxscore.awayTeam;
@@ -69,7 +69,7 @@ export default function ScorekeeperLivePanel() {
             const allBatters = [...(boxscore.homeTeam.lineup), ...(boxscore.awayTeam.lineup)]
                 .filter((b: any) => b.atBats > 0)
                 .sort((a: any, b: any) => (b.hits - a.hits) || (b.rbi - a.rbi));
-            
+
             if (allBatters.length > 0) setSelectedBatter1Id(allBatters[0].playerId);
             if (allBatters.length > 1) setSelectedBatter2Id(allBatters[1].playerId);
         }
@@ -100,6 +100,7 @@ export default function ScorekeeperLivePanel() {
         const defLineup = half === 'top' ? homeLineup : awayLineup;
         const p = defLineup.find((item: LineupItem) => item.position === '1' || item.position === 'P');
         const name = p?.player ? `${p.player.firstName} ${p.player.lastName}` : 'Pitcher Desconocido';
+        const photoUrl = p?.player?.photoUrl || undefined;
         let stats = '';
         if (boxscore && p?.playerId) {
             const pitchingBox = half === 'top' ? boxscore.homeTeam : boxscore.awayTeam;
@@ -109,8 +110,15 @@ export default function ScorekeeperLivePanel() {
             }
         }
         if (!stats) stats = 'Sin datos aún';
-        return { name, stats };
+        return { name, stats, photoUrl };
     }, [half, homeLineup, awayLineup, boxscore]);
+
+    const batterPhotoUrl = useMemo(() => {
+        if (!currentBatterId) return undefined;
+        const battingLineup = half === 'top' ? awayLineup : homeLineup;
+        const b = battingLineup.find((item: LineupItem) => item.playerId === currentBatterId);
+        return b?.player?.photoUrl || undefined;
+    }, [currentBatterId, half, homeLineup, awayLineup]);
 
     const batterStats = useMemo(() => {
         if (!boxscore || !currentBatterId) return 'Sin datos aún';
@@ -186,65 +194,59 @@ export default function ScorekeeperLivePanel() {
     return (
         <>
             <Navbar />
-            <div className="bg-background pt-2 px-4 shadow-sm pb-2 border-b border-muted/20">
-                <div className="max-w-[1400px] mx-auto">
-                    <button onClick={() => router.back()} className="flex items-center gap-2 text-sm font-bold text-muted-foreground hover:text-foreground transition-colors py-2 px-4 bg-surface rounded-lg border border-muted/30 shadow-sm w-fit">
-                        <ChevronLeft className="w-4 h-4" /> Volver Atrás
-                    </button>
-                </div>
-            </div>
 
-            <div className="min-h-screen bg-background text-foreground flex flex-col items-center overflow-auto custom-scrollbar transition-colors duration-300">
-                {/* Header del Marcador Global */}
-                <div className="w-full bg-surface border-b border-muted/30 shadow-md shrink-0">
-                    <ScoreCard />
-                </div>
+            <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white flex flex-col gap-0">
 
-                <div className="w-full max-w-[1400px] flex flex-col gap-4 p-4 mt-2">
-
-                    {/* Scorekeeper Sub-Navigation Tabs */}
-                    <div className="flex justify-center mb-2">
-                        <div className="bg-surface border border-muted/30 p-1 rounded-xl shadow-sm inline-flex flex-wrap sm:flex-nowrap justify-center gap-1">
-                            <button
-                                onClick={() => setActiveTab('alineaciones')}
-                                className={`flex items-center gap-2 px-3 sm:px-6 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all flex-1 sm:flex-none justify-center ${activeTab === 'alineaciones' ? 'bg-primary text-white shadow' : 'text-muted-foreground hover:text-foreground hover:bg-muted/10'}`}
-                            >
-                                <Users className="w-4 h-4" /> Alineaciones
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('scorekeeper')}
-                                className={`flex items-center gap-2 px-3 sm:px-6 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all flex-1 sm:flex-none justify-center ${activeTab === 'scorekeeper' ? 'bg-primary text-white shadow' : 'text-muted-foreground hover:text-foreground hover:bg-muted/10'}`}
-                            >
-                                <LayoutDashboard className="w-4 h-4" /> Scorekeeper
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('stream')}
-                                className={`flex items-center gap-2 px-3 sm:px-6 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all flex-1 sm:flex-none justify-center ${activeTab === 'stream' ? 'bg-primary text-white shadow' : 'text-muted-foreground hover:text-foreground hover:bg-muted/10'}`}
-                            >
-                                <Radio className="w-4 h-4" /> Stream
-                            </button>
-                        </div>
+                {/* Sub-Navigation Tabs — arriba */}
+                <div className="flex justify-center py-3 px-3 gap-0">
+                    <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-700/40 p-1 rounded-xl shadow-lg inline-flex flex-wrap sm:flex-nowrap justify-center gap-1">
+                        <button
+                            onClick={() => setActiveTab('alineaciones')}
+                            className={`flex items-center gap-1.5 px-4 sm:px-6 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${activeTab === 'alineaciones' ? 'bg-sky-600 text-white shadow-lg shadow-sky-900/40' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}
+                        >
+                            <Users className="w-4 h-4" /> Alineaciones
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('scorekeeper')}
+                            className={`flex items-center gap-1.5 px-4 sm:px-6 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${activeTab === 'scorekeeper' ? 'bg-sky-600 text-white shadow-lg shadow-sky-900/40' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}
+                        >
+                            <LayoutDashboard className="w-4 h-4" /> Scorekeeper
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('stream')}
+                            className={`flex items-center gap-1.5 px-4 sm:px-6 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${activeTab === 'stream' ? 'bg-sky-600 text-white shadow-lg shadow-sky-900/40' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}
+                        >
+                            <Radio className="w-4 h-4" /> Stream
+                        </button>
                     </div>
+                </div>
+
+                {/* ScoreCard — debajo de los tabs */}
+                <ScoreCard />
+
+                <div className="w-full max-w-[1400px] mx-auto flex flex-col gap-4 px-3 sm:px-4 py-4">
+
+
 
                     {/* TAB: ALINEACIONES */}
                     {activeTab === 'alineaciones' && (
                         <div className="animate-fade-in-up">
                             {homeLineup.length === 0 && awayLineup.length === 0 ? (
-                                <div className="bg-surface border border-muted/30 rounded-2xl p-12 text-center shadow-lg min-h-[500px] flex flex-col items-center justify-center">
-                                    <Users className="w-16 h-16 text-muted-foreground/50 mb-4" />
-                                    <h2 className="text-2xl font-black text-foreground mb-4">Alineación y Configuración del Juego</h2>
-                                    <p className="text-muted-foreground max-w-xl mx-auto">Aún no se han establecido las alineaciones para este juego.</p>
+                                <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-700/40 rounded-2xl p-12 text-center shadow-lg min-h-[500px] flex flex-col items-center justify-center">
+                                    <Users className="w-16 h-16 text-slate-600 mb-4" />
+                                    <h2 className="text-2xl font-black text-white mb-4">Alineación y Configuración del Juego</h2>
+                                    <p className="text-slate-400 max-w-xl mx-auto">Aún no se han establecido las alineaciones para este juego.</p>
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                     {[{ label: 'Visitante', lineup: awayLineup }, { label: 'Local', lineup: homeLineup }].map(({ label, lineup }) => (
-                                        <div key={label} className="bg-surface border border-muted/30 rounded-2xl p-6 shadow-lg">
-                                            <h3 className="text-lg font-black text-primary uppercase tracking-wider mb-4 flex items-center gap-2">
+                                        <div key={label} className="bg-slate-900/60 backdrop-blur-sm border border-slate-700/40 rounded-2xl p-6 shadow-lg">
+                                            <h3 className="text-lg font-black text-sky-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                                                 <Users className="w-5 h-5" /> {label}
                                             </h3>
                                             <table className="w-full text-sm">
                                                 <thead>
-                                                    <tr className="border-b border-muted/30 text-muted-foreground">
+                                                    <tr className="border-b border-slate-700/40 text-slate-500">
                                                         <th className="py-2 text-left font-bold w-10">#</th>
                                                         <th className="py-2 text-left font-bold">Jugador</th>
                                                         <th className="py-2 text-center font-bold w-16">Pos</th>
@@ -252,13 +254,13 @@ export default function ScorekeeperLivePanel() {
                                                 </thead>
                                                 <tbody>
                                                     {lineup.map((item: LineupItem) => (
-                                                        <tr key={item.playerId} className="border-b border-muted/10 hover:bg-muted/5 transition-colors">
-                                                            <td className="py-2.5 text-muted-foreground font-bold">{item.battingOrder}</td>
-                                                            <td className="py-2.5 text-foreground font-semibold">
+                                                        <tr key={item.playerId} className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
+                                                            <td className="py-2.5 text-slate-500 font-bold">{item.battingOrder}</td>
+                                                            <td className="py-2.5 text-white font-semibold">
                                                                 {item.player ? `${item.player.firstName} ${item.player.lastName}` : 'Desconocido'}
                                                             </td>
                                                             <td className="py-2.5 text-center">
-                                                                <span className="bg-primary/10 text-primary font-black text-xs px-2 py-1 rounded">
+                                                                <span className="bg-sky-500/10 text-sky-400 font-black text-xs px-2 py-1 rounded">
                                                                     {formatPosition(item)}
                                                                 </span>
                                                             </td>
@@ -275,78 +277,89 @@ export default function ScorekeeperLivePanel() {
 
                     {/* TAB: SCOREKEEPER PANEL */}
                     {activeTab === 'scorekeeper' && (
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in-up">
-                            {/* Left: Field and Controls */}
-                            <div className="lg:col-span-2 flex flex-col gap-6">
-                                <div className="bg-surface border border-muted/30 rounded-3xl p-4 sm:p-6 shadow-xl relative overflow-hidden group overflow-x-auto">
-                                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary/50 via-primary to-primary/50" />
+                        <div className="flex flex-col gap-4 animate-fade-in-up w-full">
+
+                            {/* ── Row 1: Field | Info | Log ── */}
+                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-4 w-full">
+                                {/* Field — wider */}
+                                <div className="lg:col-span-5 bg-slate-900/60 backdrop-blur-sm border border-slate-700/40 rounded-2xl p-1 sm:p-2 shadow-xl overflow-hidden">
                                     <Field />
                                 </div>
-                                <ActionPanel />
-                                <div className="bg-surface border border-muted/30 rounded-3xl p-4 sm:p-6 shadow-xl relative overflow-hidden overflow-x-auto">
-                                     <div className="flex items-center justify-between mb-4 border-b border-muted/20 pb-4">
-                                        <h3 className="text-xl font-black text-foreground uppercase tracking-wider flex items-center gap-2">
-                                            <Trophy className="w-6 h-6 text-yellow-500" /> RESUMEN OFICIAL (Boxscore)
-                                        </h3>
-                                        <button 
-                                            onClick={handleFinalizarJuego}
-                                            className="bg-rose-600 hover:bg-rose-700 text-white px-6 py-2 rounded-xl font-bold text-sm shadow-lg shadow-rose-900/20 transition-all flex items-center gap-2"
-                                        >
-                                            FINALIZAR JUEGO
-                                        </button>
-                                     </div>
-                                     {boxscoreLoading ? (
-                                         <div className="p-20 text-center animate-pulse text-muted-foreground font-bold italic">Calculando estadísticas actualizadas...</div>
-                                     ) : boxscoreError ? (
-                                         <div className="p-20 text-center text-rose-500 font-bold">Error al cargar el resumen oficial.</div>
-                                     ) : boxscore && (
-                                         <div className="flex flex-col gap-8">
-                                             <ScorebookTable 
-                                                teamBoxscore={boxscore.awayTeam} 
-                                                baseIds={half === 'top' ? baseIds : null} 
-                                                currentInning={inning} 
-                                             />
-                                             <ScorebookTable 
-                                                teamBoxscore={boxscore.homeTeam} 
-                                                baseIds={half === 'bottom' ? baseIds : null} 
-                                                currentInning={inning} 
-                                             />
-                                         </div>
-                                     )}
+
+                                {/* Batting + Pitching Info */}
+                                <div className="lg:col-span-4 flex flex-col gap-4">
+                                    <PlayerInfo
+                                        type="Batting"
+                                        name={currentBatter}
+                                        stats={batterStats}
+                                        photoUrl={batterPhotoUrl}
+                                    />
+                                    <PlayerInfo
+                                        type="Pitching"
+                                        name={pitcherInfo.name}
+                                        stats={pitcherInfo.stats}
+                                        photoUrl={pitcherInfo.photoUrl}
+                                    />
+                                </div>
+
+                                {/* Play by Play Log — locked height to 720px with scroll */}
+                                <div className="lg:col-span-3 h-[625px] max-h-[625px] overflow-hidden rounded-xl">
+                                    <PlayByPlayLog />
                                 </div>
                             </div>
 
-                            {/* Right: Info Panels */}
-                            <div className="flex flex-col gap-6">
-                                <PlayerInfo 
-                                    type="Batting"
-                                    name={currentBatter} 
-                                    stats={batterStats}
-                                />
-                                <PlayerInfo 
-                                    type="Pitching"
-                                    name={pitcherInfo.name} 
-                                    stats={pitcherInfo.stats}
-                                />
-                                <PlayByPlayLog />
+                            {/* ── Row 2: Action Panel ── */}
+                            <ActionPanel />
+
+                            {/* ── Row 3: Boxscore ── */}
+                            <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-700/40 rounded-2xl p-4 sm:p-6 shadow-xl overflow-x-auto">
+                                <div className="flex items-center justify-between mb-4 border-b border-slate-700/30 pb-4">
+                                    <h3 className="text-lg sm:text-xl font-black text-white uppercase tracking-wider flex items-center gap-2">
+                                        <Trophy className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-500" /> RESUMEN OFICIAL (Boxscore)
+                                    </h3>
+                                    <button
+                                        onClick={handleFinalizarJuego}
+                                        className="bg-rose-600 hover:bg-rose-700 text-white px-4 sm:px-6 py-2 rounded-xl font-bold text-xs sm:text-sm shadow-lg shadow-rose-900/20 transition-all flex items-center gap-2 shrink-0"
+                                    >
+                                        FINALIZAR JUEGO
+                                    </button>
+                                </div>
+                                {boxscoreLoading ? (
+                                    <div className="p-20 text-center animate-pulse text-slate-500 font-bold italic">Calculando estadísticas actualizadas...</div>
+                                ) : boxscoreError ? (
+                                    <div className="p-20 text-center text-rose-500 font-bold">Error al cargar el resumen oficial.</div>
+                                ) : boxscore && (
+                                    <div className="flex flex-col gap-8">
+                                        <ScorebookTable
+                                            teamBoxscore={boxscore.awayTeam}
+                                            baseIds={half === 'top' ? baseIds : null}
+                                            currentInning={inning}
+                                        />
+                                        <ScorebookTable
+                                            teamBoxscore={boxscore.homeTeam}
+                                            baseIds={half === 'bottom' ? baseIds : null}
+                                            currentInning={inning}
+                                        />
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
 
                     {/* TAB: STREAM */}
                     {activeTab === 'stream' && (
-                        <div className="bg-surface border border-muted/30 rounded-2xl p-6 lg:p-12 shadow-lg animate-fade-in-up min-h-[500px]">
-                            <div className="flex items-center gap-3 mb-6 border-b border-muted/20 pb-4">
+                        <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-700/40 rounded-2xl p-6 lg:p-12 shadow-lg animate-fade-in-up min-h-[500px]">
+                            <div className="flex items-center gap-3 mb-6 border-b border-slate-700/30 pb-4">
                                 <Radio className="w-8 h-8 text-rose-500 animate-pulse" />
-                                <h2 className="text-2xl font-black text-foreground">Transmisión en Vivo (Livepeer)</h2>
+                                <h2 className="text-2xl font-black text-white">Transmisión en Vivo (Livepeer)</h2>
                             </div>
                             <div className="max-w-3xl">
-                                <p className="text-muted-foreground mb-8 text-lg">
+                                <p className="text-slate-400 mb-8 text-lg">
                                     Conecta tu OBS o cámara compatible para transmitir el partido en vivo. Tus espectadores podrán ver el video incrustado directamente en el Gamecast oficial sin salir de la página.
                                 </p>
-                                <div className="bg-muted/10 border border-muted/20 rounded-xl p-8 text-center">
-                                    <Radio className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                                    <p className="text-muted-foreground font-bold">Funcionalidad de Streaming temporalmente limitada en modo Serverless.</p>
+                                <div className="bg-slate-800/30 border border-slate-700/30 rounded-xl p-8 text-center">
+                                    <Radio className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+                                    <p className="text-slate-500 font-bold">Funcionalidad de Streaming temporalmente limitada en modo Serverless.</p>
                                 </div>
                             </div>
                         </div>
@@ -357,21 +370,21 @@ export default function ScorekeeperLivePanel() {
             {/* Modal de Finalización */}
             {showWrapUpModal && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
-                    <div className="bg-surface border border-muted/30 rounded-3xl shadow-2xl max-w-lg w-full p-6 sm:p-8 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-300">
-                        <h2 className="text-3xl font-black text-foreground mb-2 flex items-center gap-3">
-                             <Trophy className="w-8 h-8 text-yellow-500" /> MVP & Finalización
+                    <div className="bg-slate-900 border border-slate-700 rounded-3xl shadow-2xl max-w-lg w-full p-6 sm:p-8 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-300">
+                        <h2 className="text-3xl font-black text-white mb-2 flex items-center gap-3">
+                            <Trophy className="w-8 h-8 text-yellow-500" /> MVP & Finalización
                         </h2>
-                        <p className="text-muted-foreground mb-8 text-lg leading-relaxed">
+                        <p className="text-slate-400 mb-8 text-lg leading-relaxed">
                             Selecciona a los jugadores más destacados para cerrar el partido oficialmente.
                         </p>
-                        
+
                         <div className="space-y-6">
                             <div>
-                                <label className="block text-sm font-black text-primary uppercase tracking-widest mb-2">Pitcher Ganador (W)</label>
-                                <select 
-                                    value={selectedPitcherId} 
+                                <label className="block text-sm font-black text-sky-400 uppercase tracking-widest mb-2">Pitcher Ganador (W)</label>
+                                <select
+                                    value={selectedPitcherId}
                                     onChange={(e) => setSelectedPitcherId(e.target.value)}
-                                    className="w-full bg-background border border-muted/30 rounded-xl px-4 py-3 font-bold text-foreground focus:ring-2 focus:ring-primary/50 transition-all outline-none"
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 font-bold text-white focus:ring-2 focus:ring-sky-500/50 transition-all outline-none"
                                 >
                                     <option value="">-- No asignado --</option>
                                     {[...(boxscore?.homeTeam.lineup ?? []), ...(boxscore?.awayTeam.lineup ?? [])]
@@ -381,11 +394,11 @@ export default function ScorekeeperLivePanel() {
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-sm font-black text-primary uppercase tracking-widest mb-2">MVP Bateador #1</label>
-                                <select 
-                                    value={selectedBatter1Id} 
+                                <label className="block text-sm font-black text-sky-400 uppercase tracking-widest mb-2">MVP Bateador #1</label>
+                                <select
+                                    value={selectedBatter1Id}
                                     onChange={(e) => setSelectedBatter1Id(e.target.value)}
-                                    className="w-full bg-background border border-muted/30 rounded-xl px-4 py-3 font-bold text-foreground focus:ring-2 focus:ring-primary/50 transition-all outline-none"
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 font-bold text-white focus:ring-2 focus:ring-sky-500/50 transition-all outline-none"
                                 >
                                     <option value="">-- No asignado --</option>
                                     {[...(boxscore?.homeTeam.lineup ?? []), ...(boxscore?.awayTeam.lineup ?? [])]
@@ -394,11 +407,11 @@ export default function ScorekeeperLivePanel() {
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-sm font-black text-primary uppercase tracking-widest mb-2">MVP Bateador #2</label>
-                                <select 
-                                    value={selectedBatter2Id} 
+                                <label className="block text-sm font-black text-sky-400 uppercase tracking-widest mb-2">MVP Bateador #2</label>
+                                <select
+                                    value={selectedBatter2Id}
                                     onChange={(e) => setSelectedBatter2Id(e.target.value)}
-                                    className="w-full bg-background border border-muted/30 rounded-xl px-4 py-3 font-bold text-foreground focus:ring-2 focus:ring-primary/50 transition-all outline-none"
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 font-bold text-white focus:ring-2 focus:ring-sky-500/50 transition-all outline-none"
                                 >
                                     <option value="">-- No asignado --</option>
                                     {[...(boxscore?.homeTeam.lineup ?? []), ...(boxscore?.awayTeam.lineup ?? [])]
@@ -409,15 +422,15 @@ export default function ScorekeeperLivePanel() {
                         </div>
 
                         <div className="flex gap-4 mt-10">
-                            <button 
+                            <button
                                 onClick={() => setShowWrapUpModal(false)}
-                                className="flex-1 bg-muted/20 hover:bg-muted/30 text-foreground py-4 rounded-2xl font-black transition-all"
+                                className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-4 rounded-2xl font-black transition-all border border-slate-700"
                             >
                                 CANCELAR
                             </button>
-                            <button 
+                            <button
                                 onClick={submitGameFinalization}
-                                className="flex-[2] bg-primary hover:bg-primary/90 text-white py-4 rounded-2xl font-black transition-all shadow-lg shadow-primary/30 flex items-center justify-center gap-2"
+                                className="flex-[2] bg-sky-600 hover:bg-sky-500 text-white py-4 rounded-2xl font-black transition-all shadow-lg shadow-sky-900/30 flex items-center justify-center gap-2"
                             >
                                 <Trophy className="w-5 h-5" /> GUARDAR & CERRAR
                             </button>

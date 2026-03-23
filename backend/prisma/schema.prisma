@@ -300,6 +300,7 @@ model Play {
   result         String
   rbi            Int      @default(0)
   runsScored     Int      @default(0) @map("runs_scored")
+  scored         Boolean  @default(false)
   outsRecorded   Int      @default(0) @map("outs_recorded")
   gameId         String   @map("game_id")
   batterId       String   @map("batter_id")

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useGameStore } from '@/store/gameStore';
 
 interface AdvancedPlayModalProps {
@@ -15,8 +16,13 @@ export default function AdvancedPlayModal({ isOpen, onClose }: AdvancedPlayModal
     const [runner2Dest, setRunner2Dest] = useState(bases.second ? '3B' : '');
     const [runner3Dest, setRunner3Dest] = useState(bases.third ? 'Home' : '');
     const [playDescription, setPlayDescription] = useState('');
+    const [mounted, setMounted] = useState(false);
 
-    if (!isOpen) return null;
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    if (!isOpen || !mounted) return null;
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -63,9 +69,9 @@ export default function AdvancedPlayModal({ isOpen, onClose }: AdvancedPlayModal
         onClose();
     };
 
-    return (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-lg w-full p-6 shadow-2xl">
+    const modalContent = (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] p-4 overflow-y-auto">
+            <div className="bg-slate-900 border border-slate-700/50 rounded-2xl w-full max-w-4xl p-6 shadow-2xl relative z-[10000]">
                 <h2 className="text-xl font-black text-amber-400 mb-4 border-b border-slate-700 pb-2 uppercase tracking-wide">Resolutor de Jugadas</h2>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
@@ -139,4 +145,6 @@ export default function AdvancedPlayModal({ isOpen, onClose }: AdvancedPlayModal
             </div>
         </div>
     );
+
+    return createPortal(modalContent, document.body);
 }

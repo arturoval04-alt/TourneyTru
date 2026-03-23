@@ -3,14 +3,9 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import Image from "next/image";
 import api from "@/lib/api";
-
-interface TournamentListItem {
-    id: string;
-    name: string;
-    season: string;
-    _count?: { teams: number; games: number };
-}
+import { Search, Filter, Users, Trophy, MapPin, ChevronRight, Activity } from "lucide-react";
 
 interface TeamItem {
     id: string;
@@ -19,174 +14,195 @@ interface TeamItem {
     logoUrl?: string;
     managerName?: string;
     _count?: { players: number };
-    players?: PlayerItem[];
+    tournament?: { id: string; name: string; category?: string; rulesType?: string };
 }
 
-interface PlayerItem {
+interface TournamentListItem {
     id: string;
-    firstName: string;
-    lastName: string;
-    number?: number;
-    position?: string;
-    bats?: string;
-    throws?: string;
-    photoUrl?: string;
-    team?: { id: string; name: string };
+    name: string;
 }
 
 export default function EquiposPage() {
-    const [tournaments, setTournaments] = useState<TournamentListItem[]>([]);
-    const [selectedTournament, setSelectedTournament] = useState<TournamentListItem | null>(null);
     const [teams, setTeams] = useState<TeamItem[]>([]);
+    const [tournaments, setTournaments] = useState<TournamentListItem[]>([]);
+    const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
-    const [loadingT, setLoadingT] = useState(true);
-    const [loadingTeams, setLoadingTeams] = useState(false);
+    const [selectedTournament, setSelectedTournament] = useState<string>("all");
+    const [showFilters, setShowFilters] = useState(false);
 
     useEffect(() => {
-        const fetchTournaments = async () => {
+        const fetchData = async () => {
             try {
-                const { data } = await api.get('/tournaments');
-                setTournaments(data || []);
-                setLoadingT(false);
+                // Fetch all teams
+                const teamsRes = await api.get('/teams');
+                setTeams(teamsRes.data || []);
+
+                // Fetch tournaments for the filter dropdown
+                const tournsRes = await api.get('/tournaments');
+                setTournaments(tournsRes.data || []);
+
+                setLoading(false);
             } catch (err) {
-                console.error(err);
-                setLoadingT(false);
+                console.error("Error fetching teams data:", err);
+                setLoading(false);
             }
         };
-        fetchTournaments();
+        fetchData();
     }, []);
 
-    const handleSelectTournament = async (t: TournamentListItem) => {
-        setSelectedTournament(t);
-        setLoadingTeams(true);
-        try {
-            const { data } = await api.get('/teams', { params: { tournamentId: t.id } });
-            setTeams(data || []);
-            setLoadingTeams(false);
-        } catch (err) {
-            console.error(err);
-            setLoadingTeams(false);
-        }
-    };
+    const filteredTeams = teams.filter(team => {
+        const matchesSearch = team.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            team.shortName?.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesTournament = selectedTournament === "all" || team.tournament?.id === selectedTournament;
+        return matchesSearch && matchesTournament;
+    });
 
-    const handleBack = () => {
-        setSelectedTournament(null);
-        setTeams([]);
-    };
-
-    const filteredTournaments = tournaments.filter(t =>
-        t.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const getSportIcon = (rulesType?: string) => (rulesType || '').includes('softball') ? '🥎' : '⚾';
+    const getSportName = (rulesType?: string) => (rulesType || '').includes('softball') ? 'Softbol' : 'Béisbol';
 
     return (
-        <div className="min-h-screen bg-background text-foreground font-sans transition-colors duration-300">
+        <div className="min-h-screen bg-background text-foreground font-sans transition-colors duration-300 pb-20">
             <Navbar />
 
-            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-                {!selectedTournament ? (
-                    <div className="animate-fade-in-up">
-                        <h1 className="text-3xl sm:text-4xl font-black mb-4">Directorio de Equipos</h1>
-                        <p className="text-lg text-muted-foreground mb-8">
-                            Elige un torneo para ver los equipos participantes.
-                        </p>
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+                <div className="animate-fade-in-up">
+                    <h1 className="text-3xl sm:text-4xl font-black mb-2 text-foreground">Directorio de Equipos</h1>
+                    <p className="text-muted-foreground mb-8">Explora, busca y encuentra a todos los equipos de la liga</p>
 
-                        <div className="mb-8">
-                            <input
-                                type="text"
-                                placeholder="Buscar torneo por nombre..."
-                                className="w-full max-w-md px-4 py-2 bg-surface text-foreground placeholder-muted-foreground border border-muted/40 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary shadow-sm transition-all"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                            />
+                    {/* Barra de Búsqueda y Filtros */}
+                    <div className="flex flex-col md:flex-row gap-4 mb-6">
+                        <div className="flex flex-col sm:flex-row gap-4 items-center flex-1">
+                            <div className="relative flex-1 group w-full">
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                                <input
+                                    type="text"
+                                    placeholder="Buscar equipos por nombre..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="w-full bg-surface border border-muted/30 rounded-xl py-3 pl-12 pr-4 text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-sm font-medium shadow-sm"
+                                />
+                            </div>
+                            <button
+                                onClick={() => setShowFilters(!showFilters)}
+                                className={`flex items-center justify-center sm:justify-start gap-2 border px-6 py-3 rounded-xl text-sm font-bold transition-all shadow-sm shrink-0 w-full sm:w-auto
+                                    ${showFilters ? 'bg-primary/10 border-primary text-primary' : 'border-muted/30 bg-surface hover:bg-muted/10 hover:border-muted/50 text-foreground'}`}
+                            >
+                                <Filter className="w-4 h-4" /> Filtros
+                            </button>
                         </div>
+                    </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {loadingT ? (
-                                [1, 2, 3].map(i => (
-                                    <div key={i} className="h-28 bg-surface border border-muted/30 rounded-2xl animate-pulse shadow-sm" />
-                                ))
-                            ) : filteredTournaments.length === 0 ? (
-                                <div className="col-span-full py-12 text-center bg-surface border border-muted/30 rounded-2xl">
-                                    <p className="text-muted-foreground font-medium">No se encontraron torneos.</p>
-                                </div>
-                            ) : filteredTournaments.map((t) => (
-                                <div
-                                    key={t.id}
-                                    className="bg-surface border border-muted/30 rounded-2xl p-6 shadow-sm hover:shadow-lg hover:-translate-y-2 hover:border-primary/50 cursor-pointer transition-all duration-300 group"
-                                    onClick={() => handleSelectTournament(t)}
+                    {/* Fila Extensible de Filtros */}
+                    {showFilters && (
+                        <div className="mb-6 p-4 sm:p-5 bg-surface border border-muted/20 rounded-xl shadow-inner animate-fade-in-up flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                            <div className="w-full sm:w-72">
+                                <label className="block text-xs font-black text-muted-foreground tracking-wider uppercase mb-2">Filtrar por Torneo</label>
+                                <select
+                                    className="w-full bg-background border border-muted/30 rounded-lg py-2.5 px-3 text-sm font-medium outline-none focus:border-primary transition-colors cursor-pointer"
+                                    value={selectedTournament}
+                                    onChange={(e) => setSelectedTournament(e.target.value)}
                                 >
-                                    <div className="flex items-center gap-4 mb-4">
-                                        <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold group-hover:bg-primary/20 transition-colors">
-                                            ⚾
+                                    <option value="all">Todos los Torneos</option>
+                                    {tournaments.map(t => (
+                                        <option key={t.id} value={t.id}>{t.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            {(selectedTournament !== 'all' || searchQuery !== '') && (
+                                <button
+                                    onClick={() => { setSelectedTournament('all'); setSearchQuery(''); }}
+                                    className="mt-4 sm:mt-6 text-sm font-bold text-red-500 hover:text-red-400 transition-colors"
+                                >
+                                    Limpiar Filtros
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    <p className="text-sm text-muted-foreground mb-4 font-medium px-1">
+                        Mostrando {filteredTeams.length} equipo{filteredTeams.length !== 1 ? 's' : ''}
+                    </p>
+                </div>
+
+                {/* Grid de Equipos */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {loading ? (
+                        [1, 2, 3, 4, 5, 6].map(i => (
+                            <div key={i} className="h-64 bg-surface border border-muted/30 rounded-2xl animate-pulse shadow-sm" />
+                        ))
+                    ) : filteredTeams.length === 0 ? (
+                        <div className="col-span-full py-16 text-center bg-surface border border-muted/30 rounded-2xl">
+                            <div className="w-16 h-16 bg-muted/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <Search className="w-8 h-8 text-muted-foreground/50" />
+                            </div>
+                            <h3 className="text-lg font-bold text-foreground mb-1">No se encontraron equipos</h3>
+                            <p className="text-muted-foreground font-medium">Intenta ajustar tu búsqueda o limpiar los filtros.</p>
+                        </div>
+                    ) : filteredTeams.map((team) => {
+                        const sportType = getSportName(team.tournament?.rulesType);
+                        return (
+                            <Link href={`/equipos/${team.id}`} key={team.id} className="block group cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary rounded-2xl animate-fade-in-up">
+                                <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-md hover:shadow-xl hover:-translate-y-2 hover:border-primary/50 transition-all duration-300 h-full flex flex-col relative">
+
+
+                                    {/* Cover Half / Dark Header */}
+                                    <div className="relative h-48 w-full bg-gradient-to-br from-slate-800 to-slate-900 overflow-hidden flex items-center justify-center">
+                                        <div className="absolute inset-0 bg-black/10 group-hover:bg-black/0 transition-colors"></div>
+
+                                        {/* Sport Badge */}
+                                        <div className="absolute top-4 right-4 px-3 py-1 bg-black/60 backdrop-blur-md text-white rounded-full text-[11px] font-bold border border-white/10 flex items-center gap-1.5 shadow-sm z-20">
+                                            <span>{getSportIcon(team.tournament?.rulesType)}</span> {getSportName(team.tournament?.rulesType)}
                                         </div>
-                                        <div>
-                                            <h3 className="font-bold text-lg group-hover:text-primary transition-colors">{t.name}</h3>
-                                            <p className="text-sm text-muted-foreground">
-                                                {t.season} • {t._count?.teams || 0} Equipos
-                                            </p>
+
+                                        {/* Logo / Image Cover or Fallback Text */}
+                                        {team.logoUrl ? (
+                                            <div className="absolute inset-0 z-10 bg-white/5">
+                                                <Image src={team.logoUrl} alt={team.name} fill className="object-cover group-hover:scale-105 transition-transform duration-700" unoptimized />
+                                            </div>
+                                        ) : (
+                                            <div className="z-10 group-hover:scale-110 transition-transform duration-500">
+                                                <span className="text-secondary opacity-60 font-black text-6xl tracking-tighter drop-shadow-md">
+                                                    {team.shortName || team.name.substring(0, 2).toUpperCase()}
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Content Half */}
+                                    <div className="p-6 flex flex-col flex-1 relative z-20">
+                                        <h3 className="font-black text-xl text-foreground mb-1 leading-tight group-hover:text-primary transition-colors truncate">
+                                            {team.name}
+                                        </h3>
+                                        <p className="text-sm text-muted-foreground font-medium mb-5 truncate">
+                                            {team.managerName ? `Dirigido por ${team.managerName}` : 'Manager no asignado'}
+                                        </p>
+                                        <div className="space-y-3 mb-6 flex-1">
+                                            <div className="flex items-start gap-3 text-sm text-muted-foreground font-medium group/line">
+                                                <Trophy className="w-4 h-4 text-muted-foreground/70 shrink-0 mt-0.5 group-hover/line:text-amber-500 transition-colors" />
+                                                <span className="leading-snug">
+                                                    Participante en <span className="font-bold text-foreground">1 torneo</span>
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-3 text-sm text-muted-foreground font-medium group/line">
+                                                <Users className="w-4 h-4 text-muted-foreground/70 shrink-0 group-hover/line:text-blue-500 transition-colors" />
+                                                <span><span className="font-bold text-foreground text-base leading-none">{team._count?.players || 0}</span> jugadores registrados</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="border-t border-muted/20 pt-4 mt-auto flex items-center justify-between">
+                                            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 truncate max-w-[80%]">
+                                                {team.tournament?.name || 'Torneo Independiente'}
+                                            </div>
+                                            <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
                                         </div>
                                     </div>
                                 </div>
-                            ))}
-                        </div>
-                    </div>
-                ) : (
-                    <div className="animate-fade-in-up">
-                        <button
-                            onClick={handleBack}
-                            className="flex items-center gap-2 text-primary hover:text-primary-light font-medium mb-6 transition-colors cursor-pointer group bg-surface/50 border border-muted/20 px-4 py-2 rounded-xl w-fit"
-                        >
-                            <span className="group-hover:-translate-x-1 transition-transform">&larr;</span> Volver a torneos
-                        </button>
-
-                        <div className="mb-10 flex flex-col sm:flex-row items-center sm:items-center text-center sm:text-left gap-4 sm:gap-6">
-                            <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 bg-gradient-to-br from-primary/20 to-primary/5 rounded-2xl flex items-center justify-center text-primary font-black text-2xl border border-primary/20 shadow-inner">
-                                ⚾
-                            </div>
-                            <div className="w-full overflow-hidden">
-                                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-foreground mb-1 truncate">{selectedTournament.name}</h1>
-                                <p className="text-muted-foreground font-medium">{selectedTournament.season}</p>
-                            </div>
-                        </div>
-
-                        {/* Grid de Equipos */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {loadingTeams ? (
-                                [1, 2, 3].map(i => (
-                                    <div key={i} className="h-40 bg-surface border border-muted/30 rounded-2xl animate-pulse shadow-sm" />
-                                ))
-                            ) : teams.length === 0 ? (
-                                <div className="col-span-full py-12 text-center bg-surface border border-muted/30 rounded-2xl">
-                                    <p className="text-muted-foreground font-medium">No hay equipos registrados en este torneo.</p>
-                                </div>
-                            ) : teams.map((team) => (
-                                <Link href={`/equipos/${team.id}`} key={team.id} className="block group focus:outline-none focus:ring-2 focus:ring-primary rounded-2xl outline-none">
-                                    <div className="bg-surface border border-muted/30 rounded-2xl p-6 shadow-sm hover:shadow-xl hover:-translate-y-2 hover:border-primary/50 transition-all duration-300 h-full flex flex-col justify-between cursor-pointer">
-
-                                        <div className="flex items-center gap-4 sm:gap-5 mb-8">
-                                            {/* Team Avatar */}
-                                            <div className="w-14 h-14 sm:w-16 sm:h-16 shrink-0 rounded-[16px] sm:rounded-[20px] bg-primary flex items-center justify-center font-bold text-xl sm:text-2xl text-white shadow-md group-hover:scale-105 transition-transform overflow-hidden">
-                                                {team.logoUrl ? <img src={team.logoUrl} alt={team.name} className="w-full h-full object-contain" /> : (team.shortName || team.name.substring(0, 2).toUpperCase())}
-                                            </div>
-                                            <div className="flex-1 overflow-hidden">
-                                                <h3 className="font-bold text-[1.1rem] leading-tight text-foreground group-hover:text-primary transition-colors tracking-tight truncate">
-                                                    {team.name}
-                                                </h3>
-                                                <span className="text-sm text-muted-foreground mt-1 font-medium">{(team._count?.players ?? team.players?.length ?? 0)} jugadores</span>
-                                            </div>
-                                        </div>
-
-                                        <div className="border-t border-muted/20 pt-4 flex items-center justify-between text-sm font-medium">
-                                            <span className="text-muted-foreground">{team.managerName || 'Sin manager'}</span>
-                                            <span></span>
-                                        </div>
-                                    </div>
-                                </Link>
-                            ))}
-                        </div>
-                    </div>
-                )}
+                            </Link>
+                        );
+                    })}
+                </div>
             </main>
         </div>
     );
 }
+

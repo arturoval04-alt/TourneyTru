@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import api from "@/lib/api";
 import { LineupItem, useGameStore } from '@/store/gameStore';
 
@@ -42,6 +43,7 @@ export default function LineupChangeModal({ isOpen, onClose }: LineupChangeModal
         awayLineup,
         fetchGameConfig,
         connectSocket,
+        syncStateToBackend,
     } = useGameStore();
 
     const [selectedTeamId, setSelectedTeamId] = useState('');
@@ -107,7 +109,12 @@ export default function LineupChangeModal({ isOpen, onClose }: LineupChangeModal
         loadRoster(awayTeamId);
     }, [isOpen, homeTeamId, awayTeamId, rosters]);
 
-    if (!isOpen) return null;
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    if (!isOpen || !mounted) return null;
 
     const availablePlayers = rosters[selectedTeamId] || [];
     const isDh = normalizePosition(position) === 'DH';
@@ -150,6 +157,7 @@ export default function LineupChangeModal({ isOpen, onClose }: LineupChangeModal
 
             await fetchGameConfig();
             connectSocket();
+            syncStateToBackend();
             onClose();
         } catch (err: any) {
             console.error(err);
@@ -159,9 +167,9 @@ export default function LineupChangeModal({ isOpen, onClose }: LineupChangeModal
         }
     };
 
-    return (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-xl w-full p-6 shadow-2xl">
+    const modalContent = (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] p-4">
+            <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-xl w-full p-6 shadow-2xl relative z-[10000]">
                 <h2 className="text-xl font-black text-emerald-300 mb-4 border-b border-slate-700 pb-2 uppercase tracking-wide">
                     Cambio de Lineup
                 </h2>
@@ -280,4 +288,6 @@ export default function LineupChangeModal({ isOpen, onClose }: LineupChangeModal
             </div>
         </div>
     );
+
+    return createPortal(modalContent, document.body);
 }
