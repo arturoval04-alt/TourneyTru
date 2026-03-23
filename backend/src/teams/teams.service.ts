@@ -56,10 +56,10 @@ export class TeamsService {
                     }
                 },
                 gamesAsHome: {
-                    include: { awayTeam: true, winningPitcher: true, mvpBatter1: true, mvpBatter2: true },
+                    include: { homeTeam: true, awayTeam: true, winningPitcher: true, mvpBatter1: true, mvpBatter2: true },
                 },
                 gamesAsAway: {
-                    include: { homeTeam: true, winningPitcher: true, mvpBatter1: true, mvpBatter2: true },
+                    include: { homeTeam: true, awayTeam: true, winningPitcher: true, mvpBatter1: true, mvpBatter2: true },
                 },
             },
         });

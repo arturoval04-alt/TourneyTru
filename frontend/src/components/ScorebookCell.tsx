@@ -146,14 +146,14 @@ export const ScorebookCell: React.FC<ScorebookCellProps> = ({ plays, currentBase
                 const isLastPlay = index === plays.length - 1;
                 const liveBase = isLastPlay && currentBase != null ? currentBase : null;
                 const basesReached = Math.max(parsed.basesReached, liveBase || 0);
-
-                const reachedFirst = basesReached >= 1;
-                const reachedSecond = basesReached >= 2;
-                const reachedThird = basesReached >= 3;
-                
-                // CRITICAL: Only fill the diamond to home if explicit "scored" flag exists 
-                // or if it was a home run.
                 const scored = play.scored === true || basesReached >= 4;
+                
+                // Si anotó carrera, definitivamente pisó todas las bases
+                const finalBasesReached = scored ? 4 : basesReached;
+
+                const reachedFirst = finalBasesReached >= 1;
+                const reachedSecond = finalBasesReached >= 2;
+                const reachedThird = finalBasesReached >= 3;
 
                 // Path line color — blue for safe, red for out path
                 const pathColor = scored ? '#2563eb' : '#1e293b';

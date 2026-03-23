@@ -632,6 +632,7 @@ export const useGameStore = create<GameState>()(
                 emitPlayToBackend(get, desc, runs, outs, activeId, state.inning, state.half, state.outs);
                 
                 if (totalOuts >= 3) {
+                    get().cycleBatter();
                     get().nextHalfInning();
                     syncStateToBackend(get);
                 } else {
@@ -712,6 +713,7 @@ export const useGameStore = create<GameState>()(
                 emitPlayToBackend(get, "FC|Bola Ocupada", 0, 1, activeId, state.inning, state.half, state.outs);
 
                 if (totalOuts >= 3) {
+                    get().cycleBatter();
                     get().nextHalfInning();
                     syncStateToBackend(get);
                 } else { 
@@ -755,6 +757,7 @@ export const useGameStore = create<GameState>()(
                 }
 
                 if (totalOuts >= 3) {
+                    get().cycleBatter();
                     get().nextHalfInning();
                     syncStateToBackend(get);
                 } else { 

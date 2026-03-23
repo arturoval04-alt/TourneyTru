@@ -87,10 +87,10 @@ export default function TorneosPage() {
                 </div>
 
                 {/* Grid de Torneos */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {loading ? (
                         [1, 2, 3].map(i => (
-                            <div key={i} className="h-80 bg-surface border border-muted/30 rounded-2xl animate-pulse shadow-sm" />
+                            <div key={i} className="h-64 bg-surface border border-muted/30 rounded-2xl animate-pulse shadow-sm" />
                         ))
                     ) : filtered.length === 0 ? (
                         <div className="col-span-full py-12 text-center bg-surface border border-muted/30 rounded-2xl">
@@ -131,7 +131,7 @@ export default function TorneosPage() {
                                     </div>
 
                                     {/* Content Half */}
-                                    <div className="p-6 flex flex-col flex-1">
+                                    <div className="p-6 flex flex-col flex-1items-center  ">
                                         <h3 className="font-black text-xl text-foreground mb-4 leading-tight group-hover:text-primary transition-colors line-clamp-2">
                                             {t.name}
                                         </h3>

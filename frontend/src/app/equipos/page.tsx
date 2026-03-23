@@ -125,7 +125,7 @@ export default function EquiposPage() {
                 </div>
 
                 {/* Grid de Equipos */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {loading ? (
                         [1, 2, 3, 4, 5, 6].map(i => (
                             <div key={i} className="h-64 bg-surface border border-muted/30 rounded-2xl animate-pulse shadow-sm" />
@@ -142,12 +142,12 @@ export default function EquiposPage() {
                         const sportType = getSportName(team.tournament?.rulesType);
                         return (
                             <Link href={`/equipos/${team.id}`} key={team.id} className="block group cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary rounded-2xl animate-fade-in-up">
-                                <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-md hover:shadow-xl hover:-translate-y-2 hover:border-primary/50 transition-all duration-300 h-full flex flex-col relative">
+                                <div className="bg-surface border border-muted/20 rounded-2xl gap-1 overflow-hidden shadow-md hover:shadow-xl hover:-translate-y-2 hover:border-primary/50 transition-all duration-300 h-full flex flex-col relative">
 
 
                                     {/* Cover Half / Dark Header */}
-                                    <div className="relative h-48 w-full bg-gradient-to-br from-slate-800 to-slate-900 overflow-hidden flex items-center justify-center">
-                                        <div className="absolute inset-0 bg-black/10 group-hover:bg-black/0 transition-colors"></div>
+                                    <div className="relative h-36 w-full bg-gradient-to-br from-slate-800 to-slate-900 mb-3 overflow-hidden flex items-center justify-center">
+                                        <div className="absolute inset-010 bg-black/10 group-hover:bg-black/0 transition-colors"></div>
 
                                         {/* Sport Badge */}
                                         <div className="absolute top-4 right-4 px-3 py-1 bg-black/60 backdrop-blur-md text-white rounded-full text-[11px] font-bold border border-white/10 flex items-center gap-1.5 shadow-sm z-20">
@@ -169,14 +169,14 @@ export default function EquiposPage() {
                                     </div>
 
                                     {/* Content Half */}
-                                    <div className="p-6 flex flex-col flex-1 relative z-20">
+                                    <div className="p- flex flex-col flex-1 relative z-20 gap-1 items-center">
                                         <h3 className="font-black text-xl text-foreground mb-1 leading-tight group-hover:text-primary transition-colors truncate">
                                             {team.name}
                                         </h3>
                                         <p className="text-sm text-muted-foreground font-medium mb-5 truncate">
                                             {team.managerName ? `Dirigido por ${team.managerName}` : 'Manager no asignado'}
                                         </p>
-                                        <div className="space-y-3 mb-6 flex-1">
+                                        <div className="space-y-3 mb-6 flex-1 ">
                                             <div className="flex items-start gap-3 text-sm text-muted-foreground font-medium group/line">
                                                 <Trophy className="w-4 h-4 text-muted-foreground/70 shrink-0 mt-0.5 group-hover/line:text-amber-500 transition-colors" />
                                                 <span className="leading-snug">
@@ -189,7 +189,7 @@ export default function EquiposPage() {
                                             </div>
                                         </div>
 
-                                        <div className="border-t border-muted/20 pt-4 mt-auto flex items-center justify-between">
+                                        <div className="border-t border-muted/20 pt-2 mt-auto flex items-center justify-between mb-3">
                                             <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 truncate max-w-[80%]">
                                                 {team.tournament?.name || 'Torneo Independiente'}
                                             </div>
