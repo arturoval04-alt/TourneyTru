@@ -163,6 +163,7 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Extract just the play code from "CODE|Description" format
       const rawResult = playInfo.result || '';
       const resultCode = rawResult.includes('|') ? rawResult.split('|')[0] : rawResult;
+      const resultDescription = rawResult.includes('|') ? rawResult.split('|')[1] : null;
 
       play = await this.withRetry(() => this.prisma.play.create({
         data: {
@@ -171,6 +172,7 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
           half: playInfo.half,
           outsBeforePlay: outsBeforePlay,
           result: resultCode,
+          description: resultDescription,
           rbi: rbi,
           runsScored: runsScored,
           outsRecorded: outsRecorded,

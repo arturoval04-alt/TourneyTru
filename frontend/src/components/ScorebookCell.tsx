@@ -73,6 +73,10 @@ function parsePlay(result: string): ParsedPlay {
             else if (r.startsWith('WP_RUN')) totalBases = 4;
         }
 
+        else if (r === 'RUNNER_OUT') {
+            isOut = true;
+            if (index === 0 || !label) { label = ''; labelColor = 'text-red-600'; }
+        }
         else if (r.includes('SAC') || r.includes('SF') || r.includes('SH') || r.includes('TS')) {
             isOut = true;
             if (index === 0 || !label) {

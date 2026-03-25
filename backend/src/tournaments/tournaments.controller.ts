@@ -83,6 +83,12 @@ export class TournamentsController {
         return this.tournamentsService.createNews(id, body);
     }
 
+    @Patch(':id/finalize')
+    @UseGuards(JwtAuthGuard)
+    finalize(@Param('id') id: string) {
+        return this.tournamentsService.finalize(id);
+    }
+
     @Get(':id/standings')
     getStandings(@Param('id') id: string) {
         return this.tournamentsService.getStandings(id);

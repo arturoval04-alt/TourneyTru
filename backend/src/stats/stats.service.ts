@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 const HIT_RESULTS = ['H1', 'H2', 'H3', 'HR', '1B', '2B', '3B'];
-const NON_AB_RESULTS = ['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED', 'FC'];
+const NON_AB_RESULTS = ['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED', 'FC', 'RUNNER_OUT'];
 
 @Injectable()
 export class StatsService {

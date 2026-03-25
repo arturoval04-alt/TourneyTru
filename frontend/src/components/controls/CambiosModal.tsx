@@ -35,7 +35,7 @@ interface Elegibles {
 
 interface PositionSwap { fromPosition: string; toPosition: string; }
 
-const DEFENSIVE_POSITIONS = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF'];
+const DEFENSIVE_POSITIONS = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'SF'];
 
 const POS_NUM: Record<string, string> = {
     P: '1', C: '2', '1B': '3', '2B': '4', '3B': '5',
@@ -355,7 +355,9 @@ export default function CambiosModal({ isOpen, onClose }: Props) {
                                     type: 'REINGRESO' as ChangeType,
                                     icon: '↩️',
                                     title: 'Reingreso',
-                                    desc: 'Un titular sustituido regresa al juego (WBSC: 1 vez)',
+                                    desc: (elegibles?.puedenReingresar.length ?? 0) === 0
+                                        ? 'Requiere una sustitución previa (ningún titular ha salido aún)'
+                                        : 'Un titular sustituido regresa al juego (WBSC: 1 vez)',
                                     disabled: (elegibles?.puedenReingresar.length ?? 0) === 0,
                                 },
                             ].map(opt => (

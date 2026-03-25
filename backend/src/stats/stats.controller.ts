@@ -5,12 +5,12 @@ import { StatsService } from './stats.service';
 export class StatsController {
     constructor(private readonly statsService: StatsService) {}
 
-    @Get('tournaments/:id/stats/batting')
+    @Get('torneos/:id/stats/batting')
     getBattingLeaderboard(@Param('id') id: string) {
         return this.statsService.getBattingLeaderboard(id);
     }
 
-    @Get('tournaments/:id/stats/pitching')
+    @Get('torneos/:id/stats/pitching')
     getPitchingLeaderboard(@Param('id') id: string) {
         return this.statsService.getPitchingLeaderboard(id);
     }

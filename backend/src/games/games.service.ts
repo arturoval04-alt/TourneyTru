@@ -668,9 +668,10 @@ export class GamesService {
                                 lastPlay.scored = true;  // Explicit flag for the frontend
                             }
                             if (isRunnerOut) {
-                                // Important: keep the original outsRecorded if it's already set, 
-                                // but ensure it counts for the stats if we want it to.
-                                // In the boxscore table, we mainly care about the result string for the diamond.
+                                // Credit the pitcher with the out recorded on this runner
+                                if (pitcher) {
+                                    pitcher.pitchingIPOuts = (pitcher.pitchingIPOuts || 0) + (play.outsRecorded || 0);
+                                }
                             }
                             updated = true;
                         }
@@ -758,7 +759,7 @@ export class GamesService {
 
                 // Normal At-Bat processing
                 const isError = play.result.toUpperCase().match(/^E\d$/);
-                const isAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'FC', 'SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED'].includes(play.result.toUpperCase()) && !isError;
+                const isAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'FC', 'SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED', 'RUNNER_OUT'].includes(play.result.toUpperCase()) && !isError;
                 if (isAtBat) batter.atBats += 1;
 
                 if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(play.result.toUpperCase())) {
@@ -843,8 +844,9 @@ export class GamesService {
         // Rebuild playLogs from DB plays
         const playLogs = game.plays.map((p) => {
             const batterName = `${p.batter.firstName} ${p.batter.lastName}`;
+            const playText = (p as any).description || `${batterName}: ${p.result}`;
             return {
-                text: `${p.half === 'top' ? '▲' : '▼'}${p.inning} | ${batterName}: ${p.result}${p.runsScored > 0 ? ` (${p.runsScored} R)` : ''}`,
+                text: `${p.half === 'top' ? '▲' : '▼'}${p.inning} | ${playText}${p.runsScored > 0 ? ` (${p.runsScored} R)` : ''}`,
                 type: this.classifyPlayResult(p.result),
             };
         });

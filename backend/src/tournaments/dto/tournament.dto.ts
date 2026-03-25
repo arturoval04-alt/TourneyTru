@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsUUID } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsDateString } from 'class-validator';
 
 export class CreateTournamentDto {
     @IsString()
@@ -40,6 +40,10 @@ export class CreateTournamentDto {
     @IsOptional()
     @IsString()
     locationCountry?: string;
+
+    @IsOptional()
+    @IsDateString()
+    startDate?: string;
 }
 
 export class UpdateTournamentDto {
@@ -82,4 +86,12 @@ export class UpdateTournamentDto {
     @IsOptional()
     @IsString()
     locationCountry?: string;
+
+    @IsOptional()
+    @IsDateString()
+    startDate?: string;
+
+    @IsOptional()
+    @IsString()
+    status?: string;
 }

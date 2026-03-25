@@ -63,7 +63,7 @@ export class TournamentsService {
         await this.findOne(id); // Valida existencia
         return this.prisma.tournament.update({
             where: { id },
-            data: updateData,
+            data: updateData as any,
         });
     }
 
@@ -147,6 +147,14 @@ export class TournamentsService {
         await this.findOne(tournamentId);
         return this.prisma.field.delete({
             where: { id: fieldId }
+        });
+    }
+
+    async finalize(id: string) {
+        await this.findOne(id);
+        return this.prisma.tournament.update({
+            where: { id },
+            data: { status: 'completed' } as any,
         });
     }
 

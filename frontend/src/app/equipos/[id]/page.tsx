@@ -258,7 +258,7 @@ export default function TeamProfilePage() {
                         <h1 className="text-xl md:text-4xl font-black italic tracking-tighter uppercase drop-shadow-md flex flex-wrap items-center justify-center md:justify-start gap-2">
                             "{team.tournament?.name || 'Amistoso'}"
                             {team.tournament?.id && (
-                                <Link href={`/tournaments/${team.tournament.id}`} className="hover:text-blue-300 transition-colors">
+                                <Link href={`/torneos/${team.tournament.id}`} className="hover:text-blue-300 transition-colors">
                                     <ExternalLink className="w-5 h-5 md:w-6 md:h-6" />
                                 </Link>
                             )}

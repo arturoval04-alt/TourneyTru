@@ -117,7 +117,7 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
             }
         }
 
-        const desc = `${dpCode}|Doble Play ${dpCode.replace('DP ', '')}: Out ${outsList.join(' y ')}`;
+        const desc = `${dpCode}|Doble Play ${dpCode}: Out ${outsList.join(' y ')}`;
         executeAdvancedPlay(newBases, newBaseIds, runs, 2, desc, runnerOutIds);
         setSelectedPositions([]);
         setDpStep2(false);
@@ -155,7 +155,7 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
                 code = selectedPositions.length === 1 ? `L${selectedPositions[0]}` : 'LO';
             } else if (playName === 'Doble Play') {
                 // Step 1 done — build code and go to step 2
-                const dpCodeBuilt = selectedPositions.length > 0 ? `DP ${selectedPositions.join('-')}` : 'DP';
+                const dpCodeBuilt = selectedPositions.length > 0 ? selectedPositions.join('-') : 'DP';
                 setDpCode(dpCodeBuilt);
                 setDpDests(buildDpDefaults());
                 setDpStep2(true);
@@ -199,7 +199,7 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
                         <h2 className="text-xl font-black text-red-400 uppercase tracking-wide">Doble Play</h2>
                     </div>
                     <p className="text-sm text-slate-400 mb-1">
-                        Secuencia: <span className="font-mono font-bold text-amber-400">{dpCode.replace('DP ', '')}</span>
+                        Secuencia: <span className="font-mono font-bold text-amber-400">{dpCode}</span>
                     </p>
                     <p className="text-sm text-slate-400 mb-4">
                         Selecciona el destino de cada jugador. Deben quedar exactamente <span className="font-bold text-red-400">2 Outs</span>.

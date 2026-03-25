@@ -13,9 +13,10 @@ interface TournamentItem {
     category?: string;
     logoUrl?: string;
     rulesType: string;
+    status?: string;
+    startDate?: string;
     league?: { name: string };
     _count?: { teams: number; games: number };
-    games?: { status: string }[];
     createdAt: string;
 }
 
@@ -44,11 +45,8 @@ export default function TorneosPage() {
     );
 
     const getStatus = (t: TournamentItem) => {
-        const liveCount = t.games?.filter(g => g.status === 'in_progress').length || 0;
-        const finishedCount = t.games?.filter(g => g.status === 'finished').length || 0;
-        const totalGames = t._count?.games || 0;
-        if (liveCount > 0) return 'Activo';
-        if (totalGames > 0 && finishedCount === totalGames) return 'Completado';
+        if (t.status === 'completed') return 'Completado';
+        if (t.status === 'active' || (t.startDate && new Date(t.startDate) <= new Date())) return 'Activo';
         return 'Próximo';
     };
 
@@ -145,7 +143,7 @@ export default function TorneosPage() {
                                             )}
                                             <div className="flex items-center gap-3 text-sm text-muted-foreground font-medium">
                                                 <Calendar className="w-4 h-4 text-muted-foreground/70 shrink-0" />
-                                                <span>{t.season}</span>
+                                                <span>{t.startDate ? new Date(t.startDate).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }) : t.season}</span>
                                             </div>
                                             <div className="flex items-center gap-4 sm:gap-5 flex-wrap text-sm text-muted-foreground font-medium pt-1">
                                                 <div className="flex items-center gap-2">

@@ -23,6 +23,8 @@ export default function TournamentProfilePage() {
         location_state?: string;
         logoUrl?: string;
         leagueId?: string;
+        status?: string;
+        startDate?: string;
         league?: { name: string };
         teams: { id: string; name: string; shortName?: string; logoUrl?: string; managerName?: string; _count?: { players: number } }[];
         games: { id: string; homeTeam: { id: string; name: string; shortName?: string }; awayTeam: { id: string; name: string; shortName?: string }; homeScore: number; awayScore: number; currentInning: number; half: string; status: string; scheduledDate: string }[];
@@ -110,7 +112,8 @@ export default function TournamentProfilePage() {
         description: '',
         rulesType: '',
         category: '',
-        logoUrl: ''
+        logoUrl: '',
+        startDate: ''
     });
 
     useEffect(() => {
@@ -121,7 +124,8 @@ export default function TournamentProfilePage() {
                 description: tournament.description || '',
                 rulesType: tournament.rulesType || '',
                 category: tournament.category || '',
-                logoUrl: tournament.logoUrl || ''
+                logoUrl: tournament.logoUrl || '',
+                startDate: tournament.startDate ? tournament.startDate.substring(0, 10) : ''
             });
         }
     }, [tournament]);
@@ -158,6 +162,7 @@ export default function TournamentProfilePage() {
                 rulesType: profileForm.rulesType,
                 category: profileForm.category,
                 logoUrl: profileForm.logoUrl,
+                startDate: profileForm.startDate || undefined,
             });
 
             alert('Perfil del Torneo Actualizado');
@@ -166,6 +171,17 @@ export default function TournamentProfilePage() {
         } catch (error) {
             console.error(error);
             alert('Error al actualizar perfil');
+        }
+    };
+
+    const handleFinalizeTournament = async () => {
+        if (!window.confirm('¿Finalizar este torneo? El estado cambiará a Completado y no podrá revertirse fácilmente.')) return;
+        try {
+            await api.patch(`/torneos/${tournamentId}/finalize`);
+            setTournament(prev => prev ? { ...prev, status: 'completed' } : null);
+        } catch (err) {
+            console.error(err);
+            alert('Error al finalizar el torneo');
         }
     };
 
@@ -440,6 +456,12 @@ export default function TournamentProfilePage() {
                                                 <Radio className="w-4 h-4 text-primary" />
                                                 Publicar Noticia
                                             </button>
+                                            {tournament?.status !== 'completed' && (
+                                                <button onClick={() => { setIsActionsOpen(false); handleFinalizeTournament(); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-900/40 text-red-400 hover:text-red-300 transition-all text-xs font-bold border-t border-slate-800 mt-1 pt-3">
+                                                    <CheckCircle className="w-4 h-4" />
+                                                    Finalizar Torneo
+                                                </button>
+                                            )}
                                         </>
                                     )}
                                 </div>
@@ -1208,6 +1230,10 @@ export default function TournamentProfilePage() {
                                     <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Categoría</label>
                                     <input type="text" value={profileForm.category} onChange={e => setProfileForm({ ...profileForm, category: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" />
                                 </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Fecha de Inicio</label>
+                                <input type="date" value={profileForm.startDate} onChange={e => setProfileForm({ ...profileForm, startDate: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Logo del Torneo (URL o Subir)</label>
