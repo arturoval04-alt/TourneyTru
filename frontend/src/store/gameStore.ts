@@ -71,6 +71,8 @@ export interface GameState extends BaseState {
     maxInnings: number;
     shouldPromptEndGame: boolean;
     clearEndGamePrompt: () => void;
+    facebookStreamUrl: string | null;
+    streamStatus: string;
 
     // Conexión
     setGameId: (id: string) => void;
@@ -248,6 +250,8 @@ export const useGameStore = create<GameState>()(
             status: null,
             maxInnings: 7,
             shouldPromptEndGame: false,
+            facebookStreamUrl: null,
+            streamStatus: 'offline',
 
             clearEndGamePrompt: () => set({ shouldPromptEndGame: false }),
 
@@ -423,6 +427,33 @@ export const useGameStore = create<GameState>()(
                 });
 
                 gameSocket.on('disconnect', () => console.log('Socket disconnected'));
+
+                // Fallback: si el backend no pudo guardar la jugada en DB, reintentamos vía HTTP
+                gameSocket.on('play_db_error', async (data: { playInfo: any }) => {
+                    console.warn('[GameStore] play_db_error recibido, reintentando vía HTTP...');
+                    const { gameId: gid } = get();
+                    if (!gid) return;
+                    const pi = data.playInfo;
+                    try {
+                        await api.post(`/games/${gid}/plays`, {
+                            inning: pi.inning, half: pi.half,
+                            outs_before_play: pi.outs_before_play ?? 0,
+                            result: pi.result,
+                            rbi: pi.rbi ?? 0,
+                            runs_scored: pi.runs_scored ?? 0,
+                            outs_recorded: pi.outs_recorded ?? 0,
+                            batter_id: pi.batter_id,
+                            pitcher_id: pi.pitcher_id,
+                        });
+                        console.log('[GameStore] Jugada recuperada vía HTTP.');
+                    } catch (e) {
+                        console.error('[GameStore] Fallback HTTP también falló:', e);
+                    }
+                });
+
+                gameSocket.on('streamStatusUpdate', (data: { facebookStreamUrl: string | null; streamStatus: string }) => {
+                    set({ facebookStreamUrl: data.facebookStreamUrl, streamStatus: data.streamStatus });
+                });
 
                 // Listen for game state updates from the backend (broadcast by the scorekeeper)
                 gameSocket.on('gameStateUpdate', (data: any) => {

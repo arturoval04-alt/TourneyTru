@@ -27,7 +27,7 @@ export default function TorneosPage() {
     useEffect(() => {
         const fetchTournaments = async () => {
             try {
-                const { data } = await api.get('/tournaments');
+                const { data } = await api.get('/torneos');
                 setTournaments(data || []);
                 setLoading(false);
             } catch (err: any) {

@@ -134,14 +134,14 @@ export default function CreateGameWizard({
 
   const loadTournaments = useCallback(async (leagueId: string) => {
     try {
-      const { data } = await api.get(`/leagues/${leagueId}/tournaments`);
+      const { data } = await api.get(`/leagues/${leagueId}/torneos`);
       setTournaments(data);
     } catch {}
   }, []);
 
   const loadTournamentData = useCallback(async (tId: string) => {
     try {
-      const { data } = await api.get(`/tournaments/${tId}`);
+      const { data } = await api.get(`/torneos/${tId}`);
       setSelectedTournament(data);
       setTeams(data.teams ?? []);
       setFields(data.fields ?? []);

@@ -43,7 +43,7 @@ export default function JugadoresPage() {
     useEffect(() => {
         const fetchTournaments = async () => {
             try {
-                const { data } = await api.get('/tournaments');
+                const { data } = await api.get('/torneos');
                 setTournaments(data || []);
                 setLoadingT(false);
             } catch (err) {

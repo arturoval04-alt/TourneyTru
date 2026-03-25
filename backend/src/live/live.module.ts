@@ -6,6 +6,7 @@ import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [PrismaModule, AuthModule],
-  providers: [LiveGateway]
+  providers: [LiveGateway],
+  exports: [LiveGateway],
 })
 export class LiveModule { }

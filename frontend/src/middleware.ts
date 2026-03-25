@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 // Rutas que requieren autenticación
-const PROTECTED_ROUTES = ['/admin'];
+const PROTECTED_ROUTES = ['/admin', '/game'];
 
 // Rutas de autenticación (no accesibles si ya hay sesión)
 const AUTH_ROUTES = ['/login', '/register'];
@@ -31,5 +31,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-    matcher: ['/admin/:path*', '/login', '/register'],
+    matcher: ['/admin/:path*', '/game/:path*', '/login', '/register'],
 };

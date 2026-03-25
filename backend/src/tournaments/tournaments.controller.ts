@@ -3,7 +3,7 @@ import { TournamentsService } from './tournaments.service';
 import { CreateTournamentDto, UpdateTournamentDto } from './dto/tournament.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
-@Controller('api/tournaments')
+@Controller('api/torneos')
 export class TournamentsController {
     constructor(private readonly tournamentsService: TournamentsService) { }
 

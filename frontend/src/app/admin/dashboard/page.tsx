@@ -177,7 +177,7 @@ export default function AdminDashboard() {
 
     const fetchTournaments = async () => {
         try {
-            const { data } = await api.get('/tournaments');
+            const { data } = await api.get('/torneos');
             setTournaments(data || []);
         } catch (err) { console.error("Error fetching tournaments:", err); }
     }
@@ -279,7 +279,7 @@ export default function AdminDashboard() {
                 return;
             }
 
-            const { data: newTourn } = await api.post('/tournaments', {
+            const { data: newTourn } = await api.post('/torneos', {
                 name: tournForm.name,
                 season: tournForm.season,
                 rulesType: tournForm.sport === 'Softbol' ? 'softball_7' : 'baseball_9',
@@ -322,7 +322,7 @@ export default function AdminDashboard() {
         if (!editingTourn) return;
         setSaving(true);
         try {
-            await api.patch(`/tournaments/${editingTourn.id}`, {
+            await api.patch(`/torneos/${editingTourn.id}`, {
                 name: tournForm.name,
                 season: tournForm.season,
                 rulesType: tournForm.sport === 'Softbol' ? 'softball_7' : 'baseball_9',

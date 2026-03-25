@@ -110,4 +110,23 @@ export class GamesController {
     removeUmpire(@Param('id') id: string, @Param('umpireId') umpireId: string) {
         return this.gamesService.removeUmpire(id, umpireId);
     }
+
+    // ─── Stream (Facebook Live) ──────────────────────────────────────────────────
+
+    @Get(':id/stream-info')
+    getStreamInfo(@Param('id') id: string) {
+        return this.gamesService.getStreamInfo(id);
+    }
+
+    @Post(':id/stream')
+    @UseGuards(JwtAuthGuard)
+    startStream(@Param('id') id: string, @Body() body: { facebookStreamUrl: string }) {
+        return this.gamesService.startStream(id, body.facebookStreamUrl);
+    }
+
+    @Delete(':id/stream')
+    @UseGuards(JwtAuthGuard)
+    endStream(@Param('id') id: string) {
+        return this.gamesService.endStream(id);
+    }
 }

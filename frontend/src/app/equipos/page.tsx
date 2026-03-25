@@ -38,7 +38,7 @@ export default function EquiposPage() {
                 setTeams(teamsRes.data || []);
 
                 // Fetch tournaments for the filter dropdown
-                const tournsRes = await api.get('/tournaments');
+                const tournsRes = await api.get('/torneos');
                 setTournaments(tournsRes.data || []);
 
                 setLoading(false);

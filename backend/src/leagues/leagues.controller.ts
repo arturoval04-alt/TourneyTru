@@ -35,7 +35,7 @@ export class LeaguesController {
         return this.leaguesService.remove(id);
     }
     
-    @Get(':id/tournaments')
+    @Get(':id/torneos')
     async getTournaments(@Param('id') id: string) {
         const league = await this.leaguesService.findOne(id);
         return league.tournaments;

@@ -10,6 +10,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
+import { Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @WebSocketGateway({
@@ -23,7 +24,27 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
+  private readonly logger = new Logger(LiveGateway.name);
+
   constructor(private prisma: PrismaService, private jwtService: JwtService) { }
+
+  private async withRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await fn();
+      } catch (e: any) {
+        const isConnErr = e?.message?.toLowerCase().includes('connect') ||
+          e?.code === 'P1001' || e?.code === 'P1017';
+        if (attempt < retries && isConnErr) {
+          this.logger.warn(`DB connection error, reintentando (${attempt + 1}/${retries})...`);
+          try { await this.prisma.$disconnect(); await this.prisma.$connect(); } catch { }
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw new Error('withRetry: unreachable');
+  }
 
 
   private getAuthToken(client: Socket, payloadToken?: string): string | null {
@@ -143,7 +164,7 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const rawResult = playInfo.result || '';
       const resultCode = rawResult.includes('|') ? rawResult.split('|')[0] : rawResult;
 
-      play = await this.prisma.play.create({
+      play = await this.withRetry(() => this.prisma.play.create({
         data: {
           gameId,
           inning: playInfo.inning,
@@ -157,16 +178,21 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
           batterId: validBatterId,
           pitcherId: validPitcherId,
         } as any
-      });
-      console.log(`[DB] Jugada guardada (Play ID: ${play?.id}, Batter: ${validBatterId}, Result: ${resultCode})`);
+      }));
+      this.logger.log(`Jugada guardada (Play ID: ${play?.id}, Result: ${resultCode})`);
     } catch (e) {
-      console.error("Error guardando play en DB:", e);
+      this.logger.error('Error guardando play en DB (sin reintentos disponibles):', e);
+      // Notificar al scorekeeper para que reintente vía HTTP
+      client.emit('play_db_error', {
+        playInfo,
+        message: 'No se pudo guardar la jugada en la base de datos. Reintentando vía HTTP...',
+      });
     }
 
     // Sync game state to DB so it persists across page refreshes
     if (fullState) {
       try {
-        await this.prisma.game.update({
+        await this.withRetry(() => this.prisma.game.update({
           where: { id: gameId },
           data: {
             homeScore: fullState.homeScore ?? 0,
@@ -175,9 +201,9 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
             half: fullState.half ?? 'top',
             status: 'in_progress',
           },
-        });
+        }));
       } catch (e) {
-        console.error("Error syncing game state to DB:", e);
+        this.logger.error('Error syncing game state to DB:', e);
       }
 
       // Actualizar el estado en memoria para futuros conectados

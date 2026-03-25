@@ -12,6 +12,7 @@ import { ScorebookTable } from '@/components/ScorebookTable';
 import api from '@/lib/api';
 import { Users, LayoutDashboard, Radio, ChevronLeft, Trophy } from 'lucide-react';
 import Navbar from '@/components/Navbar';
+import StreamAdminPanel from '@/components/live/StreamAdminPanel';
 
 // Mapa de código numérico a nombre de posición
 const POS_LABEL: Record<string, string> = {
@@ -319,17 +320,7 @@ export default function PublicGamecast() {
 
                     {/* TAB: STREAM */}
                     {activeTab === 'stream' && (
-                        <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-700/40 rounded-2xl p-6 lg:p-12 shadow-lg animate-fade-in-up min-h-[500px]">
-                            <div className="flex items-center gap-3 mb-6 border-b border-slate-700/30 pb-4">
-                                <Radio className="w-8 h-8 text-rose-500 animate-pulse" />
-                                <h2 className="text-2xl font-black text-white">Transmisión en Vivo (Livepeer)</h2>
-                            </div>
-                            <div className="max-w-3xl">
-                                <p className="text-slate-400 mb-8 text-lg">
-                                    Cuando el administrador inicie la transmisión, aparecerá aquí automáticamente.
-                                </p>
-                            </div>
-                        </div>
+                        <StreamAdminPanel gameId={params.id as string} forceView="fan" />
                     )}
                 </div>
             </div>

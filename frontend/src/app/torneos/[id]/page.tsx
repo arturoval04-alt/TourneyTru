@@ -36,7 +36,7 @@ export default function TournamentProfilePage() {
     useEffect(() => {
         const fetchTournament = async () => {
             try {
-                const { data } = await api.get(`/tournaments/${tournamentId}`);
+                const { data } = await api.get(`/torneos/${tournamentId}`);
                 setTournament(data);
                 setLoadingTournament(false);
             } catch (err) {
@@ -65,7 +65,7 @@ export default function TournamentProfilePage() {
         setSaving(true);
         try {
             const user = getUser();
-            await api.post(`/tournaments/${tournamentId}/news`, {
+            await api.post(`/torneos/${tournamentId}/news`, {
                 title: newsForm.title,
                 description: newsForm.description,
                 coverUrl: newsForm.coverUrl,
@@ -129,7 +129,7 @@ export default function TournamentProfilePage() {
     const handleRemoveOrganizer = async (organizerId: string) => {
         if (!window.confirm('¿Deseas eliminar a este organizador?')) return;
         try {
-            await api.delete(`/tournaments/${tournamentId}/organizers/${organizerId}`);
+            await api.delete(`/torneos/${tournamentId}/organizers/${organizerId}`);
             setTournament(prev => prev ? { ...prev, organizers: prev.organizers.filter(o => o.id !== organizerId) } : null);
         } catch (error) {
             console.error(error);
@@ -140,7 +140,7 @@ export default function TournamentProfilePage() {
     const handleRemoveField = async (fieldId: string) => {
         if (!window.confirm('¿Deseas eliminar este campo?')) return;
         try {
-            await api.delete(`/tournaments/${tournamentId}/fields/${fieldId}`);
+            await api.delete(`/torneos/${tournamentId}/fields/${fieldId}`);
             setTournament(prev => prev ? { ...prev, fields: prev.fields.filter(f => f.id !== fieldId) } : null);
         } catch (error) {
             console.error(error);
@@ -151,7 +151,7 @@ export default function TournamentProfilePage() {
     const handleUpdateProfile = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await api.patch(`/tournaments/${tournamentId}`, {
+            await api.patch(`/torneos/${tournamentId}`, {
                 name: profileForm.name,
                 season: profileForm.season,
                 description: profileForm.description,
@@ -250,7 +250,7 @@ export default function TournamentProfilePage() {
         const fetchStandings = async () => {
             if (activeTab === 'posiciones' && !standingsLoaded) {
                 try {
-                    const { data } = await api.get(`/tournaments/${tournamentId}/standings`);
+                    const { data } = await api.get(`/torneos/${tournamentId}/standings`);
                     setStandings(data || []);
                     setStandingsLoaded(true);
                 } catch (err) {
@@ -280,8 +280,8 @@ export default function TournamentProfilePage() {
             if (activeTab === 'estadisticas' && !statsLoaded) {
                 try {
                     const [battingRes, pitchingRes] = await Promise.all([
-                        api.get(`/tournaments/${tournamentId}/stats/batting`),
-                        api.get(`/tournaments/${tournamentId}/stats/pitching`),
+                        api.get(`/torneos/${tournamentId}/stats/batting`),
+                        api.get(`/torneos/${tournamentId}/stats/pitching`),
                     ]);
                     setBattingStats(battingRes.data || []);
                     setPitchingStats(pitchingRes.data || []);
@@ -618,7 +618,7 @@ export default function TournamentProfilePage() {
                                                         const email = window.prompt('Correo del nuevo organizador:');
                                                         if (email) {
                                                             try {
-                                                                await api.post(`/tournaments/${tournamentId}/organizers`, { email });
+                                                                await api.post(`/torneos/${tournamentId}/organizers`, { email });
                                                                 alert('Organizador añadido');
                                                                 window.location.reload();
                                                             } catch (err) {
@@ -1164,7 +1164,7 @@ export default function TournamentProfilePage() {
                                     className="px-6 py-2.5 rounded-xl font-black bg-primary text-white hover:bg-primary-light transition-colors shadow-lg shadow-primary/20 text-sm"
                                     onClick={async () => {
                                         try {
-                                            await api.post(`/tournaments/${tournamentId}/fields`, {
+                                            await api.post(`/torneos/${tournamentId}/fields`, {
                                                 name: fieldForm.name,
                                                 location: fieldForm.address || null,
                                                 mapsUrl: fieldForm.mapsUrl || null,

@@ -14,6 +14,8 @@ import api from '@/lib/api';
 import { calculateBoxscore } from '@/lib/boxscore';
 import { Users, LayoutDashboard, Radio, ChevronLeft, Trophy } from 'lucide-react';
 import Navbar from '@/components/Navbar';
+import { isLoggedIn } from '@/lib/auth';
+import StreamAdminPanel from '@/components/live/StreamAdminPanel';
 
 // Mapa de código numérico a nombre de posición
 const POS_LABEL: Record<string, string> = {
@@ -47,9 +49,12 @@ export default function ScorekeeperLivePanel() {
     const [selectedBatter1Id, setSelectedBatter1Id] = useState<string>('');
     const [selectedBatter2Id, setSelectedBatter2Id] = useState<string>('');
 
-    // Livepeer Streaming States
-    const [isCreatingStream, setIsCreatingStream] = useState(false);
-    const [streamInfo, setStreamInfo] = useState<{ streamKey: string, playbackId: string, id: string } | null>(null);
+    // Client-side auth guard (middleware handles server-side, this covers edge cases)
+    useEffect(() => {
+        if (!isLoggedIn()) {
+            router.replace(`/login?redirect=/game/${params.id}`);
+        }
+    }, [router, params.id]);
 
     // Live base tracking
     const {
@@ -211,15 +216,6 @@ export default function ScorekeeperLivePanel() {
         }
     }, [playLogs.length, params.id, fetchBoxscore]);
 
-    const handleCreateStream = async () => {
-        setIsCreatingStream(true);
-        try {
-            alert("Streaming functionality disabled in serverless mode for now.");
-        } finally {
-            setIsCreatingStream(false);
-        }
-    };
-
     return (
         <>
             <Navbar />
@@ -378,21 +374,7 @@ export default function ScorekeeperLivePanel() {
 
                     {/* TAB: STREAM */}
                     {activeTab === 'stream' && (
-                        <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-700/40 rounded-2xl p-6 lg:p-12 shadow-lg animate-fade-in-up min-h-[500px]">
-                            <div className="flex items-center gap-3 mb-6 border-b border-slate-700/30 pb-4">
-                                <Radio className="w-8 h-8 text-rose-500 animate-pulse" />
-                                <h2 className="text-2xl font-black text-white">Transmisión en Vivo (Livepeer)</h2>
-                            </div>
-                            <div className="max-w-3xl">
-                                <p className="text-slate-400 mb-8 text-lg">
-                                    Conecta tu OBS o cámara compatible para transmitir el partido en vivo. Tus espectadores podrán ver el video incrustado directamente en el Gamecast oficial sin salir de la página.
-                                </p>
-                                <div className="bg-slate-800/30 border border-slate-700/30 rounded-xl p-8 text-center">
-                                    <Radio className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-                                    <p className="text-slate-500 font-bold">Funcionalidad de Streaming temporalmente limitada en modo Serverless.</p>
-                                </div>
-                            </div>
-                        </div>
+                        <StreamAdminPanel gameId={params.id as string} forceView="admin" />
                     )}
                 </div>
             </div>

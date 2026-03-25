@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AssignUmpireDto, ChangeLineupDto, CreateGameDto, UpdateGameDto, SetGameLineupDto, CambioSustitucionDto, CambioPosicionDto, CambioReingresoDto } from './dto/game.dto';
+import { LiveGateway } from '../live/live.gateway';
 
 @Injectable()
 export class GamesService {
-    constructor(private prisma: PrismaService) { }
+    constructor(private prisma: PrismaService, private liveGateway: LiveGateway) { }
 
     private readonly defensivePositions = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'SF'];
 
@@ -951,5 +952,43 @@ export class GamesService {
         if (result.match(/^\d[-\d]+$/)) return 'out'; // e.g. "6-3", "4-6-3"
         if (result.match(/^E\d$/)) return 'info';   // errors
         return 'info';
+    }
+
+    // ─── Stream (Facebook Live) ──────────────────────────────────────────────────
+
+    async getStreamInfo(gameId: string) {
+        const game = await (this.prisma.game.findUnique as any)({
+            where: { id: gameId },
+            select: { id: true, facebookStreamUrl: true, streamStatus: true },
+        }) as { id: string; facebookStreamUrl: string | null; streamStatus: string | null } | null;
+        if (!game) throw new NotFoundException('Game not found');
+        return {
+            facebookStreamUrl: game.facebookStreamUrl ?? null,
+            streamStatus: game.streamStatus ?? 'offline',
+        };
+    }
+
+    async startStream(gameId: string, facebookStreamUrl: string) {
+        const game = await (this.prisma.game.update as any)({
+            where: { id: gameId },
+            data: { facebookStreamUrl, streamStatus: 'live' },
+        }) as { id: string; facebookStreamUrl: string | null; streamStatus: string | null };
+        this.liveGateway.server.to(`game:${gameId}`).emit('streamStatusUpdate', {
+            facebookStreamUrl: game.facebookStreamUrl,
+            streamStatus: 'live',
+        });
+        return { facebookStreamUrl: game.facebookStreamUrl, streamStatus: 'live' };
+    }
+
+    async endStream(gameId: string) {
+        const game = await (this.prisma.game.update as any)({
+            where: { id: gameId },
+            data: { streamStatus: 'ended' },
+        }) as { id: string; facebookStreamUrl: string | null; streamStatus: string | null };
+        this.liveGateway.server.to(`game:${gameId}`).emit('streamStatusUpdate', {
+            facebookStreamUrl: game.facebookStreamUrl,
+            streamStatus: 'ended',
+        });
+        return { facebookStreamUrl: game.facebookStreamUrl, streamStatus: 'ended' };
     }
 }
