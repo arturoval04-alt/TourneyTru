@@ -4,11 +4,13 @@ export default function PlayerInfo({
     type,
     name,
     stats,
+    todayStats,
     photoUrl,
 }: {
     type: 'Batting' | 'Pitching';
     name: string;
     stats: string;
+    todayStats?: string;
     photoUrl?: string;
 }) {
     const isBatting = type === 'Batting';
@@ -44,10 +46,10 @@ export default function PlayerInfo({
                 </div>
 
                 {/* Today's performance (Batting only) */}
-                {isBatting && stats !== 'Sin datos aún' && (
+                {isBatting && (todayStats || stats !== 'Sin datos aún') && (
                     <div className="mt-3 pt-2 border-t border-slate-800/60 w-full">
                         <span className="stat-label text-[10px]">HOY: </span>
-                        <span className="stat-value text-xs text-slate-300">{stats}</span>
+                        <span className="stat-value text-xs text-slate-300">{todayStats ?? stats}</span>
                     </div>
                 )}
             </div>

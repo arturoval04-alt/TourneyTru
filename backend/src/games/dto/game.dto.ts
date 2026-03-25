@@ -37,6 +37,10 @@ export class CreateGameDto {
     @IsOptional()
     @IsString()
     umpireBase3?: string;
+
+    @IsOptional()
+    @IsInt()
+    maxInnings?: number;
 }
 
 export class UpdateGameDto {
@@ -123,6 +127,52 @@ export class ChangeLineupDto {
     @IsOptional()
     @IsString()
     dhForPosition?: string;
+}
+
+// ─── Cambios v2 ───────────────────────────────────────────────────────────────
+
+export class CambioSustitucionDto {
+    @IsUUID()
+    teamId: string;
+
+    @IsUUID()
+    playerOutId: string;
+
+    @IsUUID()
+    playerInId: string;
+
+    @IsString()
+    position: string;
+
+    @IsOptional()
+    @IsString()
+    dhForPosition?: string;
+}
+
+export class PosicionSwapDto {
+    @IsString()
+    fromPosition: string;
+
+    @IsString()
+    toPosition: string;
+}
+
+export class CambioPosicionDto {
+    @IsUUID()
+    teamId: string;
+
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => PosicionSwapDto)
+    swaps: PosicionSwapDto[];
+}
+
+export class CambioReingresoDto {
+    @IsUUID()
+    teamId: string;
+
+    @IsUUID()
+    starterPlayerId: string;
 }
 
 export class AssignUmpireDto {

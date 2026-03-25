@@ -10,8 +10,11 @@ export class UmpiresService {
         return this.prisma.umpire.create({ data });
     }
 
-    async findAll() {
-        return this.prisma.umpire.findMany({ include: { league: true } });
+    async findAll(leagueId?: string) {
+        return this.prisma.umpire.findMany({
+            where: leagueId ? { leagueId } : {},
+            include: { league: true },
+        });
     }
 
     async findOne(id: string) {

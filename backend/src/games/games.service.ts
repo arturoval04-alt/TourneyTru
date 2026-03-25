@@ -1,12 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { AssignUmpireDto, ChangeLineupDto, CreateGameDto, UpdateGameDto, SetGameLineupDto } from './dto/game.dto';
+import { AssignUmpireDto, ChangeLineupDto, CreateGameDto, UpdateGameDto, SetGameLineupDto, CambioSustitucionDto, CambioPosicionDto, CambioReingresoDto } from './dto/game.dto';
 
 @Injectable()
 export class GamesService {
     constructor(private prisma: PrismaService) { }
 
-    private readonly defensivePositions = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF'];
+    private readonly defensivePositions = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'SF'];
 
     private normalizePosition(position?: string | null): string | null {
         if (!position) return null;
@@ -22,7 +22,9 @@ export class GamesService {
             '7': 'LF', 'LF': 'LF',
             '8': 'CF', 'CF': 'CF',
             '9': 'RF', 'RF': 'RF',
+            '10': 'SF', 'SF': 'SF',   // ShortFielder (pos 10)
             'BD': 'DH', 'DH': 'DH',
+            'BE': 'BE',               // Bateador Extra (solo batea)
         };
         return map[raw] || raw;
     }
@@ -36,6 +38,9 @@ export class GamesService {
     private validateLineup(lineups: Array<{ position: string; dhForPosition?: string | null }>) {
         const defensiveUsed = new Set<string>();
         for (const lineup of lineups) {
+            const normalized = this.normalizePosition(lineup.position);
+            // BE (Bateador Extra) has no defensive position — skip defensive check
+            if (normalized === 'BE') continue;
             const defensivePos = this.normalizeDefensivePosition(lineup.position);
             if (defensivePos) {
                 if (defensiveUsed.has(defensivePos)) {
@@ -248,6 +253,311 @@ export class GamesService {
         };
     }
 
+    // ─── Cambios v2 ─────────────────────────────────────────────────────────────
+
+    /**
+     * Devuelve quiénes pueden salir, entrar y reingresar para un equipo en un juego.
+     * Reglas WBSC:
+     *  - puedenSalir: jugadores isActive=true en el lineup
+     *  - puedenEntrar: roster del equipo que NO están en el lineup activo actual
+     *    y que no han sido removidos permanentemente (isActive=false y hasUsedReentry=true
+     *    → ya están fuera para siempre; isActive=false y hasUsedReentry=false → elegibles para reingreso, no para sustitución)
+     *  - puedenReingresar: starters (isStarter=true) con isActive=false y hasUsedReentry=false,
+     *    junto con el jugador que actualmente ocupa su batting order
+     */
+    async getCambiosEligibles(gameId: string, teamId: string) {
+        const game = await this.findOne(gameId);
+        if (teamId !== game.homeTeamId && teamId !== game.awayTeamId) {
+            throw new BadRequestException('El equipo no pertenece a este juego.');
+        }
+
+        const currentLineup = await this.prisma.lineup.findMany({
+            where: { gameId, teamId },
+            include: { player: true },
+            orderBy: { battingOrder: 'asc' },
+        });
+
+        const roster = await this.prisma.player.findMany({
+            where: { teamId },
+            orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+        });
+
+        const activeLineup = currentLineup.filter(l => (l as any).isActive);
+        const inactiveLineup = currentLineup.filter(l => !(l as any).isActive);
+        const allLineupPlayerIds = new Set(currentLineup.map(l => l.playerId));
+
+        // Jugadores que pueden salir: todos los activos actualmente
+        const puedenSalir = activeLineup.map(l => ({
+            lineupId: l.id,
+            playerId: l.playerId,
+            battingOrder: l.battingOrder,
+            position: l.position,
+            dhForPosition: l.dhForPosition,
+            isStarter: l.isStarter,
+            firstName: l.player.firstName,
+            lastName: l.player.lastName,
+            number: (l.player as any).number ?? null,
+        }));
+
+        // Jugadores que pueden entrar (sustitución): jugadores del roster que
+        // nunca han aparecido en el lineup de este juego (ni activos ni inactivos)
+        const puedenEntrar = roster
+            .filter(p => !allLineupPlayerIds.has(p.id))
+            .map(p => ({
+                playerId: p.id,
+                firstName: p.firstName,
+                lastName: p.lastName,
+                number: (p as any).number ?? null,
+            }));
+
+        // Jugadores que pueden reingresar: starters inactivos que no han usado reingreso
+        const puedenReingresar = inactiveLineup
+            .filter(l => l.isStarter && !(l as any).hasUsedReentry)
+            .map(l => {
+                // quién ocupa su batting order actualmente
+                const sustituto = activeLineup.find(a => a.battingOrder === l.battingOrder);
+                return {
+                    lineupId: l.id,
+                    playerId: l.playerId,
+                    battingOrder: l.battingOrder,
+                    position: l.position,
+                    dhForPosition: l.dhForPosition,
+                    firstName: l.player.firstName,
+                    lastName: l.player.lastName,
+                    number: (l.player as any).number ?? null,
+                    sustitutoActual: sustituto ? {
+                        lineupId: sustituto.id,
+                        playerId: sustituto.playerId,
+                        firstName: sustituto.player.firstName,
+                        lastName: sustituto.player.lastName,
+                        number: (sustituto.player as any).number ?? null,
+                    } : null,
+                };
+            });
+
+        return { puedenSalir, puedenEntrar, puedenReingresar };
+    }
+
+    /**
+     * Sustitución (bateo y fildeo): sale un jugador activo, entra uno del roster no usado.
+     */
+    async cambioSustitucion(gameId: string, dto: CambioSustitucionDto) {
+        const game = await this.findOne(gameId);
+        if (dto.teamId !== game.homeTeamId && dto.teamId !== game.awayTeamId) {
+            throw new BadRequestException('El equipo no pertenece a este juego.');
+        }
+
+        const currentLineup = await this.prisma.lineup.findMany({
+            where: { gameId, teamId: dto.teamId },
+            orderBy: { battingOrder: 'asc' },
+        });
+
+        const playerOut = currentLineup.find(l => l.playerId === dto.playerOutId && (l as any).isActive);
+        if (!playerOut) {
+            throw new BadRequestException('El jugador que sale no está activo en el lineup.');
+        }
+
+        // Jugador entrante: no debe estar ya en el lineup (ni activo ni inactivo)
+        const alreadyInLineup = currentLineup.find(l => l.playerId === dto.playerInId);
+        if (alreadyInLineup) {
+            throw new BadRequestException('El jugador entrante ya ha participado en el juego.');
+        }
+
+        const playerInRecord = await this.prisma.player.findUnique({
+            where: { id: dto.playerInId },
+            select: { id: true, teamId: true },
+        });
+        if (!playerInRecord || playerInRecord.teamId !== dto.teamId) {
+            throw new BadRequestException('El jugador no pertenece al equipo.');
+        }
+
+        const normalizedPosition = this.normalizePosition(dto.position);
+        const dhAnchor = normalizedPosition === 'DH' ? this.normalizeDefensivePosition(dto.dhForPosition) : null;
+
+        // Proponer nuevo lineup: marcar saliente como inactivo, insertar entrante
+        const proposedLineup = currentLineup
+            .filter(l => (l as any).isActive && l.id !== playerOut.id)
+            .map(l => ({ position: l.position, dhForPosition: l.dhForPosition }));
+        proposedLineup.push({ position: dto.position, dhForPosition: dhAnchor });
+        this.validateLineup(proposedLineup);
+
+        // Marcar al saliente como inactivo en el lineup
+        await (this.prisma.lineup as any).update({
+            where: { id: playerOut.id },
+            data: { isActive: false },
+        });
+
+        // Insertar nuevo jugador en el mismo batting order
+        await (this.prisma.lineup as any).create({
+            data: {
+                gameId,
+                teamId: dto.teamId,
+                playerId: dto.playerInId,
+                battingOrder: playerOut.battingOrder,
+                position: dto.position,
+                dhForPosition: dhAnchor,
+                isStarter: false,
+                isActive: true,
+                hasUsedReentry: false,
+            },
+        });
+
+        await (this.prisma.lineupChange as any).create({
+            data: {
+                gameId,
+                teamId: dto.teamId,
+                changeType: 'SUBSTITUTION',
+                battingOrder: playerOut.battingOrder,
+                playerOutId: dto.playerOutId,
+                playerInId: dto.playerInId,
+                position: dto.position,
+                dhForPosition: dhAnchor,
+            },
+        });
+
+        return { status: 'success', message: 'Sustitución registrada.' };
+    }
+
+    /**
+     * Cambio de posición (solo defensivo): intercambio entre jugadores ya en el lineup activo.
+     * Recibe un array de swaps [{fromPosition, toPosition}] que puede ser circular.
+     */
+    async cambioPosicion(gameId: string, dto: CambioPosicionDto) {
+        const game = await this.findOne(gameId);
+        if (dto.teamId !== game.homeTeamId && dto.teamId !== game.awayTeamId) {
+            throw new BadRequestException('El equipo no pertenece a este juego.');
+        }
+
+        const currentLineup = await (this.prisma.lineup as any).findMany({
+            where: { gameId, teamId: dto.teamId, isActive: true },
+        }) as any[];
+
+        // Validar que todas las posiciones origen existen en el lineup activo
+        for (const swap of dto.swaps) {
+            const fromNorm = this.normalizePosition(swap.fromPosition) ?? swap.fromPosition;
+            const toNorm = this.normalizePosition(swap.toPosition) ?? swap.toPosition;
+            const entry = currentLineup.find((l: any) => this.normalizePosition(l.position) === fromNorm);
+            if (!entry) {
+                throw new BadRequestException(`La posición ${swap.fromPosition} no está en el lineup activo.`);
+            }
+            if (!this.defensivePositions.includes(toNorm)) {
+                throw new BadRequestException(`La posición destino ${swap.toPosition} no es una posición defensiva válida.`);
+            }
+        }
+
+        // Construir mapa de nuevas posiciones: para cada fromPosition, asignar toPosition
+        const positionMap = new Map<string, string>(); // fromNorm -> toNorm
+        for (const swap of dto.swaps) {
+            positionMap.set(
+                this.normalizePosition(swap.fromPosition) ?? swap.fromPosition,
+                this.normalizePosition(swap.toPosition) ?? swap.toPosition,
+            );
+        }
+
+        // Actualizar cada entrada del lineup afectada
+        const updates: Promise<any>[] = [];
+        const changes: Array<{ playerId: string; battingOrder: number; oldPos: string; newPos: string }> = [];
+
+        for (const entry of currentLineup) {
+            const normPos = this.normalizePosition(entry.position) ?? entry.position;
+            if (positionMap.has(normPos)) {
+                const newPos = positionMap.get(normPos)!;
+                updates.push(
+                    this.prisma.lineup.update({
+                        where: { id: entry.id },
+                        data: { position: newPos },
+                    }),
+                );
+                changes.push({ playerId: entry.playerId as string, battingOrder: entry.battingOrder as number, oldPos: normPos, newPos });
+            }
+        }
+
+        if (updates.length === 0) {
+            throw new BadRequestException('Ninguna posición del swap coincidió con el lineup activo.');
+        }
+
+        await Promise.all(updates);
+
+        // Registrar un LineupChange por cada movimiento (playerOut = mismo jugador = posición cambiada)
+        for (const change of changes) {
+            await (this.prisma.lineupChange as any).create({
+                data: {
+                    gameId,
+                    teamId: dto.teamId,
+                    changeType: 'POSITION_ONLY',
+                    battingOrder: change.battingOrder,
+                    playerOutId: change.playerId,
+                    playerInId: change.playerId,
+                    position: change.newPos,
+                    dhForPosition: null,
+                },
+            });
+        }
+
+        return { status: 'success', message: 'Posiciones actualizadas.', changes };
+    }
+
+    /**
+     * Reingreso: un titular (isStarter=true, isActive=false, hasUsedReentry=false) regresa.
+     * El sustituto que lo había reemplazado sale permanentemente.
+     * El titular recupera su batting order y posición original.
+     */
+    async cambioReingreso(gameId: string, dto: CambioReingresoDto) {
+        const game = await this.findOne(gameId);
+        if (dto.teamId !== game.homeTeamId && dto.teamId !== game.awayTeamId) {
+            throw new BadRequestException('El equipo no pertenece a este juego.');
+        }
+
+        const currentLineup = await this.prisma.lineup.findMany({
+            where: { gameId, teamId: dto.teamId },
+            include: { player: true },
+            orderBy: { battingOrder: 'asc' },
+        });
+
+        // Buscar al titular en el lineup histórico
+        const starterEntry = currentLineup.find(
+            (l: any) => l.playerId === dto.starterPlayerId && l.isStarter && !l.isActive && !l.hasUsedReentry,
+        ) as any;
+        if (!starterEntry) {
+            throw new BadRequestException('El jugador no puede reingresar (no es titular, ya reingresó, o está activo).');
+        }
+
+        // El sustituto actual es quien ocupa el mismo batting order y está activo
+        const sustituto = currentLineup.find(
+            (l: any) => l.battingOrder === starterEntry.battingOrder && l.isActive,
+        ) as any;
+        if (!sustituto) {
+            throw new BadRequestException('No se encontró el sustituto activo en ese batting order.');
+        }
+
+        // Marcar sustituto como inactivo permanentemente (ya no puede reingresar, no es starter)
+        await (this.prisma.lineup as any).update({
+            where: { id: sustituto.id },
+            data: { isActive: false },
+        });
+
+        // Reactivar al titular y marcar que ya usó su reingreso
+        await (this.prisma.lineup as any).update({
+            where: { id: starterEntry.id },
+            data: { isActive: true, hasUsedReentry: true },
+        });
+
+        await (this.prisma.lineupChange as any).create({
+            data: {
+                gameId,
+                teamId: dto.teamId,
+                changeType: 'REENTRY',
+                battingOrder: starterEntry.battingOrder,
+                playerOutId: sustituto.playerId,
+                playerInId: dto.starterPlayerId,
+                position: starterEntry.position,
+                dhForPosition: starterEntry.dhForPosition,
+            },
+        });
+
+        return { status: 'success', message: 'Reingreso registrado.' };
+    }
+
     async getGameBoxscore(id: string) {
         const game = await this.prisma.game.findUnique({
             where: { id },
@@ -292,6 +602,9 @@ export class GamesService {
                     rbi: 0,
                     bb: 0,
                     so: 0,
+                    pitchingIPOuts: 0,
+                    pitchingSO: 0,
+                    pitchingBB: 0,
                     plays: {}
                 }))
             };
@@ -307,8 +620,14 @@ export class GamesService {
             const battingBox = isTop ? awayBox : homeBox;
 
             // Find batter in lineup (robust comparison)
-            const batter = battingBox.lineup.find((b: any) => 
+            const batter = battingBox.lineup.find((b: any) =>
                 b.playerId?.toString().trim() === play.batterId?.toString().trim()
+            );
+
+            // Find pitcher in defensive lineup
+            const defensiveBox = isTop ? homeBox : awayBox;
+            const pitcher = defensiveBox.lineup.find((p: any) =>
+                p.playerId?.toString().trim() === play.pitcherId?.toString().trim()
             );
 
             // WP_RUN / RUN_SCORED / SB / CS / ADV: updates to a runner's existing play entry.
@@ -318,10 +637,17 @@ export class GamesService {
             const isStolenBase = resultUpper.startsWith('SB');
             const isCaughtStealing = resultUpper.startsWith('CS');
             const isAdvance = resultUpper.startsWith('ADV');
+            const isRunnerOut = resultUpper.startsWith('RUNNER_OUT');
             
-            if (isRunScore || isStolenBase || isCaughtStealing || isAdvance) {
+            if (isRunScore || isStolenBase || isCaughtStealing || isAdvance || isRunnerOut) {
+                // WP_RUN / SB→home / ADV→home: carreras reales no contadas en ninguna otra jugada
+                // RUN_SCORED: ya está contado en el hit/BB primario — NO sumar de nuevo
+                if (!resultUpper.startsWith('RUN_SCORED') && play.runsScored > 0) {
+                    battingBox.runsByInning[play.inning] = (battingBox.runsByInning[play.inning] || 0) + play.runsScored;
+                    battingBox.totalRuns += play.runsScored;
+                }
                 if (batter) {
-                    if (isRunScore) {
+                    if (isRunScore || (isStolenBase && play.runsScored > 0)) {
                         batter.runs += 1;
                     }
                     // Find the runner's most recent play in this (or any) inning and update it
@@ -331,7 +657,7 @@ export class GamesService {
                         if (existingPlays && existingPlays.length > 0) {
                             const lastPlay = existingPlays[existingPlays.length - 1];
                             
-                            // Merge the new result (e.g. "BB|SB")
+                            // Merge the new result (e.g. "BB|SB" or "H1|RUNNER_OUT")
                             if (!lastPlay.result.includes(play.result)) {
                                 lastPlay.result = `${lastPlay.result}|${play.result}`;
                             }
@@ -339,6 +665,11 @@ export class GamesService {
                             if (isRunScore) {
                                 lastPlay.runsScored = 1; // Mark THIS individual play as a score
                                 lastPlay.scored = true;  // Explicit flag for the frontend
+                            }
+                            if (isRunnerOut) {
+                                // Important: keep the original outsRecorded if it's already set, 
+                                // but ensure it counts for the stats if we want it to.
+                                // In the boxscore table, we mainly care about the result string for the diamond.
                             }
                             updated = true;
                         }
@@ -373,11 +704,17 @@ export class GamesService {
                         if (oldIsAtBat) batter.atBats = Math.max(0, batter.atBats - 1);
                         if (lastPlay.result.toUpperCase() === 'BB') batter.bb = Math.max(0, batter.bb - 1);
                         if (lastPlay.result.toUpperCase().startsWith('K')) batter.so = Math.max(0, batter.so - 1);
-                        if (['H1', 'H2', 'H3', 'HR', '1B', '2B', '3B'].includes(lastPlay.result.toUpperCase())) {
+                        if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(lastPlay.result.toUpperCase())) {
                             batter.hits = Math.max(0, batter.hits - 1);
                             battingBox.totalHits = Math.max(0, battingBox.totalHits - 1);
                         }
                         batter.rbi = Math.max(0, batter.rbi - lastPlay.rbi);
+                        // REVERSE pitcher stats for old play
+                        if (pitcher) {
+                            pitcher.pitchingIPOuts = Math.max(0, (pitcher.pitchingIPOuts || 0) - (lastPlay.outsRecorded || 0));
+                            if (lastPlay.result.toUpperCase().startsWith('K')) pitcher.pitchingSO = Math.max(0, (pitcher.pitchingSO || 0) - 1);
+                            if (lastPlay.result.toUpperCase() === 'BB') pitcher.pitchingBB = Math.max(0, (pitcher.pitchingBB || 0) - 1);
+                        }
 
                         // REPLACE the record
                         lastPlay.result = play.result;
@@ -391,14 +728,27 @@ export class GamesService {
                         const isError = play.result.toUpperCase().match(/^E\d$/);
                         const isAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'FC', 'SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED'].includes(play.result.toUpperCase()) && !isError;
                         if (isAtBat) batter.atBats += 1;
-                        if (['H1', 'H2', 'H3', 'HR', '1B', '2B', '3B'].includes(play.result.toUpperCase())) {
+                        if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(play.result.toUpperCase())) {
                             batter.hits += 1;
                             battingBox.totalHits += 1;
                         }
                         if (play.result.toUpperCase() === 'BB') batter.bb += 1;
                         if (play.result.toUpperCase().startsWith('K')) batter.so += 1;
                         batter.rbi += play.rbi;
-                        if (play.runsScored > 0) batter.runs += play.runsScored;
+                        // H1/H2/H3: batter stays on base — runners' runs come from RUN_SCORED plays
+                        // HR/H4: batter scores exactly 1 run
+                        // BB: forced runner's run comes from RUN_SCORED — batter doesn't score
+                        // ADV / other: batter_id IS the runner, so runsScored is theirs
+                        { const ru = play.result.toUpperCase();
+                          if (['HR', 'H4'].includes(ru)) { batter.runs += 1; }
+                          else if (!['H1', 'H2', 'H3', '1B', '2B', '3B', 'BB'].includes(ru) && play.runsScored > 0) { batter.runs += play.runsScored; } }
+
+                        // FORWARD pitcher stats for new play
+                        if (pitcher) {
+                            pitcher.pitchingIPOuts = (pitcher.pitchingIPOuts || 0) + (play.outsRecorded || 0);
+                            if (play.result.toUpperCase().startsWith('K')) pitcher.pitchingSO = (pitcher.pitchingSO || 0) + 1;
+                            if (play.result.toUpperCase() === 'BB') pitcher.pitchingBB = (pitcher.pitchingBB || 0) + 1;
+                        }
 
                         // Don't add a new play entry
                         continue;
@@ -410,7 +760,7 @@ export class GamesService {
                 const isAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'FC', 'SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED'].includes(play.result.toUpperCase()) && !isError;
                 if (isAtBat) batter.atBats += 1;
 
-                if (['H1', 'H2', 'H3', 'HR', '1B', '2B', '3B'].includes(play.result.toUpperCase())) {
+                if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(play.result.toUpperCase())) {
                     batter.hits += 1;
                     battingBox.totalHits += 1;
                 }
@@ -418,8 +768,19 @@ export class GamesService {
                 if (play.result.toUpperCase().startsWith('K')) batter.so += 1;
                 batter.rbi += play.rbi;
 
-                if (play.runsScored > 0) {
-                    batter.runs += play.runsScored;
+                // H1/H2/H3: batter stays on base — runners' runs come from RUN_SCORED plays
+                // HR/H4: batter scores exactly 1 run
+                // BB: forced runner's run comes from RUN_SCORED — batter doesn't score
+                // ADV / other: batter_id IS the runner, so runsScored is theirs
+                { const ru = play.result.toUpperCase();
+                  if (['HR', 'H4'].includes(ru)) { batter.runs += 1; }
+                  else if (!['H1', 'H2', 'H3', '1B', '2B', '3B', 'BB'].includes(ru) && play.runsScored > 0) { batter.runs += play.runsScored; } }
+
+                // Update pitcher stats
+                if (pitcher) {
+                    pitcher.pitchingIPOuts = (pitcher.pitchingIPOuts || 0) + (play.outsRecorded || 0);
+                    if (play.result.toUpperCase().startsWith('K')) pitcher.pitchingSO = (pitcher.pitchingSO || 0) + 1;
+                    if (play.result.toUpperCase() === 'BB') pitcher.pitchingBB = (pitcher.pitchingBB || 0) + 1;
                 }
 
                 // Add to play grid
@@ -528,6 +889,7 @@ export class GamesService {
         return {
             gameId: game.id,
             status: game.status,
+            maxInnings: (game as any).maxInnings ?? 7,
             home_team_id: game.homeTeamId,
             away_team_id: game.awayTeamId,
             home_team_name: game.homeTeam?.name || 'HOME',

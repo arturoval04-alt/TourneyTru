@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import Image from "next/image";
-
+import PlayerHoverCard from "@/components/PlayerHoverCard";
 import api from "@/lib/api";
 
 interface TournamentListItem {
@@ -37,7 +37,6 @@ export default function JugadoresPage() {
     const [players, setPlayers] = useState<PlayerItem[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
     const [activeTab, setActiveTab] = useState<"roster" | "stats">("roster");
-    const [selectedPlayer, setSelectedPlayer] = useState<PlayerItem | null>(null);
     const [loadingT, setLoadingT] = useState(true);
     const [loadingPlayers, setLoadingPlayers] = useState(false);
 
@@ -85,7 +84,6 @@ export default function JugadoresPage() {
     const handleBack = () => {
         setSelectedTournament(null);
         setPlayers([]);
-        setSelectedPlayer(null);
     };
 
     const filteredTournaments = tournaments.filter(t =>
@@ -191,23 +189,34 @@ export default function JugadoresPage() {
                                         <p className="text-muted-foreground">No hay jugadores registrados.</p>
                                     </div>
                                 ) : players.map((p) => (
-                                    <div key={p.id} onClick={() => setSelectedPlayer(p)} className="bg-surface border border-muted/30 rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 group cursor-pointer flex flex-col items-center p-4 sm:p-6 hover:-translate-y-1">
-                                        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-muted/10 rounded-full mb-3 sm:mb-4 flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-primary/50 transition-colors shrink-0">
-                                            {p.photoUrl ? (
-                                                <img src={p.photoUrl} alt="Player" className="w-full h-full object-cover" />
-                                            ) : (
-                                                <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={80} height={80} className="opacity-80 group-hover:opacity-100 transition-opacity" />
-                                            )}
+                                    <PlayerHoverCard
+                                        key={p.id}
+                                        playerId={p.id}
+                                        firstName={p.firstName}
+                                        lastName={p.lastName}
+                                        photoUrl={p.photoUrl}
+                                        position={p.position}
+                                        number={p.number}
+                                        teamName={p.team?.name}
+                                    >
+                                        <div className="bg-surface border border-muted/30 rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 group flex flex-col items-center p-4 sm:p-6 hover:-translate-y-1">
+                                            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-muted/10 rounded-full mb-3 sm:mb-4 flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-primary/50 transition-colors shrink-0">
+                                                {p.photoUrl ? (
+                                                    <img src={p.photoUrl} alt="Player" className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={80} height={80} className="opacity-80 group-hover:opacity-100 transition-opacity" />
+                                                )}
+                                            </div>
+                                            <h3 className="font-bold text-center group-hover:text-primary transition-colors text-sm sm:text-base leading-tight">{p.firstName} {p.lastName}</h3>
+                                            <p className="text-[10px] sm:text-xs text-muted-foreground font-medium uppercase mt-1 text-center leading-tight line-clamp-1 break-all sm:break-normal">{p.team?.name || 'Sin equipo'}</p>
+                                            <div className="mt-3 sm:mt-4 flex gap-2">
+                                                {p.number && <span className="text-[10px] sm:text-xs text-muted-foreground font-black">#{p.number}</span>}
+                                                <span className="px-2 py-0.5 bg-primary/10 text-primary text-[10px] sm:text-xs font-bold rounded-full">
+                                                    {p.position || 'INF'}
+                                                </span>
+                                            </div>
                                         </div>
-                                        <h3 className="font-bold text-center group-hover:text-primary transition-colors text-sm sm:text-base leading-tight">{p.firstName} {p.lastName}</h3>
-                                        <p className="text-[10px] sm:text-xs text-muted-foreground font-medium uppercase mt-1 text-center leading-tight line-clamp-1 break-all sm:break-normal">{p.team?.name || 'Sin equipo'}</p>
-                                        <div className="mt-3 sm:mt-4 flex gap-2">
-                                            {p.number && <span className="text-[10px] sm:text-xs text-muted-foreground font-black">#{p.number}</span>}
-                                            <span className="px-2 py-0.5 bg-primary/10 text-primary text-[10px] sm:text-xs font-bold rounded-full">
-                                                {p.position || 'INF'}
-                                            </span>
-                                        </div>
-                                    </div>
+                                    </PlayerHoverCard>
                                 ))}
                             </div>
                         ) : (
@@ -225,17 +234,29 @@ export default function JugadoresPage() {
                                         </thead>
                                         <tbody className="divide-y divide-muted/10">
                                             {players.map((p, index) => (
-                                                <tr key={p.id} className="hover:bg-muted/5 transition-colors group cursor-pointer" onClick={() => setSelectedPlayer(p)}>
-                                                    <td className="px-6 py-4 font-medium flex items-center gap-3">
-                                                        <span className="text-muted-foreground text-sm font-mono w-4">{index + 1}.</span>
-                                                        <div className="w-8 h-8 rounded-full bg-muted/10 overflow-hidden">
-                                                            {p.photoUrl ? (
-                                                                <img src={p.photoUrl} alt="Player" className="w-full h-full object-cover" />
-                                                            ) : (
-                                                                <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={32} height={32} />
-                                                            )}
-                                                        </div>
-                                                        <span className="group-hover:text-primary transition-colors">{p.firstName} {p.lastName}</span>
+                                                <tr key={p.id} className="hover:bg-muted/5 transition-colors group">
+                                                    <td className="px-6 py-4 font-medium">
+                                                        <PlayerHoverCard
+                                                            playerId={p.id}
+                                                            firstName={p.firstName}
+                                                            lastName={p.lastName}
+                                                            photoUrl={p.photoUrl}
+                                                            position={p.position}
+                                                            number={p.number}
+                                                            teamName={p.team?.name}
+                                                        >
+                                                            <div className="flex items-center gap-3">
+                                                                <span className="text-muted-foreground text-sm font-mono w-4">{index + 1}.</span>
+                                                                <div className="w-8 h-8 rounded-full bg-muted/10 overflow-hidden">
+                                                                    {p.photoUrl ? (
+                                                                        <img src={p.photoUrl} alt="Player" className="w-full h-full object-cover" />
+                                                                    ) : (
+                                                                        <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={32} height={32} />
+                                                                    )}
+                                                                </div>
+                                                                <span className="group-hover:text-primary transition-colors cursor-pointer">{p.firstName} {p.lastName}</span>
+                                                            </div>
+                                                        </PlayerHoverCard>
                                                     </td>
                                                     <td className="px-6 py-4 text-center text-muted-foreground text-sm">{p.team?.name || '-'}</td>
                                                     <td className="px-6 py-4 text-center font-bold text-muted-foreground">{p.position || '-'}</td>
@@ -249,47 +270,6 @@ export default function JugadoresPage() {
                             </div>
                         )}
 
-                        {/* Player Preview Modal Overlay */}
-                        {selectedPlayer !== null && (
-                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in-up">
-                                <div className="bg-surface border border-muted/30 rounded-[2rem] p-6 sm:p-8 max-w-2xl w-full shadow-2xl relative overflow-hidden">
-                                    <button onClick={() => setSelectedPlayer(null)} className="absolute top-4 right-4 sm:top-6 sm:right-6 w-8 h-8 flex items-center justify-center bg-muted/10 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/20 transition-colors z-10 cursor-pointer">
-                                        ✕
-                                    </button>
-                                    <div className="flex flex-col md:flex-row gap-6 sm:gap-8 items-center md:items-start text-center md:text-left mb-8 relative z-10 pt-4">
-                                        <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-muted/10 overflow-hidden border-4 border-surface shadow-xl ring-2 ring-primary/30 shrink-0">
-                                            {selectedPlayer.photoUrl ? (
-                                                <img src={selectedPlayer.photoUrl} alt="Player" className="w-full h-full object-cover" />
-                                            ) : (
-                                                <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedPlayer.firstName}${selectedPlayer.lastName}`} alt="Player" width={128} height={128} className="w-full h-full object-cover" />
-                                            )}
-                                        </div>
-                                        <div className="flex-1 mt-2 md:mt-0">
-                                            <div className="text-[10px] sm:text-xs font-black text-primary bg-primary/10 px-3 py-1 rounded-full uppercase tracking-wider inline-block mb-2 sm:mb-3">
-                                                {selectedPlayer.position || 'INF'}
-                                            </div>
-                                            <h2 className="text-2xl sm:text-3xl font-black text-foreground mb-1 leading-none tracking-tight break-words">{selectedPlayer.firstName} {selectedPlayer.lastName}</h2>
-                                            <p className="text-sm sm:text-base text-muted-foreground font-medium mb-6">{selectedPlayer.team?.name || 'Sin equipo'}</p>
-
-                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                                <div className="bg-background/50 border border-muted/20 rounded-xl p-3 text-center">
-                                                    <p className="text-[10px] text-muted-foreground font-bold uppercase mb-0.5 tracking-wider">Número</p>
-                                                    <p className="font-bold text-foreground text-sm">#{selectedPlayer.number || '-'}</p>
-                                                </div>
-                                                <div className="bg-background/50 border border-muted/20 rounded-xl p-3 text-center">
-                                                    <p className="text-[10px] text-muted-foreground font-bold uppercase mb-0.5 tracking-wider">Batea</p>
-                                                    <p className="font-bold text-foreground text-sm">{selectedPlayer.bats === 'L' ? 'Zurdo' : selectedPlayer.bats === 'S' ? 'Ambos' : 'Derecho'}</p>
-                                                </div>
-                                                <div className="bg-background/50 border border-muted/20 rounded-xl p-3 text-center">
-                                                    <p className="text-[10px] text-muted-foreground font-bold uppercase mb-0.5 tracking-wider">Tira</p>
-                                                    <p className="font-bold text-foreground text-sm">{selectedPlayer.throws === 'L' ? 'Zurdo' : 'Derecho'}</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
                     </div>
                 )}
             </main>

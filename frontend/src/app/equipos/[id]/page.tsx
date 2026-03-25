@@ -10,6 +10,7 @@ import { useParams, useRouter } from "next/navigation";
 import {
     Settings, Share2, ArrowLeft, Users, Trophy, Flag, MapPin, ExternalLink, Clock, Star, Activity, X, CheckCircle
 } from "lucide-react";
+import PlayerHoverCard from "@/components/PlayerHoverCard";
 
 interface BattingStats {
     games: number; atBats: number; runs: number; hits: number; h2: number; h3: number; hr: number; rbi: number; bb: number; so: number; hbp: number; sac: number;
@@ -277,7 +278,7 @@ export default function TeamProfilePage() {
 
                         {/* Share button next to logo on mobile */}
                         <div className="absolute top-20 right-4 md:hidden flex gap-2 z-30">
-                            {(userRole === 'admin' || userRole === 'scorekeeper') && (
+                            {userRole === 'admin' && (
                                 <button onClick={() => setIsEditingProfile(true)} className="w-9 h-9 rounded-full border border-white/20 bg-white/10 flex items-center justify-center transition-colors shrink-0 text-white/70" title="Configuración">
                                     <Settings className="w-4 h-4" />
                                 </button>
@@ -304,7 +305,7 @@ export default function TeamProfilePage() {
 
                                 {/* Desktop-only share buttons */}
                                 <div className="hidden md:flex justify-end gap-3 shrink-0">
-                                    {(userRole === 'admin' || userRole === 'scorekeeper') && (
+                                    {userRole === 'admin' && (
                                         <button onClick={() => setIsEditingProfile(true)} className="w-10 h-10 rounded-full border border-white/20 bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors shrink-0 text-white/70 hover:text-white" title="Configuración">
                                             <Settings className="w-5 h-5" />
                                         </button>
@@ -651,22 +652,33 @@ export default function TeamProfilePage() {
                                     <p className="text-muted-foreground">No hay jugadores registrados.</p>
                                 </div>
                             ) : team.players.map((p) => (
-                                <div key={p.id} onClick={() => setSelectedPlayer(p)} className="bg-surface border border-muted/30 rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 group cursor-pointer flex flex-col items-center p-6 hover:-translate-y-1">
-                                    <div className="w-20 h-20 bg-muted/5 rounded-full mb-4 flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-primary/50 transition-colors shadow-inner">
-                                        {p.photoUrl ? (
-                                            <img src={p.photoUrl} alt={`${p.firstName} ${p.lastName}`} className="w-full h-full object-cover group-hover:scale-110 duration-300" />
-                                        ) : (
-                                            <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={96} height={96} className="opacity-90 group-hover:opacity-100 transition-opacity group-hover:scale-110 duration-300" />
-                                        )}
+                                <PlayerHoverCard
+                                    key={p.id}
+                                    playerId={p.id}
+                                    firstName={p.firstName}
+                                    lastName={p.lastName}
+                                    photoUrl={p.photoUrl}
+                                    position={p.position}
+                                    number={p.number}
+                                    teamName={team.name}
+                                >
+                                    <div onClick={() => setSelectedPlayer(p)} className="bg-surface border border-muted/30 rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 group cursor-pointer flex flex-col items-center p-6 hover:-translate-y-1">
+                                        <div className="w-20 h-20 bg-muted/5 rounded-full mb-4 flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-primary/50 transition-colors shadow-inner">
+                                            {p.photoUrl ? (
+                                                <img src={p.photoUrl} alt={`${p.firstName} ${p.lastName}`} className="w-full h-full object-cover group-hover:scale-110 duration-300" />
+                                            ) : (
+                                                <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={96} height={96} className="opacity-90 group-hover:opacity-100 transition-opacity group-hover:scale-110 duration-300" />
+                                            )}
+                                        </div>
+                                        <h3 className="font-bold text-center group-hover:text-primary transition-colors text-sm">{p.firstName} {p.lastName}</h3>
+                                        <div className="flex gap-2 items-center mt-2">
+                                            {p.number && <span className="text-sm text-muted-foreground font-black text-center w-6">#{p.number}</span>}
+                                            <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs font-bold rounded">
+                                                {p.position || 'INF'}
+                                            </span>
+                                        </div>
                                     </div>
-                                    <h3 className="font-bold text-center group-hover:text-primary transition-colors text-sm">{p.firstName} {p.lastName}</h3>
-                                    <div className="flex gap-2 items-center mt-2">
-                                        {p.number && <span className="text-sm text-muted-foreground font-black text-center w-6">#{p.number}</span>}
-                                        <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs font-bold rounded">
-                                            {p.position || 'INF'}
-                                        </span>
-                                    </div>
-                                </div>
+                                </PlayerHoverCard>
                             ))}
                         </div>
                     )}
@@ -894,9 +906,16 @@ export default function TeamProfilePage() {
                                         {selectedPlayer.position || 'INF'}
                                     </div>
                                     <h2 className="text-3xl font-black text-foreground mb-1 leading-none tracking-tight">{selectedPlayer.firstName} {selectedPlayer.lastName}</h2>
-                                    <p className="text-base text-muted-foreground font-medium mb-4">{team?.name || 'Sin equipo'}</p>
+                                    <p className="text-base text-muted-foreground font-medium mb-3">{team?.name || 'Sin equipo'}</p>
 
-                                    {(userRole === 'admin' || userRole === 'scorekeeper') && (
+                                    <Link
+                                        href={`/jugadores/${selectedPlayer.id}`}
+                                        className="inline-flex items-center gap-1.5 text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded-lg transition-colors mb-4"
+                                    >
+                                        Ver perfil completo →
+                                    </Link>
+
+                                    {userRole === 'admin' && (
                                         <button
                                             onClick={() => setIsEditingPlayer(true)}
                                             className="text-xs font-bold text-primary hover:underline mb-4 block"

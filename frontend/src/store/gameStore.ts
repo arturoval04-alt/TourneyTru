@@ -6,7 +6,8 @@ import api from '@/lib/api';
 
 export interface PlayLog {
     text: string;
-    outs?: number;
+    outs?: number; // Outs recorded in this play
+    totalOuts?: number; // Total outs in inning after this play
     inningString?: string;
 }
 
@@ -67,6 +68,9 @@ export interface GameState extends BaseState {
     mvpBatter1: any;
     mvpBatter2: any;
     status: string | null;
+    maxInnings: number;
+    shouldPromptEndGame: boolean;
+    clearEndGamePrompt: () => void;
 
     // Conexión
     setGameId: (id: string) => void;
@@ -80,7 +84,7 @@ export interface GameState extends BaseState {
     addFoul: () => void;
     addOut: (customLogText?: string, isGroundout?: boolean, emitPlay?: boolean) => void;
     registerHit: (basesAdvanced: number, customLogText?: string) => void;
-    executeAdvancedPlay: (newBases: { first: string | null, second: string | null, third: string | null }, newBaseIds: { first: string | null, second: string | null, third: string | null }, runsScored: number, outsRecorded: number, desc: string) => void;
+    executeAdvancedPlay: (newBases: { first: string | null, second: string | null, third: string | null }, newBaseIds: { first: string | null, second: string | null, third: string | null }, runsScored: number, outsRecorded: number, desc: string, additionalRunnerOutIds?: string[]) => void;
     executeBaseAction: (origin: 'first' | 'second' | 'third', dest: 'second' | 'third' | 'home' | null, isOut: boolean, desc: string) => void;
     executeWildPitchOrPassedBall: (desc: string) => void;
     executeFieldersChoice: (outRunnerId: 'first' | 'second' | 'third') => void;
@@ -101,7 +105,7 @@ export interface GameState extends BaseState {
 
 let gameSocket: Socket | null = null;
 
-const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsScored: number = 0, outsOffensive: number = 0, currentBatterIdOverride: string | null = null, inningOverride: number | null = null, halfOverride: string | null = null, outsBeforeOverride: number | null = null) => {
+const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsScored: number = 0, outsOffensive: number = 0, currentBatterIdOverride: string | null = null, inningOverride: number | null = null, halfOverride: string | null = null, outsBeforeOverride: number | null = null, silent: boolean = false) => {
     const stateSnapshot = get();
     if (!stateSnapshot.gameId) return;
 
@@ -119,10 +123,13 @@ const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsSc
     const timestamp = Date.now().toString();
 
     // Actualizar log local y playbackId inmediatamente
-    useGameStore.setState(state => ({
-        playLogs: [{ text: `Inning ${payloadInning}: ${logText}` }, ...state.playLogs],
-        playbackId: timestamp
-    }));
+    const totalAfter = payloadOutsBefore + outsOffensive;
+    if (!silent) {
+        useGameStore.setState(state => ({
+            playLogs: [{ text: `Inning ${payloadInning}: ${logText}`, outs: outsOffensive, totalOuts: totalAfter }, ...state.playLogs],
+            playbackId: timestamp
+        }));
+    }
 
     const nextState = get();
 
@@ -162,6 +169,8 @@ const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsSc
                 lastPlay: { result: resCode, description: logText, inning: payloadInning, half: payloadHalf },
             },
         });
+        // Pequeña espera para evitar colisiones si se llama en bucle rápido sin await real de socket
+        await new Promise(resolve => setTimeout(resolve, 50));
     } else {
         // Fallback HTTP si el socket no está conectado
         try {
@@ -237,6 +246,10 @@ export const useGameStore = create<GameState>()(
             mvpBatter1: null,
             mvpBatter2: null,
             status: null,
+            maxInnings: 7,
+            shouldPromptEndGame: false,
+
+            clearEndGamePrompt: () => set({ shouldPromptEndGame: false }),
 
             setGameId: (id: string) => {
                 if (get().gameId === id) return;
@@ -267,6 +280,8 @@ export const useGameStore = create<GameState>()(
                     mvpBatter1: null,
                     mvpBatter2: null,
                     status: null,
+                    maxInnings: 7,
+                    shouldPromptEndGame: false,
                 });
             },
 
@@ -305,6 +320,7 @@ export const useGameStore = create<GameState>()(
                     console.log("[fetchGameConfig] Data received:", gameData);
 
                     if (gameData) {
+                        set({ maxInnings: gameData.maxInnings ?? 7 });
                         const sanitizeLineup = (lp: any[]) => lp.map(l => ({
                             playerId: l.player_id, teamId: l.team_id,
                             position: l.position, battingOrder: l.batting_order,
@@ -461,20 +477,40 @@ export const useGameStore = create<GameState>()(
             },
 
             nextHalfInning: () => {
-                const { half, inning } = get();
+                const { half, inning, maxInnings, homeScore, awayScore } = get();
                 const newHalf = half === 'top' ? 'bottom' : 'top';
                 const newInning = half === 'bottom' ? inning + 1 : inning;
-                
-                // Update basic state
-                set({ 
-                    outs: 0, 
-                    balls: 0, 
-                    strikes: 0, 
-                    bases: { first: null, second: null, third: null }, 
-                    baseIds: { first: null, second: null, third: null }, 
-                    half: newHalf, 
-                    inning: newInning 
-                });
+
+                // ── Fin de juego automático ──────────────────────────────────
+                // Al acabar la parte alta de la última entrada y va ganando local
+                const endAfterTop = half === 'top' && inning >= maxInnings && homeScore > awayScore;
+                // Al acabar la parte baja de la última entrada
+                const endAfterBottom = half === 'bottom' && inning >= maxInnings;
+
+                if (endAfterTop || endAfterBottom) {
+                    set({ shouldPromptEndGame: true });
+                    // Igual limpiamos el conteo y bases para no dejar estado sucio
+                    set({
+                        outs: 0, balls: 0, strikes: 0,
+                        bases: { first: null, second: null, third: null },
+                        baseIds: { first: null, second: null, third: null },
+                    });
+                    return; // No avanzamos al siguiente half — el modal lo manejará
+                }
+                // ─────────────────────────────────────────────────────────────
+
+                // Add inning divider to play-by-play log
+                const dividerSymbol = newHalf === 'top' ? '▲' : '▼';
+                set((s) => ({
+                    outs: 0,
+                    balls: 0,
+                    strikes: 0,
+                    bases: { first: null, second: null, third: null },
+                    baseIds: { first: null, second: null, third: null },
+                    half: newHalf,
+                    inning: newInning,
+                    playLogs: [{ text: '', inningString: `${dividerSymbol} ${newInning}` }, ...s.playLogs],
+                }));
 
                 // Update current batter to whoever is up NEXT in the NEW half without incrementing their index!
                 const stateAfterHalfChange = get();
@@ -514,8 +550,9 @@ export const useGameStore = create<GameState>()(
                     newBaseIds.first = state.currentBatterId;
                     set({ balls: 0, strikes: 0, bases: newBases, baseIds: newBaseIds, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore });
                     const cid = state.currentBatterId;
+                    const batterName = state.currentBatter;
                     get().cycleBatter();
-                    emitPlayToBackend(get, "BB", runs, 0, cid);
+                    emitPlayToBackend(get, `BB|${batterName} recibe Base por Bolas`, runs, 0, cid);
                     if (scoredRunnerId) {
                         emitPlayToBackend(get, 'RUN_SCORED|Corredor anota por BB', 1, 0, scoredRunnerId, state.inning, state.half, state.outs);
                     }
@@ -558,9 +595,10 @@ export const useGameStore = create<GameState>()(
 
                 // 2. Update local state
                 if (totalOuts >= 3) {
+                    get().cycleBatter(); // advance past the batter who made the 3rd out
                     get().nextHalfInning();
                     // Force a broadcast of the newly wiped clean inning so fans don't get stuck on "2 outs pre-strikeout"
-                    syncStateToBackend(get); 
+                    syncStateToBackend(get);
                 } else {
                     set({ outs: totalOuts, balls: 0, strikes: 0 });
                     get().cycleBatter();
@@ -569,7 +607,7 @@ export const useGameStore = create<GameState>()(
                 }
             },
 
-            registerHit: (bases, customLogText) => {
+            registerHit: async (bases, customLogText) => {
                 get().saveHistory();
                 const state = get();
                 const newBases = { first: null as string | null, second: null as string | null, third: null as string | null };
@@ -603,33 +641,46 @@ export const useGameStore = create<GameState>()(
                 set({ balls: 0, strikes: 0, bases: newBases, baseIds: newBaseIds, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore });
                 get().cycleBatter();
                 // Emit the batter's play (HR/H3/H2/H1)
-                emitPlayToBackend(get, customLogText || `H${bases}`, runs, 0, activeId);
+                let finalLog = customLogText || `H${bases}`;
+                if (bases === 4) {
+                    const mainDesc = finalLog.includes('|') ? finalLog.split('|')[1] : finalLog;
+                    finalLog = `HR|${mainDesc} de ${runs} carreras`;
+                }
+                await emitPlayToBackend(get, finalLog, runs, 0, activeId);
                 
                 // Emit individual RUN_SCORED plays for each runner who scored
                 for (const runnerId of scoredRunnerIds) {
-                    emitPlayToBackend(get, 'RUN_SCORED|Corredor anota', 1, 0, runnerId, state.inning, state.half, state.outs);
+                    await emitPlayToBackend(get, 'RUN_SCORED|Corredor anota', 1, 0, runnerId, state.inning, state.half, state.outs, true);
                 }
 
                 // Emit individual ADV plays for runners who just advanced
                 if (state.bases.third && newBaseIds.third !== state.baseIds.third) {
-                    emitPlayToBackend(get, 'ADV|Corredor avanza a 3ra', 0, 0, state.baseIds.third, state.inning, state.half, state.outs);
+                    await emitPlayToBackend(get, 'ADV|Corredor avanza a 3ra', 0, 0, state.baseIds.third, state.inning, state.half, state.outs, true);
                 }
                 if (state.bases.second && newBaseIds.second !== state.baseIds.second) {
-                    emitPlayToBackend(get, 'ADV|Corredor avanza a 2da', 0, 0, state.baseIds.second, state.inning, state.half, state.outs);
+                    await emitPlayToBackend(get, 'ADV|Corredor avanza a 2da', 0, 0, state.baseIds.second, state.inning, state.half, state.outs, true);
                 }
                 if (state.bases.first && newBaseIds.first !== state.baseIds.first) {
-                    emitPlayToBackend(get, 'ADV|Corredor avanza a 1ra', 0, 0, state.baseIds.first, state.inning, state.half, state.outs);
+                    await emitPlayToBackend(get, 'ADV|Corredor avanza a 1ra', 0, 0, state.baseIds.first, state.inning, state.half, state.outs, true);
                 }
             },
 
-            executeAdvancedPlay: (newBases, newBaseIds, runs, outs, desc) => {
+            executeAdvancedPlay: async (newBases, newBaseIds, runs, outs, desc, additionalRunnerOutIds = []) => {
                 get().saveHistory();
                 const state = get();
                 const totalOuts = state.outs + outs;
                 const activeId = state.currentBatterId;
                 
-                // Emitir la jugada ANTES de cambiar el inning para que la DB tenga el inning/outs correcto
-                emitPlayToBackend(get, desc, runs, outs, activeId, state.inning, state.half, state.outs);
+                let currentOutsInPlay = state.outs;
+                // 1. Emitir outs de corredores primero (silenciosos)
+                for (const runnerId of additionalRunnerOutIds) {
+                    await emitPlayToBackend(get, `RUNNER_OUT|${desc.split('|')[0]}`, 0, 1, runnerId, state.inning, state.half, currentOutsInPlay, true);
+                    currentOutsInPlay++;
+                }
+
+                // 2. Emitir la jugada del bateador (o la principal)
+                const mainOuts = Math.max(0, outs - additionalRunnerOutIds.length);
+                await emitPlayToBackend(get, desc, runs, mainOuts, activeId, state.inning, state.half, currentOutsInPlay);
                 
                 if (totalOuts >= 3) {
                     get().cycleBatter();
@@ -637,6 +688,7 @@ export const useGameStore = create<GameState>()(
                     syncStateToBackend(get);
                 } else {
                     set({ outs: totalOuts, bases: newBases, baseIds: newBaseIds, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore });
+                    get().cycleBatter();
                     syncStateToBackend(get);
                 }
             },

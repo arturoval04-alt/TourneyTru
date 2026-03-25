@@ -22,7 +22,7 @@ export class AuthService {
     async register(dto: RegisterDto) {
         // Verificar si el email ya existe
         const existing = await this.prisma.user.findUnique({
-            where: { email: dto.email.toLowerCase() },
+            where: { email: dto.email.toLowerCase().trim() },
         });
         if (existing) {
             throw new ConflictException('Ya existe una cuenta con ese correo electrónico');
@@ -31,24 +31,40 @@ export class AuthService {
         // Hash de contraseña
         const passwordHash = await bcrypt.hash(dto.password, 12);
 
-        // Buscar o crear el rol 'general'
-        let role = await this.prisma.role.findUnique({ where: { name: 'general' } });
+        // Buscar o crear el rol especificado (o default 'general')
+        const roleName = dto.role || 'general';
+        let role = await this.prisma.role.findUnique({ where: { name: roleName } });
         if (!role) {
-            role = await this.prisma.role.create({ data: { name: 'general' } });
+            role = await this.prisma.role.create({ data: { name: roleName } });
         }
 
         try {
             const user = await this.prisma.user.create({
                 data: {
-                    email: dto.email.toLowerCase(),
+                    email: dto.email.toLowerCase().trim(),
                     passwordHash,
                     firstName: dto.firstName.trim(),
-                    lastName: dto.lastName.trim(),
+                    lastName: (dto.lastName || '').trim(),
                     phone: dto.phone,
                     roleId: role.id,
                 },
                 include: { role: true },
             });
+
+            // Si se proporciona un torneo, vincularlo como organizador/scorekeeper
+            if (dto.tournamentId) {
+                try {
+                    await this.prisma.tournamentOrganizer.create({
+                        data: {
+                            userId: user.id,
+                            tournamentId: dto.tournamentId,
+                        }
+                    });
+                } catch (err) {
+                    console.error('[Register] Error vinculando torneo:', err);
+                    // No fallamos el registro completo si solo falla la vinculación
+                }
+            }
 
             const tokens = this.generateTokens(user.id, user.email, user.role.name);
 
@@ -62,7 +78,8 @@ export class AuthService {
                 },
                 ...tokens,
             };
-        } catch {
+        } catch (err) {
+            console.error('[Register Error]', err);
             throw new InternalServerErrorException('Error al crear la cuenta');
         }
     }

@@ -89,42 +89,58 @@ export default function Field({ forceStoreData, readOnly = false }: { forceStore
 
             {/* ═══ SVG FIELD BACKGROUND ═══ */}
             <svg viewBox="0 0 400 440" className="w-full h-full absolute inset-0">
-                {/* Outfield grass */}
+                {/* Background image for testing */}
+                <image
+                    href="/fieldgame2.jpg"
+                    x="0"
+                    y="0"
+                    width="400"
+                    height="440"
+                    preserveAspectRatio="none"
+                />
+
+                {/* Outfield grass - COMMENTED
                 <path
                     d="M 200 420 L 0 150 Q 200 -50 400 150 Z"
                     fill="#2d5a3d"
                 />
+                */}
 
-                {/* Infield dirt diamond */}
+                {/* Infield dirt diamond - COMMENTED
                 <path
                     d="M 200 380 L 110 290 L 200 200 L 290 290 Z"
                     fill="#c4a44a"
                 />
+                */}
 
-                {/* Pitcher's mound */}
+                {/* Pitcher's mound - COMMENTED
                 <circle cx="200" cy="280" r="22" fill="#c4a44a" />
                 <circle cx="200" cy="280" r="8" fill="#ffffff" opacity="0.4" />
+                */}
 
-                {/* Base paths */}
+                {/* Base paths - COMMENTED
                 <line x1="200" y1="380" x2="290" y2="290" stroke="#ffffff" strokeWidth="2" opacity="0.7" />
                 <line x1="290" y1="290" x2="200" y2="200" stroke="#ffffff" strokeWidth="2" opacity="0.7" />
                 <line x1="200" y1="200" x2="110" y2="290" stroke="#ffffff" strokeWidth="2" opacity="0.7" />
                 <line x1="110" y1="290" x2="200" y2="380" stroke="#ffffff" strokeWidth="2" opacity="0.7" />
+                */}
 
-                {/* Foul lines */}
+                {/* Foul lines - COMMENTED
                 <line x1="200" y1="380" x2="0" y2="150" stroke="#ffffff" strokeWidth="2" opacity="0.5" />
                 <line x1="200" y1="380" x2="400" y2="150" stroke="#ffffff" strokeWidth="2" opacity="0.5" />
+                */}
 
-                {/* Home plate */}
+                {/* Home plate - COMMENTED
                 <polygon
                     points="200,388 188,378 188,368 212,368 212,378"
                     fill="#ffffff"
                 />
+                */}
 
                 {/* First base diamond */}
                 <rect
-                    x={BASE_SVG.first.x - 12}
-                    y={BASE_SVG.first.y - 12}
+                    x={BASE_SVG.first.x - 8}
+                    y={BASE_SVG.first.y - 25}
                     width="20"
                     height="20"
                     className={bases.first ? 'fill-blue-500' : 'fill-white'}
@@ -153,8 +169,8 @@ export default function Field({ forceStoreData, readOnly = false }: { forceStore
 
                 {/* Third base diamond */}
                 <rect
-                    x={BASE_SVG.third.x - 12}
-                    y={BASE_SVG.third.y - 12}
+                    x={BASE_SVG.third.x - 25}
+                    y={BASE_SVG.third.y - 8}
                     width="20"
                     height="20"
                     className={bases.third ? 'fill-blue-500' : 'fill-white'}

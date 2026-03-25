@@ -62,9 +62,10 @@ model Tournament {
   rulesType     String                @default("baseball_9") @map("rules_type")
   adminId       String                @map("admin_id")
   leagueId      String                @map("league_id")
-  locationCity  String?               @map("location_city")
-  locationState String?               @map("location_state")
-  createdAt     DateTime              @default(now()) @map("created_at")
+  locationCity    String?               @map("location_city")
+  locationState   String?               @map("location_state")
+  locationCountry String?               @map("location_country")
+  createdAt       DateTime              @default(now()) @map("created_at")
   fields        Field[]
   games         Game[]
   playerStats   PlayerStat[]
@@ -182,6 +183,7 @@ model Game {
   awayScore        Int            @default(0) @map("away_score")
   currentInning    Int            @default(1) @map("current_inning")
   half             String         @default("top") @db.NVarChar(10)
+  maxInnings       Int            @default(7) @map("max_innings")
   tournamentId     String         @map("tournament_id")
   homeTeamId       String         @map("home_team_id")
   awayTeamId       String         @map("away_team_id")
@@ -208,24 +210,27 @@ model Game {
 }
 
 model Lineup {
-  id            String   @id @default(uuid())
-  battingOrder  Int      @map("batting_order")
-  position      String   @db.NVarChar(10)
-  dhForPosition String?  @map("dh_for_position") @db.NVarChar(10)
-  isStarter     Boolean  @default(true) @map("is_starter")
-  gameId        String   @map("game_id")
-  teamId        String   @map("team_id")
-  playerId      String   @map("player_id")
-  createdAt     DateTime @default(now()) @map("created_at")
-  game          Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  player        Player   @relation(fields: [playerId], references: [id], onUpdate: NoAction)
-  team          Team     @relation(fields: [teamId], references: [id], onUpdate: NoAction)
+  id              String   @id @default(uuid())
+  battingOrder    Int      @map("batting_order")
+  position        String   @db.NVarChar(10)
+  dhForPosition   String?  @map("dh_for_position") @db.NVarChar(10)
+  isStarter       Boolean  @default(true) @map("is_starter")
+  isActive        Boolean  @default(true) @map("is_active")
+  hasUsedReentry  Boolean  @default(false) @map("has_used_reentry")
+  gameId          String   @map("game_id")
+  teamId          String   @map("team_id")
+  playerId        String   @map("player_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  game            Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  player          Player   @relation(fields: [playerId], references: [id], onUpdate: NoAction)
+  team            Team     @relation(fields: [teamId], references: [id], onUpdate: NoAction)
 
   @@map("lineups")
 }
 
 model LineupChange {
   id            String   @id @default(uuid())
+  changeType    String   @default("SUBSTITUTION") @map("change_type") @db.NVarChar(20)
   battingOrder  Int      @map("batting_order")
   position      String   @db.NVarChar(10)
   dhForPosition String?  @map("dh_for_position") @db.NVarChar(10)

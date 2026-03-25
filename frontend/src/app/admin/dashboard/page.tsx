@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getUser, AuthUser } from '@/lib/auth';
+import CreateGameWizard from '@/components/game/CreateGameWizard';
 import api from '@/lib/api';
 
 export default function AdminDashboard() {
@@ -28,6 +29,7 @@ export default function AdminDashboard() {
         season: string;
         locationCity?: string;
         locationState?: string;
+        locationCountry?: string;
         sport: string;
         branch: string;
         category?: string;
@@ -70,6 +72,7 @@ export default function AdminDashboard() {
 
     // -- State: Modals --
     const [showGameModal, setShowGameModal] = useState(false);
+    const [lineupGameId, setLineupGameId] = useState<string | null>(null);
     const [showTournamentModal, setShowTournamentModal] = useState(false);
     const [showTeamModal, setShowTeamModal] = useState(false);
     const [showPlayerModal, setShowPlayerModal] = useState(false);
@@ -135,13 +138,14 @@ export default function AdminDashboard() {
     const [selectedTeam, setSelectedTeam] = useState('');
 
     // -- Form: Create Tournament --
-    const [tournForm, setTournForm] = useState({ 
-        name: '', 
-        season: '', 
-        location_city: '', 
-        location_state: '', 
-        sport: 'Béisbol', 
-        branch: 'Varonil', 
+    const [tournForm, setTournForm] = useState({
+        name: '',
+        season: '',
+        location_city: '',
+        location_state: '',
+        location_country: 'México',
+        sport: 'Béisbol',
+        branch: 'Varonil',
         category: 'Libre',
         description: '',
         logoUrl: '',
@@ -284,19 +288,21 @@ export default function AdminDashboard() {
                 leagueId: tournForm.leagueId || null,
                 locationCity: tournForm.location_city,
                 locationState: tournForm.location_state,
+                locationCountry: tournForm.location_country,
                 description: tournForm.description,
                 logoUrl: tournForm.logoUrl,
             });
             if (newTourn) {
                 alert('Torneo Creado Satisfactoriamente');
                 setShowTournamentModal(false);
-                setTournForm({ 
-                    name: '', 
-                    season: '', 
-                    location_city: '', 
-                    location_state: '', 
-                    sport: 'Béisbol', 
-                    branch: 'Varonil', 
+                setTournForm({
+                    name: '',
+                    season: '',
+                    location_city: '',
+                    location_state: '',
+                    location_country: 'México',
+                    sport: 'Béisbol',
+                    branch: 'Varonil',
                     category: 'Libre',
                     description: '',
                     logoUrl: '',
@@ -321,22 +327,24 @@ export default function AdminDashboard() {
                 season: tournForm.season,
                 rulesType: tournForm.sport === 'Softbol' ? 'softball_7' : 'baseball_9',
                 category: tournForm.category,
-                leagueId: tournForm.leagueId || null,
+                leagueId: tournForm.leagueId || undefined,
                 locationCity: tournForm.location_city,
                 locationState: tournForm.location_state,
+                locationCountry: tournForm.location_country,
                 description: tournForm.description,
                 logoUrl: tournForm.logoUrl,
             });
             alert('Torneo Actualizado');
             setShowEditTournModal(false);
             setEditingTourn(null);
-            setTournForm({ 
-                name: '', 
-                season: '', 
-                location_city: '', 
-                location_state: '', 
-                sport: 'Béisbol', 
-                branch: 'Varonil', 
+            setTournForm({
+                name: '',
+                season: '',
+                location_city: '',
+                location_state: '',
+                location_country: 'México',
+                sport: 'Béisbol',
+                branch: 'Varonil',
                 category: 'Libre',
                 description: '',
                 logoUrl: '',
@@ -356,6 +364,7 @@ export default function AdminDashboard() {
             season: tourn.season || '',
             location_city: tourn.locationCity || '',
             location_state: tourn.locationState || '',
+            location_country: tourn.locationCountry || 'México',
             sport: tourn.sport || (tourn.branch === 'Softbol' ? 'Softbol' : 'Béisbol'),
             branch: tourn.branch || 'Varonil',
             category: tourn.category || 'Libre',
@@ -459,21 +468,41 @@ export default function AdminDashboard() {
     const handleCreateUser = async (e: React.FormEvent) => {
         e.preventDefault();
         setSaving(true);
+
+        // Lógica de división de nombres más robusta
+        const nameParts = userForm.name.trim().split(/\s+/);
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || ' '; // Espacio si no hay apellido para evitar fallos de validación (aunque ahora relajamos a 1 char)
+
         try {
             await api.post('/auth/register', {
                 email: userForm.email,
                 password: userForm.password,
-                firstName: userForm.name.split(' ')[0] || '',
-                lastName: userForm.name.split(' ').slice(1).join(' ') || '',
+                firstName,
+                lastName,
                 role: userForm.role,
+                tournamentId: userForm.role === 'scorekeeper' ? userForm.tournament_id : undefined,
             });
             alert('Cuenta Registrada Satisfactoriamente');
             setShowUserModal(false);
             setUserForm({ name: '', email: '', password: '', role: 'general', tournament_id: '' });
             fetchUsers();
-        } catch (err) {
-            console.error(err);
-            alert('Error al crear cuenta');
+        } catch (err: any) {
+            console.error('[CreateUser Error]', err);
+            const data = err.response?.data;
+            let errorMsg = 'Error desconocido';
+
+            if (data?.message) {
+                if (Array.isArray(data.message)) {
+                    // Si el backend devuelve ValidationError[] de class-validator
+                    errorMsg = data.message.map((m: any) => 
+                        typeof m === 'string' ? m : Object.values(m.constraints || {}).join(', ')
+                    ).join('\n');
+                } else if (typeof data.message === 'string') {
+                    errorMsg = data.message;
+                }
+            }
+            alert('Error al crear cuenta:\n' + errorMsg);
         } finally { setSaving(false); }
     };
 
@@ -772,7 +801,9 @@ export default function AdminDashboard() {
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
                                                         <button className="text-primary hover:underline font-bold text-xs mr-4" onClick={() => router.push(`/torneos/${t.id}`)}>Ver Perfil</button>
-                                                        <button className="text-muted-foreground hover:text-foreground font-bold text-xs" onClick={() => handleEditTourn(t)}>Editar</button>
+                                                        {userRole === 'admin' && (
+                                                            <button className="text-muted-foreground hover:text-foreground font-bold text-xs" onClick={() => handleEditTourn(t)}>Editar</button>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             ))}
@@ -855,7 +886,9 @@ export default function AdminDashboard() {
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
                                                         <button className="text-primary hover:underline font-bold text-xs mr-4" onClick={() => router.push(`/equipos/${team.id}`)}>Ver Perfil</button>
-                                                        <button className="text-muted-foreground hover:text-foreground font-bold text-xs">Editar</button>
+                                                        {userRole === 'admin' && (
+                                                            <button className="text-muted-foreground hover:text-foreground font-bold text-xs">Editar</button>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             ))}
@@ -950,12 +983,14 @@ export default function AdminDashboard() {
                                                         <Link href={`/torneos/${selectedTournament}/jugadores/${player.id}`} className="text-muted-foreground hover:text-foreground font-bold text-xs mr-4 transition-colors">
                                                             Ficha
                                                         </Link>
-                                                        <button
-                                                            onClick={() => handleEditPlayer(player)}
-                                                            className="text-blue-500/70 hover:text-blue-500 font-bold text-xs transition-colors"
-                                                        >
-                                                            Editar
-                                                        </button>
+                                                        {userRole === 'admin' && (
+                                                            <button
+                                                                onClick={() => handleEditPlayer(player)}
+                                                                className="text-blue-500/70 hover:text-blue-500 font-bold text-xs transition-colors"
+                                                            >
+                                                                Editar
+                                                            </button>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             ))}
@@ -973,9 +1008,11 @@ export default function AdminDashboard() {
                                         <span className="w-2 h-4 bg-primary rounded-full"></span> Calendario & Partidos
                                     </h2>
                                     <div className="flex gap-2">
-                                        <button className="hidden sm:block px-4 py-2 bg-surface hover:bg-muted/10 border border-muted/30 text-foreground font-bold rounded-lg transition text-sm">
-                                            Añadir Estadísticas Manuales
-                                        </button>
+                                        {userRole === 'admin' && (
+                                            <button className="hidden sm:block px-4 py-2 bg-surface hover:bg-muted/10 border border-muted/30 text-foreground font-bold rounded-lg transition text-sm">
+                                                Añadir Estadísticas Manuales
+                                            </button>
+                                        )}
                                         <button
                                             onClick={() => setShowGameModal(true)}
                                             className="px-5 py-2 bg-primary hover:bg-primary-light text-white font-bold rounded-lg transition shadow-md hover:shadow-primary/40 text-sm"
@@ -1036,8 +1073,8 @@ export default function AdminDashboard() {
                                                         ) : (
                                                             <>
                                                                 <button
-                                                                    onClick={() => router.push(`/admin/games/${game.id}/roster`)}
-                                                                    className="px-3 py-1.5 bg-surface hover:bg-muted/10 text-foreground border border-muted/30 transition text-xs font-bold rounded-lg"
+                                                                    onClick={() => setLineupGameId(game.id)}
+                                                                    className="px-3 py-1.5 bg-blue-900/40 border border-blue-700 text-blue-300 hover:bg-blue-800/60 transition text-xs font-bold rounded-lg"
                                                                 >
                                                                     Configurar Lineups
                                                                 </button>
@@ -1158,7 +1195,17 @@ export default function AdminDashboard() {
                                 </div>
                                 <div className="flex-1">
                                     <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Ciudad</label>
-                                    <input required type="text" value={tournForm.location_city} onChange={e => setTournForm({ ...tournForm, location_city: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Monterrey" />
+                                    <input required type="text" value={tournForm.location_city} onChange={e => setTournForm({ ...tournForm, location_city: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Los Mochis" />
+                                </div>
+                            </div>
+                            <div className="flex gap-4">
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Estado</label>
+                                    <input type="text" value={tournForm.location_state} onChange={e => setTournForm({ ...tournForm, location_state: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Sinaloa" />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">País</label>
+                                    <input type="text" value={tournForm.location_country} onChange={e => setTournForm({ ...tournForm, location_country: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. México" />
                                 </div>
                             </div>
                             <div className="flex gap-4">
@@ -1187,20 +1234,20 @@ export default function AdminDashboard() {
                             <div>
                                 <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Logo del Torneo (URL o Subir)</label>
                                 <div className="flex gap-2">
-                                    <input 
-                                        type="text" 
-                                        value={tournForm.logoUrl} 
-                                        onChange={e => setTournForm({ ...tournForm, logoUrl: e.target.value })} 
-                                        className="flex-1 bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-xs" 
-                                        placeholder="URL de la imagen" 
+                                    <input
+                                        type="text"
+                                        value={tournForm.logoUrl}
+                                        onChange={e => setTournForm({ ...tournForm, logoUrl: e.target.value })}
+                                        className="flex-1 bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-xs"
+                                        placeholder="URL de la imagen"
                                     />
                                     <label className="shrink-0 bg-muted/20 hover:bg-muted/30 text-foreground px-4 py-3 rounded-lg cursor-pointer transition text-xs font-bold border border-muted/30">
                                         Subir
-                                        <input 
-                                            type="file" 
-                                            accept="image/*" 
-                                            className="hidden" 
-                                            onChange={e => handleImageChange(e, tournForm, setTournForm, 'logoUrl')} 
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={e => handleImageChange(e, tournForm, setTournForm, 'logoUrl')}
                                         />
                                     </label>
                                 </div>
@@ -1216,10 +1263,10 @@ export default function AdminDashboard() {
 
                             <div>
                                 <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Descripción</label>
-                                <textarea 
-                                    value={tournForm.description} 
-                                    onChange={e => setTournForm({ ...tournForm, description: e.target.value })} 
-                                    className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition h-24 resize-none" 
+                                <textarea
+                                    value={tournForm.description}
+                                    onChange={e => setTournForm({ ...tournForm, description: e.target.value })}
+                                    className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition h-24 resize-none"
                                     placeholder="Información relevante sobre el torneo, reglas especiales, premios, etc."
                                 />
                             </div>
@@ -1268,7 +1315,17 @@ export default function AdminDashboard() {
                                 </div>
                                 <div className="flex-1">
                                     <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Ciudad</label>
-                                    <input required type="text" value={tournForm.location_city} onChange={e => setTournForm({ ...tournForm, location_city: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Monterrey" />
+                                    <input required type="text" value={tournForm.location_city} onChange={e => setTournForm({ ...tournForm, location_city: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Los Mochis" />
+                                </div>
+                            </div>
+                            <div className="flex gap-4">
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Estado</label>
+                                    <input type="text" value={tournForm.location_state} onChange={e => setTournForm({ ...tournForm, location_state: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Sinaloa" />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">País</label>
+                                    <input type="text" value={tournForm.location_country} onChange={e => setTournForm({ ...tournForm, location_country: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. México" />
                                 </div>
                             </div>
                             <div className="flex gap-4">
@@ -1297,20 +1354,20 @@ export default function AdminDashboard() {
                             <div>
                                 <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Logo del Torneo (URL o Subir)</label>
                                 <div className="flex gap-2">
-                                    <input 
-                                        type="text" 
-                                        value={tournForm.logoUrl} 
-                                        onChange={e => setTournForm({ ...tournForm, logoUrl: e.target.value })} 
-                                        className="flex-1 bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-xs" 
-                                        placeholder="URL de la imagen" 
+                                    <input
+                                        type="text"
+                                        value={tournForm.logoUrl}
+                                        onChange={e => setTournForm({ ...tournForm, logoUrl: e.target.value })}
+                                        className="flex-1 bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-xs"
+                                        placeholder="URL de la imagen"
                                     />
                                     <label className="shrink-0 bg-muted/20 hover:bg-muted/30 text-foreground px-4 py-3 rounded-lg cursor-pointer transition text-xs font-bold border border-muted/30">
                                         Subir
-                                        <input 
-                                            type="file" 
-                                            accept="image/*" 
-                                            className="hidden" 
-                                            onChange={e => handleImageChange(e, tournForm, setTournForm, 'logoUrl')} 
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={e => handleImageChange(e, tournForm, setTournForm, 'logoUrl')}
                                         />
                                     </label>
                                 </div>
@@ -1326,10 +1383,10 @@ export default function AdminDashboard() {
 
                             <div>
                                 <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Descripción</label>
-                                <textarea 
-                                    value={tournForm.description} 
-                                    onChange={e => setTournForm({ ...tournForm, description: e.target.value })} 
-                                    className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition h-24 resize-none" 
+                                <textarea
+                                    value={tournForm.description}
+                                    onChange={e => setTournForm({ ...tournForm, description: e.target.value })}
+                                    className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition h-24 resize-none"
                                     placeholder="Información relevante sobre el torneo, reglas especiales, premios, etc."
                                 />
                             </div>
@@ -1344,87 +1401,20 @@ export default function AdminDashboard() {
 
             {/* MODAL NUEVO JUEGO */}
             {showGameModal && (
-                <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
-                    <div className="bg-surface border border-muted/30 p-5 sm:p-8 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl relative animate-fade-in-up">
-                        <button
-                            onClick={() => setShowGameModal(false)}
-                            className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
-                        >
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                        </button>
+                <CreateGameWizard
+                    context={userRole === 'scorekeeper' ? 'scorekeeper' : 'admin'}
+                    tournamentId={userRole === 'scorekeeper' && userTournamentId ? userTournamentId : undefined}
+                    onClose={() => setShowGameModal(false)}
+                />
+            )}
 
-                        <h2 className="text-2xl font-black text-foreground mb-6 uppercase tracking-tight border-b border-muted/20 pb-4">
-                            Crear Ticket de Juego
-                        </h2>
-
-                        <form onSubmit={handleCreateGame} className="space-y-5">
-                            {/* Seleccion de Torneo */}
-                            <div>
-                                <label className="block text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">LIGA / TORNEO</label>
-                                <select
-                                    required
-                                    className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition"
-                                    value={selectedTournament}
-                                    onChange={(e) => {
-                                        setSelectedTournament(e.target.value);
-                                        setHomeTeamId('');
-                                        setAwayTeamId('');
-                                    }}
-                                >
-                                    <option value="">-- Seleccionar Torneo Activo --</option>
-                                    {tournaments
-                                        .filter(t => userRole === 'admin' || (userRole === 'scorekeeper' && t.id === userTournamentId))
-                                        .map((t: TournamentData) => <option key={t.id} value={t.id}>{t.name} ({t.season})</option>)}
-                                </select>
-                                {userRole === 'scorekeeper' && !userTournamentId && (
-                                    <p className="text-xs text-red-500 mt-2 font-bold">No tienes un torneo asignado. Contacta a un administrador.</p>
-                                )}
-                            </div>
-
-                            <div className="flex items-center gap-4">
-                                {/* Visitante */}
-                                <div className="flex-1">
-                                    <label className="block text-[10px] font-black text-muted-foreground mb-2 uppercase text-center bg-muted/10 py-1.5 rounded-md">VISITANTE (Away)</label>
-                                    <select
-                                        required
-                                        disabled={!selectedTournament}
-                                        value={awayTeamId}
-                                        onChange={(e) => setAwayTeamId(e.target.value)}
-                                        className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition disabled:opacity-50 text-sm font-bold"
-                                    >
-                                        <option value="">Seleccionar</option>
-                                        {teams.map((t: TeamData) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                    </select>
-                                </div>
-
-                                <div className="text-muted-foreground font-bold italic mt-6 uppercase text-xs">Vs</div>
-
-                                {/* Local */}
-                                <div className="flex-1">
-                                    <label className="block text-[10px] font-black text-primary mb-2 uppercase text-center bg-primary/10 py-1.5 border border-primary/20 rounded-md">LOCAL (Home)</label>
-                                    <select
-                                        required
-                                        disabled={!selectedTournament}
-                                        value={homeTeamId}
-                                        onChange={(e) => setHomeTeamId(e.target.value)}
-                                        className="w-full bg-background border border-primary/40 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition disabled:opacity-50 text-sm font-bold"
-                                    >
-                                        <option value="">Seleccionar</option>
-                                        {teams.map((t: TeamData) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                    </select>
-                                </div>
-                            </div>
-
-                            <button
-                                type="submit"
-                                disabled={saving}
-                                className={`w-full py-3 mt-6 font-bold rounded-xl transition shadow-lg ${saving ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-primary/20 cursor-pointer active:scale-95'}`}
-                            >
-                                {saving ? 'Guardando...' : 'Crear Juego y Configurar Roster'}
-                            </button>
-                        </form>
-                    </div>
-                </div>
+            {/* CONFIGURAR LINEUP DE JUEGO PROGRAMADO */}
+            {lineupGameId && (
+                <CreateGameWizard
+                    context={userRole === 'scorekeeper' ? 'scorekeeper' : 'admin'}
+                    existingGameId={lineupGameId}
+                    onClose={() => setLineupGameId(null)}
+                />
             )}
 
             {/* MODAL NUEVO EQUIPO */}

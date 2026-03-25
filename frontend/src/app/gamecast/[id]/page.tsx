@@ -56,7 +56,9 @@ export default function PublicGamecast() {
             const pitchingBox = half === 'top' ? boxscore.homeTeam : boxscore.awayTeam;
             const pitcherEntry = pitchingBox.lineup?.find((b: any) => b.playerId === p.playerId);
             if (pitcherEntry) {
-                stats = `IP: ${pitcherEntry.atBats || 0} | K: ${pitcherEntry.so || 0} | BB: ${pitcherEntry.bb || 0}`;
+                const ipOuts = pitcherEntry.pitchingIPOuts || 0;
+                const ipStr = `${Math.floor(ipOuts / 3)}.${ipOuts % 3}`;
+                stats = `IP: ${ipStr} | K: ${pitcherEntry.pitchingSO || 0} | BB: ${pitcherEntry.pitchingBB || 0}`;
             }
         }
         if (!stats) stats = 'Sin datos aún';
@@ -77,6 +79,21 @@ export default function PublicGamecast() {
         if (!entry) return 'Sin datos aún';
         const avg = entry.atBats > 0 ? (entry.hits / entry.atBats).toFixed(3) : '.000';
         return `AVG: ${avg} | H: ${entry.hits} | RBI: ${entry.rbi} | SO: ${entry.so}`;
+    }, [boxscore, currentBatterId, half]);
+
+    const batterTodayStats = useMemo(() => {
+        if (!boxscore || !currentBatterId) return undefined;
+        const battingBox = half === 'top' ? boxscore.awayTeam : boxscore.homeTeam;
+        const entry = battingBox.lineup?.find((b: any) => b.playerId === currentBatterId);
+        if (!entry?.plays) return undefined;
+        const allPlays = Object.entries(entry.plays as Record<string, any[]>)
+            .sort(([a], [b]) => Number(a) - Number(b))
+            .flatMap(([, plays]) => plays);
+        if (allPlays.length === 0) return undefined;
+        const results = allPlays.map((p: any) => p.result.split('|')[0].toUpperCase());
+        const summary = `${entry.hits}-${entry.atBats}`;
+        const rbiStr = entry.rbi > 0 ? `  ||  (${entry.rbi} RBI)` : '';
+        return `${summary}  |  ${results.join(' | ')}${rbiStr}`;
     }, [boxscore, currentBatterId, half]);
 
     const isMountedRef = useRef(false);
@@ -230,6 +247,7 @@ export default function PublicGamecast() {
                                         type="Batting"
                                         name={currentBatter}
                                         stats={batterStats}
+                                        todayStats={batterTodayStats}
                                         photoUrl={batterPhotoUrl}
                                     />
                                     <PlayerInfo

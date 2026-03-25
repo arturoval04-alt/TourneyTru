@@ -1,87 +1,130 @@
-import { useState, useEffect } from 'react';
+'use client';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useGameStore } from '@/store/gameStore';
 
-interface FieldersChoiceModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-}
+interface Props { isOpen: boolean; onClose: () => void; }
 
-export default function FieldersChoiceModal({ isOpen, onClose }: FieldersChoiceModalProps) {
-    const { bases, executeFieldersChoice } = useGameStore();
-    const [selectedOut, setSelectedOut] = useState<'first' | 'second' | 'third' | null>(null);
+const DEST_OPTIONS = [
+    { value: 'out',  label: '🚫 Out' },
+    { value: '1B',   label: '1ra Base' },
+    { value: '2B',   label: '2da Base' },
+    { value: '3B',   label: '3ra Base' },
+    { value: 'home', label: '🏠 Anota' },
+];
+
+export default function FieldersChoiceModal({ isOpen, onClose }: Props) {
+    const bases         = useGameStore(s => s.bases);
+    const baseIds       = useGameStore(s => s.baseIds);
+    const currentBatter = useGameStore(s => s.currentBatter);
+    const currentBatterId = useGameStore(s => s.currentBatterId);
+    const executeAdvancedPlay = useGameStore(s => s.executeAdvancedPlay);
 
     const [mounted, setMounted] = useState(false);
 
-    // Resetear el estado al abrir
+    const players = useMemo(() => [
+        { key: 'batter', name: currentBatter, id: currentBatterId, baseLabel: 'Al bate', locked: false },
+        ...(bases.first  ? [{ key: 'first',  name: bases.first,  id: baseIds.first,  baseLabel: '1ra Base', locked: false }] : []),
+        ...(bases.second ? [{ key: 'second', name: bases.second, id: baseIds.second, baseLabel: '2da Base', locked: false }] : []),
+        ...(bases.third  ? [{ key: 'third',  name: bases.third,  id: baseIds.third,  baseLabel: '3ra Base', locked: false }] : []),
+    ], [bases, baseIds, currentBatter, currentBatterId]);
+
+    const buildDefaults = () => {
+        const d: Record<string, string> = { batter: '1B' };
+        if (bases.first)  d.first  = 'out';
+        if (bases.second) d.second = bases.first ? '3B' : 'out';
+        if (bases.third)  d.third  = 'home';
+        return d;
+    };
+
+    const [dests, setDests] = useState<Record<string, string>>(buildDefaults);
+
     useEffect(() => {
         setMounted(true);
-        if (isOpen) {
-            // Removing the setSelectedOut(null) call here, as initializing state should be handled differently
-            // or we clear it after a confirmed submission.
-        }
+        if (isOpen) setDests(buildDefaults());
     }, [isOpen]);
 
     if (!isOpen || !mounted) return null;
 
-    const baserunners = [
-        { id: 'first', name: bases.first, label: '1ra Base' },
-        { id: 'second', name: bases.second, label: '2da Base' },
-        { id: 'third', name: bases.third, label: '3ra Base' },
-    ].filter(r => r.name !== null);
+    const handleConfirm = () => {
+        const newBases   = { first: null as string | null, second: null as string | null, third: null as string | null };
+        const newBaseIds = { first: null as string | null, second: null as string | null, third: null as string | null };
+        let runs = 0;
+        let outs = 0;
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-
-        // Si no se eligió out (y había corredores disponibles), bloquear. 
-        if (!selectedOut && baserunners.length > 0) return;
-
-        if (selectedOut) {
-            executeFieldersChoice(selectedOut);
+        for (const p of players) {
+            const dest = dests[p.key] ?? 'out';
+            if      (dest === 'out')  outs++;
+            else if (dest === 'home') runs++;
+            else if (dest === '1B')   { newBases.first  = p.name; newBaseIds.first  = p.id; }
+            else if (dest === '2B')   { newBases.second = p.name; newBaseIds.second = p.id; }
+            else if (dest === '3B')   { newBases.third  = p.name; newBaseIds.third  = p.id; }
         }
 
+        const outsList: string[] = [];
+        const runnerOutIds: string[] = [];
+        for (const p of players) {
+            if (dests[p.key] === 'out') {
+                outsList.push(p.name);
+                if (p.key !== 'batter' && p.id) runnerOutIds.push(p.id);
+            }
+        }
+
+        let desc = 'BO|Bola Ocupada';
+        if (outsList.length > 0) {
+            desc += `: Out ${outsList.join(' y ')}`;
+        } else {
+            desc += `: Bateador llega a base por jugada de selección`;
+        }
+
+        executeAdvancedPlay(newBases, newBaseIds, runs, outs, desc, runnerOutIds);
         onClose();
     };
 
     const modalContent = (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-sm w-full p-6 shadow-2xl relative z-[10000]">
-                <h2 className="text-xl font-black text-amber-500 mb-2 uppercase tracking-wide">Bola Ocupada <span className="text-sm font-bold text-slate-400 capitalize">(Fielder&apos;s Choice)</span></h2>
+            <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-md w-full p-6 shadow-2xl">
+                <h2 className="text-xl font-black text-amber-500 mb-1 uppercase tracking-wide">
+                    Bola Ocupada <span className="text-sm font-bold text-slate-400 normal-case">(Fielder&apos;s Choice)</span>
+                </h2>
+                <p className="text-sm text-slate-400 mb-4">
+                    Indica el destino de cada corredor y del bateador.
+                </p>
 
-                {baserunners.length > 0 ? (
-                    <>
-                        <p className="text-sm text-slate-300 mb-4">El bateador se embasa legalmente. ¿Quién fue el corredor puesto Out en la jugada?</p>
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            <div className="space-y-2">
-                                {baserunners.map((runner) => (
-                                    <label key={runner.id} className={`flex items-center space-x-3 p-3 rounded border cursor-pointer transition-colors ${selectedOut === runner.id ? 'bg-amber-900/40 border-amber-500/50' : 'bg-slate-800 border-slate-700 hover:bg-slate-700'}`}>
-                                        <input
-                                            type="radio"
-                                            name="outRunner"
-                                            value={runner.id}
-                                            checked={selectedOut === runner.id}
-                                            onChange={() => setSelectedOut(runner.id as 'first' | 'second' | 'third')}
-                                            className="form-radio text-amber-500 bg-slate-900 border-slate-600"
-                                        />
-                                        <span className="text-white font-bold text-sm">
-                                            Out en {runner.label}: <span className="text-slate-300 font-mono text-xs">{runner.name}</span>
-                                        </span>
-                                    </label>
+                <div className="space-y-2 mb-5">
+                    {players.map(p => (
+                        <div key={p.key} className="flex items-center justify-between gap-3 bg-slate-800 rounded-lg px-3 py-2.5 border border-slate-700">
+                            <div className="min-w-0">
+                                <p className="text-[10px] text-slate-500 uppercase tracking-wide">{p.baseLabel}</p>
+                                <p className="text-sm font-bold text-white truncate">{p.name}</p>
+                            </div>
+                            <select
+                                value={dests[p.key] ?? 'out'}
+                                onChange={e => setDests(prev => ({ ...prev, [p.key]: e.target.value }))}
+                                className="bg-slate-700 border border-slate-600 rounded-lg text-sm text-white px-2 py-1.5 focus:outline-none focus:border-amber-500 shrink-0"
+                            >
+                                {DEST_OPTIONS.map(o => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
                                 ))}
-                            </div>
+                            </select>
+                        </div>
+                    ))}
+                </div>
 
-                            <div className="flex gap-3 justify-end pt-2 border-t border-slate-700 mt-4">
-                                <button type="button" onClick={onClose} className="px-5 py-2 rounded font-bold text-sm text-slate-300 bg-slate-800 hover:bg-slate-700 transition">Cancelar</button>
-                                <button type="submit" disabled={!selectedOut} className="px-5 py-2 rounded font-bold text-sm text-slate-900 bg-amber-500 hover:bg-amber-400 focus:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition">Registrar Jugada</button>
-                            </div>
-                        </form>
-                    </>
-                ) : (
-                    <div className="text-center py-4">
-                        <p className="text-slate-300 mb-4">⚠️ No hay corredores en base para hacer un Fielder&apos;s Choice.</p>
-                        <button type="button" onClick={onClose} className="px-5 py-2 rounded font-bold text-sm text-slate-900 bg-amber-500 hover:bg-amber-400 transition w-full">Entendido</button>
-                    </div>
-                )}
+                <div className="flex gap-3">
+                    <button
+                        onClick={onClose}
+                        className="flex-1 py-2.5 rounded-lg font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 text-sm transition"
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        onClick={handleConfirm}
+                        className="flex-[2] py-2.5 rounded-lg font-bold text-slate-900 bg-amber-500 hover:bg-amber-400 text-sm transition"
+                    >
+                        Registrar Bola Ocupada
+                    </button>
+                </div>
             </div>
         </div>
     );

@@ -2,12 +2,12 @@ import { IsEmail, IsString, MinLength, MaxLength, IsOptional, Matches } from 'cl
 
 export class RegisterDto {
     @IsString()
-    @MinLength(2)
+    @MinLength(1)
     @MaxLength(50)
     firstName: string;
 
     @IsString()
-    @MinLength(2)
+    @MinLength(1)
     @MaxLength(50)
     lastName: string;
 
@@ -22,6 +22,14 @@ export class RegisterDto {
         message: 'La contraseña debe tener al menos una mayúscula, una minúscula y un número',
     })
     password: string;
+
+    @IsOptional()
+    @IsString()
+    role?: string;
+
+    @IsOptional()
+    @IsString()
+    tournamentId?: string;
 
     @IsOptional()
     @IsString()

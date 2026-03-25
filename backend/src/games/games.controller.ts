@@ -1,6 +1,6 @@
 import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { GamesService } from './games.service';
-import { AssignUmpireDto, CreateGameDto, UpdateGameDto, SetGameLineupDto, ChangeLineupDto } from './dto/game.dto';
+import { AssignUmpireDto, CreateGameDto, UpdateGameDto, SetGameLineupDto, ChangeLineupDto, CambioSustitucionDto, CambioPosicionDto, CambioReingresoDto } from './dto/game.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('api/games')
@@ -67,6 +67,31 @@ export class GamesController {
     @Get(':id/state')
     getState(@Param('id') id: string) {
         return this.gamesService.getGameState(id);
+    }
+
+    // ─── Cambios v2 ─────────────────────────────────────────────────────────────
+
+    @Get(':id/cambios/elegibles/:teamId')
+    getCambiosEligibles(@Param('id') id: string, @Param('teamId') teamId: string) {
+        return this.gamesService.getCambiosEligibles(id, teamId);
+    }
+
+    @Post(':id/cambios/sustitucion')
+    @UseGuards(JwtAuthGuard)
+    cambioSustitucion(@Param('id') id: string, @Body() dto: CambioSustitucionDto) {
+        return this.gamesService.cambioSustitucion(id, dto);
+    }
+
+    @Post(':id/cambios/posicion')
+    @UseGuards(JwtAuthGuard)
+    cambioPosicion(@Param('id') id: string, @Body() dto: CambioPosicionDto) {
+        return this.gamesService.cambioPosicion(id, dto);
+    }
+
+    @Post(':id/cambios/reingreso')
+    @UseGuards(JwtAuthGuard)
+    cambioReingreso(@Param('id') id: string, @Body() dto: CambioReingresoDto) {
+        return this.gamesService.cambioReingreso(id, dto);
     }
 
     @Get(':id/umpires')

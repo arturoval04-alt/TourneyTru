@@ -34,4 +34,10 @@ export class LeaguesController {
     remove(@Param('id') id: string) {
         return this.leaguesService.remove(id);
     }
+    
+    @Get(':id/tournaments')
+    async getTournaments(@Param('id') id: string) {
+        const league = await this.leaguesService.findOne(id);
+        return league.tournaments;
+    }
 }

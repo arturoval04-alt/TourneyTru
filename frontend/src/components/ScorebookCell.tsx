@@ -59,7 +59,7 @@ function parsePlay(result: string): ParsedPlay {
                 labelColor = 'text-red-700'; 
             } 
         }
-        else if (r === 'FC') { totalBases = Math.max(totalBases, 1); if (index === 0 || !label) { label = 'FC'; labelColor = 'text-amber-600'; } }
+        else if (r === 'FC') { totalBases = Math.max(totalBases, 1); if (index === 0 || !label) { label = 'BO'; labelColor = 'text-amber-600'; } }
         else if (r.startsWith('E')) { totalBases = Math.max(totalBases, 1); if (index === 0 || !label) { label = r.split(' ')[0]; labelColor = 'text-amber-500'; } }
         
         // Advancements: Set label if nothing else set

@@ -3,7 +3,7 @@ import { useGameStore } from '@/store/gameStore';
 import AdvancedPlayModal from './AdvancedPlayModal';
 import PlayLocationModal from './PlayLocationModal';
 import FieldersChoiceModal from './FieldersChoiceModal';
-import LineupChangeModal from './LineupChangeModal';
+import CambiosModal from './CambiosModal';
 
 export default function ActionPanel() {
     const { addBall, addStrike, addFoul, addOut, executeWildPitchOrPassedBall, history, undo } = useGameStore();
@@ -146,19 +146,19 @@ export default function ActionPanel() {
                     </div>
                 </div>
                 <div className="text-center mt-4">
-                    {/* Lineup change */}
+                    {/* Cambios */}
                     <button
                         onClick={() => setIsLineupChangeOpen(true)}
                         className="w-100 h-10 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold py-2 rounded-lg active:scale-95 transition-all mt-1"
                     >
-                        Cambio de Lineup
+                        Cambios
                     </button>
                 </div>
             </div>
 
             <AdvancedPlayModal isOpen={isAdvancedModalOpen} onClose={() => setIsAdvancedModalOpen(false)} />
             <FieldersChoiceModal isOpen={isFieldersChoiceModalOpen} onClose={() => setIsFieldersChoiceModalOpen(false)} />
-            <LineupChangeModal isOpen={isLineupChangeOpen} onClose={() => setIsLineupChangeOpen(false)} />
+            <CambiosModal isOpen={isLineupChangeOpen} onClose={() => setIsLineupChangeOpen(false)} />
 
             {isLocationModalOpen && (
                 <PlayLocationModal

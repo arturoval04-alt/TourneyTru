@@ -19,7 +19,60 @@ export class PlayersService {
     async findOne(id: string) {
         const player = await this.prisma.player.findUnique({
             where: { id },
-            include: { team: true },
+            include: {
+                team: {
+                    include: {
+                        tournament: { select: { id: true, name: true, season: true } },
+                    },
+                },
+                playerStats: {
+                    include: {
+                        tournament: { select: { id: true, name: true, season: true } },
+                    },
+                    orderBy: { createdAt: 'desc' },
+                },
+                lineupEntries: {
+                    distinct: ['gameId'],
+                    include: {
+                        game: {
+                            select: {
+                                id: true,
+                                scheduledDate: true,
+                                status: true,
+                                homeScore: true,
+                                awayScore: true,
+                                homeTeamId: true,
+                                awayTeamId: true,
+                                homeTeam: { select: { id: true, name: true, shortName: true } },
+                                awayTeam: { select: { id: true, name: true, shortName: true } },
+                                tournament: { select: { id: true, name: true } },
+                            },
+                        },
+                    },
+                    orderBy: { createdAt: 'desc' },
+                },
+                gamesMvp1: {
+                    select: {
+                        id: true, scheduledDate: true, homeScore: true, awayScore: true,
+                        homeTeam: { select: { name: true } },
+                        awayTeam: { select: { name: true } },
+                    },
+                },
+                gamesMvp2: {
+                    select: {
+                        id: true, scheduledDate: true, homeScore: true, awayScore: true,
+                        homeTeam: { select: { name: true } },
+                        awayTeam: { select: { name: true } },
+                    },
+                },
+                gamesWonAsPitcher: {
+                    select: {
+                        id: true, scheduledDate: true, homeScore: true, awayScore: true,
+                        homeTeam: { select: { name: true } },
+                        awayTeam: { select: { name: true } },
+                    },
+                },
+            },
         });
 
         if (!player) {

@@ -36,6 +36,10 @@ export class CreateTournamentDto {
     @IsOptional()
     @IsString()
     locationState?: string;
+
+    @IsOptional()
+    @IsString()
+    locationCountry?: string;
 }
 
 export class UpdateTournamentDto {
@@ -56,6 +60,10 @@ export class UpdateTournamentDto {
     rulesType?: string;
 
     @IsOptional()
+    @IsUUID()
+    leagueId?: string;
+
+    @IsOptional()
     @IsString()
     logoUrl?: string;
 
@@ -70,4 +78,8 @@ export class UpdateTournamentDto {
     @IsOptional()
     @IsString()
     locationState?: string;
+
+    @IsOptional()
+    @IsString()
+    locationCountry?: string;
 }
