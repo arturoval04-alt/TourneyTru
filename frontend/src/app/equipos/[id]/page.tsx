@@ -662,7 +662,7 @@ export default function TeamProfilePage() {
                                     number={p.number}
                                     teamName={team.name}
                                 >
-                                    <div onClick={() => setSelectedPlayer(p)} className="bg-surface border border-muted/30 rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 group cursor-pointer flex flex-col items-center p-6 hover:-translate-y-1">
+                                    <div className="bg-surface border border-muted/30 rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 group cursor-pointer flex flex-col items-center p-6 hover:-translate-y-1">
                                         <div className="w-20 h-20 bg-muted/5 rounded-full mb-4 flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-primary/50 transition-colors shadow-inner">
                                             {p.photoUrl ? (
                                                 <img src={p.photoUrl} alt={`${p.firstName} ${p.lastName}`} className="w-full h-full object-cover group-hover:scale-110 duration-300" />
@@ -885,68 +885,6 @@ export default function TeamProfilePage() {
                         </div>
                     )}
                 </div>
-
-                {/* Player Preview Modal Overlay */}
-                {selectedPlayer !== null && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in-up">
-                        <div className="bg-surface border border-muted/30 rounded-[2rem] p-8 max-w-2xl w-full shadow-2xl relative overflow-hidden">
-                            <button onClick={() => setSelectedPlayer(null)} className="absolute top-6 right-6 w-8 h-8 flex items-center justify-center bg-muted/10 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/20 transition-colors z-10 cursor-pointer">
-                                ✕
-                            </button>
-                            <div className="flex flex-col md:flex-row gap-10 items-center md:items-start text-center md:text-left mb-1 relative z-10 pt-4">
-                                <div className="xs:w-20 xs:h-20 sm:w-42 sm:h-42 sm:mt-8 xs:mt-1 rounded-full bg-muted/10 overflow-hidden border-3 border-surface shadow-xl ring-2 ring-primary/30 shrink-0">
-                                    {selectedPlayer.photoUrl ? (
-                                        <img src={selectedPlayer.photoUrl} alt="Player" className="w-full h-full object-cover" />
-                                    ) : (
-                                        <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedPlayer.firstName}${selectedPlayer.lastName}`} alt="Player" width={128} height={128} className="w-full h-full object-cover" />
-                                    )}
-                                </div>
-                                <div className="flex-1 mt-2 md:mt-0">
-                                    <div className="text-sm font-black text-primary bg-primary/10 px-3 py-1 rounded-full uppercase tracking-wider inline-block mb-3">
-                                        {selectedPlayer.position || 'INF'}
-                                    </div>
-                                    <h2 className="text-3xl font-black text-foreground mb-1 leading-none tracking-tight">{selectedPlayer.firstName} {selectedPlayer.lastName}</h2>
-                                    <p className="text-base text-muted-foreground font-medium mb-3">{team?.name || 'Sin equipo'}</p>
-
-                                    <Link
-                                        href={`/jugadores/${selectedPlayer.id}`}
-                                        className="inline-flex items-center gap-1.5 text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded-lg transition-colors mb-4"
-                                    >
-                                        Ver perfil completo →
-                                    </Link>
-
-                                    {userRole === 'admin' && (
-                                        <button
-                                            onClick={() => setIsEditingPlayer(true)}
-                                            className="text-xs font-bold text-primary hover:underline mb-4 block"
-                                        >
-                                            Editar Jugador
-                                        </button>
-                                    )}
-
-                                    <div className="grid grid-cols-2 sm:grid-cols-2 gap-3">
-                                        <div className="bg-background/50 border border-muted/20 rounded-xl p-3 text-center">
-                                            <p className="text-[12px] text-muted-foreground font-bold uppercase mb-0.5 tracking-wider">Número</p>
-                                            <p className="font-bold text-foreground text-sm">#{selectedPlayer.number || '-'}</p>
-                                        </div>
-                                        <div className="bg-background/50 border border-muted/20 rounded-xl p-3 text-center">
-                                            <p className="text-[12px] text-muted-foreground font-bold uppercase mb-0.5 tracking-wider">Batea</p>
-                                            <p className="font-bold text-foreground text-sm">{selectedPlayer.bats === 'L' ? 'Zurdo' : selectedPlayer.bats === 'S' ? 'Ambos' : 'Derecho'}</p>
-                                        </div>
-                                        <div className="bg-background/50 border border-muted/20 rounded-xl p-3 text-center">
-                                            <p className="text-[12px] text-muted-foreground font-bold uppercase mb-0.5 tracking-wider">Tira</p>
-                                            <p className="font-bold text-foreground text-sm">{selectedPlayer.throws === 'L' ? 'Zurdo' : 'Derecho'}</p>
-                                        </div>
-                                        <div className="bg-background/50 border border-muted/20 rounded-xl p-3   text-center">
-                                            <p className="text-[12px] text-muted-foreground font-bold uppercase mb-0.5 tracking-wider">Estadisticas AVG-RBI</p>
-                                            <p className="font-bold text-foreground text-sm">{selectedPlayer.stats?.batting.avg} - {selectedPlayer.stats?.batting.rbi}</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
                 {/* MODAL EDITAR PERFIL EQUIPO */}
                 {isEditingProfile && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in-up">

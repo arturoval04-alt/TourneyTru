@@ -6,7 +6,8 @@ import Image from "next/image";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import api from "@/lib/api";
-import { ArrowLeft, Trophy, Users, Calendar, Star, Clock, MapPin, ChevronRight } from "lucide-react";
+import { ArrowLeft, Trophy, Users, Calendar, Clock, MapPin, ChevronRight, Settings, X } from "lucide-react";
+import { getUser } from "@/lib/auth";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -168,6 +169,9 @@ export default function PlayerProfilePage() {
     const [gameBoxscores, setGameBoxscores] = useState<Record<string, { ab: number; h: number; rbi: number; results: string[] }>>({});
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<Tab>("estadisticas");
+    const [canEdit, setCanEdit] = useState(false);
+    const [isEditingPlayer, setIsEditingPlayer] = useState(false);
+    const [playerForm, setPlayerForm] = useState({ firstName: '', lastName: '', number: '', position: '', bats: 'R', throws: 'R', photoUrl: '' });
 
     useEffect(() => {
         const fetchData = async () => {
@@ -176,8 +180,21 @@ export default function PlayerProfilePage() {
                     api.get(`/players/${id}`),
                     api.get(`/players/${id}/stats`).catch(() => ({ data: null })),
                 ]);
-                setPlayer(playerRes.data);
+                const p = playerRes.data;
+                setPlayer(p);
                 setComputedStats(statsRes.data);
+                setPlayerForm({ firstName: p.firstName, lastName: p.lastName, number: p.number?.toString() || '', position: p.position || '', bats: p.bats || 'R', throws: p.throws || 'R', photoUrl: p.photoUrl || '' });
+
+                // Check edit permissions
+                const user = getUser();
+                if (!user) return;
+                if (user.role === 'admin') { setCanEdit(true); return; }
+                if (p?.team?.tournament?.id) {
+                    const { data: t } = await api.get(`/torneos/${p.team.tournament.id}`).catch(() => ({ data: null }));
+                    if (t?.organizers?.some((o: any) => o.user?.id === user.id || o.userId === user.id)) {
+                        setCanEdit(true);
+                    }
+                }
             } catch (err) {
                 console.error(err);
             } finally {
@@ -186,6 +203,35 @@ export default function PlayerProfilePage() {
         };
         fetchData();
     }, [id]);
+
+    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => setPlayerForm(f => ({ ...f, photoUrl: reader.result as string }));
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const handleUpdatePlayer = async (e: React.SyntheticEvent) => {
+        e.preventDefault();
+        try {
+            await api.patch(`/players/${id}`, {
+                firstName: playerForm.firstName,
+                lastName: playerForm.lastName,
+                number: playerForm.number ? parseInt(playerForm.number) : null,
+                position: playerForm.position,
+                bats: playerForm.bats,
+                throws: playerForm.throws,
+                photoUrl: playerForm.photoUrl,
+            });
+            setIsEditingPlayer(false);
+            window.location.reload();
+        } catch (err) {
+            console.error(err);
+            alert('Error al actualizar jugador');
+        }
+    };
 
     // Fetch per-game boxscores once we have the player
     useEffect(() => {
@@ -300,8 +346,8 @@ export default function PlayerProfilePage() {
 
             {/* ── Hero ──────────────────────────────────────────────────────── */}
             <div className="bg-[#1a2d42] relative overflow-hidden">
-                {/* Back */}
-                <div className="max-w-4xl mx-auto px-4 pt-6">
+                {/* Back + Edit */}
+                <div className="max-w-4xl mx-auto px-4 pt-6 flex justify-between items-center">
                     <button
                         onClick={() => router.back()}
                         className="flex items-center gap-1.5 text-white/50 hover:text-white transition-colors text-sm font-medium"
@@ -309,6 +355,15 @@ export default function PlayerProfilePage() {
                         <ArrowLeft className="w-4 h-4" />
                         Volver
                     </button>
+                    {canEdit && (
+                        <button
+                            onClick={() => setIsEditingPlayer(true)}
+                            className="flex items-center gap-1.5 text-white/50 hover:text-white transition-colors text-sm font-medium bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg border border-white/10"
+                        >
+                            <Settings className="w-4 h-4" />
+                            Editar Jugador
+                        </button>
+                    )}
                 </div>
 
                 <div className="max-w-4xl mx-auto px-4 py-8 flex flex-col sm:flex-row gap-6 items-center sm:items-end">
@@ -691,6 +746,83 @@ export default function PlayerProfilePage() {
                     </div>
                 )}
             </main>
+
+            {/* ── Modal Editar Jugador ──────────────────────────────────────── */}
+            {isEditingPlayer && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className="bg-surface w-full max-w-lg rounded-3xl shadow-2xl border border-muted/30 overflow-hidden flex flex-col">
+                        <div className="p-6 border-b border-muted/20 flex justify-between items-center bg-muted/5">
+                            <h2 className="text-xl font-black text-foreground">Editar Jugador</h2>
+                            <button onClick={() => setIsEditingPlayer(false)} className="w-10 h-10 rounded-full bg-muted/10 hover:bg-muted/20 flex items-center justify-center text-muted-foreground transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleUpdatePlayer} className="p-6 space-y-4 overflow-y-auto max-h-[70vh]">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Nombre</label>
+                                    <input required type="text" value={playerForm.firstName} onChange={e => setPlayerForm(f => ({ ...f, firstName: e.target.value }))} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Apellido</label>
+                                    <input required type="text" value={playerForm.lastName} onChange={e => setPlayerForm(f => ({ ...f, lastName: e.target.value }))} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors" />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Número (#)</label>
+                                    <input type="text" value={playerForm.number} onChange={e => setPlayerForm(f => ({ ...f, number: e.target.value.replace(/[^0-9]/g, '') }))} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Posición</label>
+                                    <select value={playerForm.position} onChange={e => setPlayerForm(f => ({ ...f, position: e.target.value }))} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors">
+                                        {['P','C','1B','2B','3B','SS','LF','CF','RF','DH'].map(pos => <option key={pos} value={pos}>{pos}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Batea</label>
+                                    <select value={playerForm.bats} onChange={e => setPlayerForm(f => ({ ...f, bats: e.target.value }))} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors">
+                                        <option value="R">Derecho</option>
+                                        <option value="L">Zurdo</option>
+                                        <option value="S">Ambidiestro</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Tira</label>
+                                    <select value={playerForm.throws} onChange={e => setPlayerForm(f => ({ ...f, throws: e.target.value }))} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors">
+                                        <option value="R">Derecho</option>
+                                        <option value="L">Zurdo</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Foto (URL o subir)</label>
+                                <div className="flex gap-2">
+                                    <input type="text" value={playerForm.photoUrl} onChange={e => setPlayerForm(f => ({ ...f, photoUrl: e.target.value }))} placeholder="URL de la imagen" className="flex-1 bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary transition text-xs" />
+                                    <label className="shrink-0 bg-muted/20 hover:bg-muted/30 text-foreground px-4 py-3 rounded-lg cursor-pointer transition text-xs font-bold border border-muted/30">
+                                        Subir
+                                        <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+                                    </label>
+                                </div>
+                                {playerForm.photoUrl && (
+                                    <div className="mt-2 flex items-center gap-2 border border-muted/20 p-2 rounded-lg bg-muted/5">
+                                        <div className="w-12 h-12 rounded border border-muted/30 overflow-hidden bg-white flex items-center justify-center">
+                                            <img src={playerForm.photoUrl} alt="Preview" className="w-full h-full object-contain" />
+                                        </div>
+                                        <button type="button" onClick={() => setPlayerForm(f => ({ ...f, photoUrl: '' }))} className="text-[10px] text-red-500 font-bold hover:underline">Eliminar</button>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="flex justify-end gap-3 pt-4 border-t border-muted/10">
+                                <button type="button" onClick={() => setIsEditingPlayer(false)} className="px-6 py-2.5 rounded-xl font-bold text-muted-foreground hover:bg-muted/10 transition-colors text-sm">Cancelar</button>
+                                <button type="submit" className="px-6 py-2.5 rounded-xl font-black bg-primary text-white hover:opacity-90 transition-colors shadow-lg text-sm">Guardar Cambios</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
