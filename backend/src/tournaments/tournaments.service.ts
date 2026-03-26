@@ -37,6 +37,9 @@ export class TournamentsService {
                     include: {
                         homeTeam: true,
                         awayTeam: true,
+                        winningPitcher: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
+                        mvpBatter1: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
+                        mvpBatter2: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
                     },
                     orderBy: { scheduledDate: 'asc' },
                 },

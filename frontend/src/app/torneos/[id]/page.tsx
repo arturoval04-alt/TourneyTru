@@ -27,7 +27,7 @@ export default function TournamentProfilePage() {
         startDate?: string;
         league?: { name: string };
         teams: { id: string; name: string; shortName?: string; logoUrl?: string; managerName?: string; _count?: { players: number } }[];
-        games: { id: string; homeTeam: { id: string; name: string; shortName?: string }; awayTeam: { id: string; name: string; shortName?: string }; homeScore: number; awayScore: number; currentInning: number; half: string; status: string; scheduledDate: string }[];
+        games: { id: string; homeTeam: { id: string; name: string; shortName?: string; logoUrl?: string; wins?: number; losses?: number }; awayTeam: { id: string; name: string; shortName?: string; logoUrl?: string; wins?: number; losses?: number }; homeScore: number; awayScore: number; currentInning: number; half: string; status: string; scheduledDate: string; field?: string; round?: string; winningPitcher?: { id: string; firstName: string; lastName: string; photoUrl?: string } | null; mvpBatter1?: { id: string; firstName: string; lastName: string; photoUrl?: string } | null; mvpBatter2?: { id: string; firstName: string; lastName: string; photoUrl?: string } | null }[];
         fields: { id: string; name: string; location?: string }[];
         organizers: { id: string; user: { firstName?: string; lastName?: string; email: string } }[];
         news?: { id: string; title: string; description?: string; coverUrl?: string; facebookUrl?: string; type?: string; hasVideo?: boolean; createdAt: string }[];
@@ -422,80 +422,76 @@ export default function TournamentProfilePage() {
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </div>
 
-                {/* ═══ NAVIGATION SECTION (CENTERED) ═══ */}
-                <div className="sticky top-0 z-50 bg-[#1e293b] border-b border-slate-800 shadow-md h-16 flex items-center px-4 md:px-8">
-                    <div className="flex-1 flex items-center justify-center overflow-x-auto scrollbar-hide">
-                        <div className="flex gap-2 min-w-max">
-                            {tabs.map((tab) => (
-                                <button
-                                    key={tab.id}
-                                    onClick={() => setActiveTab(tab.id)}
-                                    className={`px-6 py-2 text-xs font-black uppercase tracking-wider rounded-xl transition-all ${activeTab === tab.id
-                                        ? 'bg-slate-700 text-white shadow-inner border border-slate-600'
-                                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                                        }`}
-                                >
-                                    {tab.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Quick Actions Dropdown (Integrated) */}
-                    {(userRole === 'admin' || userRole === 'scorekeeper') && (
-                        <div className="relative ml-4 shrink-0">
-                            <button
-                                onClick={() => setIsActionsOpen(!isActionsOpen)}
-                                className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${isActionsOpen ? 'bg-primary text-white shadow-lg' : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700'}`}
-                            >
-                                <Settings className={`w-4 h-4 transition-transform duration-300 ${isActionsOpen ? 'rotate-90' : ''}`} />
-                                <span className="hidden sm:inline">Acciones</span>
-                            </button>
-
-                            {/* Dropdown Menu - Animation Towards Down */}
-                            <div className={`absolute right-0 top-full mt-2 w-56 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden transition-all duration-300 origin-top transform z-[60] ${isActionsOpen ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-4 scale-95 pointer-events-none'}`}>
-                                <div className="p-2 space-y-1">
-                                    <button onClick={() => { setIsCreatingGame(true); setIsActionsOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition-all text-xs font-bold">
-                                        <Calendar className="w-4 h-4 text-primary" />
-                                        Crear Nuevo Partido
+                        {/* ═══ TABS SECTION (inside card) ═══ */}
+                        <div className="bg-[#2a303c] border-t border-black/20 flex items-center justify-between px-4 overflow-x-auto scrollbar-hide">
+                            <div className="flex gap-1 md:gap-2 md:ml-56 overflow-x-auto scrollbar-hide">
+                                {tabs.map((tab) => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setActiveTab(tab.id)}
+                                        className={`px-4 sm:px-6 py-4 text-xs font-black uppercase tracking-wider whitespace-nowrap transition-colors duration-200 ${activeTab === tab.id
+                                            ? 'text-white border-b-2 border-white'
+                                            : 'text-white/40 hover:text-white/80 border-b-2 border-transparent'
+                                            }`}
+                                    >
+                                        {tab.label}
                                     </button>
-                                    {userRole === 'admin' && (
-                                        <>
-                                            <button onClick={() => { setIsAddingTeam(true); setIsActionsOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition-all text-xs font-bold">
-                                                <Users className="w-4 h-4 text-primary" />
-                                                Agregar Equipo
-                                            </button>
-                                            <button onClick={() => { setIsAddingField(true); setIsActionsOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition-all text-xs font-bold">
-                                                <MapPin className="w-4 h-4 text-primary" />
-                                                Añadir Campo
-                                            </button>
-                                            <button onClick={() => { setIsCreatingNews(true); setIsActionsOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition-all text-xs font-bold">
-                                                <Radio className="w-4 h-4 text-primary" />
-                                                Publicar Noticia
-                                            </button>
-                                            {tournament?.status !== 'completed' && (
-                                                <button onClick={() => { setIsActionsOpen(false); handleFinalizeTournament(); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-900/40 text-red-400 hover:text-red-300 transition-all text-xs font-bold border-t border-slate-800 mt-1 pt-3">
-                                                    <CheckCircle className="w-4 h-4" />
-                                                    Finalizar Torneo
-                                                </button>
-                                            )}
-                                        </>
-                                    )}
-                                </div>
+                                ))}
                             </div>
+
+                            {/* Quick Actions Dropdown */}
+                            {(userRole === 'admin' || userRole === 'scorekeeper') && (
+                                <div className="relative ml-4 shrink-0 py-2">
+                                    <button
+                                        onClick={() => setIsActionsOpen(!isActionsOpen)}
+                                        className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${isActionsOpen ? 'bg-primary text-white shadow-lg' : 'bg-white/10 text-white/70 border border-white/10 hover:bg-white/20 hover:text-white'}`}
+                                    >
+                                        <Settings className={`w-4 h-4 transition-transform duration-300 ${isActionsOpen ? 'rotate-90' : ''}`} />
+                                        <span className="hidden sm:inline">Acciones</span>
+                                    </button>
+
+                                    <div className={`absolute right-0 top-full mt-2 w-56 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden transition-all duration-300 origin-top transform z-[60] ${isActionsOpen ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-4 scale-95 pointer-events-none'}`}>
+                                        <div className="p-2 space-y-1">
+                                            <button onClick={() => { setIsCreatingGame(true); setIsActionsOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition-all text-xs font-bold">
+                                                <Calendar className="w-4 h-4 text-primary" />
+                                                Crear Nuevo Partido
+                                            </button>
+                                            {userRole === 'admin' && (
+                                                <>
+                                                    <button onClick={() => { setIsAddingTeam(true); setIsActionsOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition-all text-xs font-bold">
+                                                        <Users className="w-4 h-4 text-primary" />
+                                                        Agregar Equipo
+                                                    </button>
+                                                    <button onClick={() => { setIsAddingField(true); setIsActionsOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition-all text-xs font-bold">
+                                                        <MapPin className="w-4 h-4 text-primary" />
+                                                        Añadir Campo
+                                                    </button>
+                                                    <button onClick={() => { setIsCreatingNews(true); setIsActionsOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition-all text-xs font-bold">
+                                                        <Radio className="w-4 h-4 text-primary" />
+                                                        Publicar Noticia
+                                                    </button>
+                                                    {tournament?.status !== 'completed' && (
+                                                        <button onClick={() => { setIsActionsOpen(false); handleFinalizeTournament(); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-900/40 text-red-400 hover:text-red-300 transition-all text-xs font-bold border-t border-slate-800 mt-1 pt-3">
+                                                            <CheckCircle className="w-4 h-4" />
+                                                            Finalizar Torneo
+                                                        </button>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                    )}
+                    </div>
                 </div>
 
-                {/* ═══ MAIN LAYOUT (WITH BANNERS) ═══ */}
-                <div className="max-w-[1400px] mx-auto flex gap-6 px-4 py-8">
-
+                {/* ═══ MAIN LAYOUT ═══ */}
+                <div className="max-w-7xl mx-auto px-1 md:px-4 py-6">
 
                     {/* Main Content Area */}
-                    <div className="flex-1 min-w-0">
+                    <div className="w-full min-w-0">
                         {activeTab === 'informacion' && (
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in-up">
                                 <div className="lg:col-span-2 space-y-6">
@@ -773,125 +769,192 @@ export default function TournamentProfilePage() {
                             </div>
                         )}
 
-                        {activeTab === 'juegos' && (
-                            <div className="animate-fade-in-up">
-                                {!tournament?.games?.length ? (
-                                    <div className="bg-surface border border-muted/30 rounded-2xl p-6 md:p-12 text-center shadow-sm">
-                                        <Clock className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-                                        <h3 className="text-lg font-bold text-foreground mb-2">No hay juegos</h3>
-                                        <p className="text-muted-foreground">Aún no se han programado juegos.</p>
+                        {activeTab === 'juegos' && (() => {
+                            if (!tournament?.games) return null;
+                            const liveGames = tournament.games.filter(g => g.status === 'in_progress');
+                            const finishedGames = tournament.games.filter(g => g.status === 'finished').sort((a, b) => new Date(b.scheduledDate).getTime() - new Date(a.scheduledDate).getTime());
+                            const scheduledGames = tournament.games.filter(g => g.status === 'scheduled').sort((a, b) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime());
+
+                            const GameCard = ({ game }: { game: typeof tournament.games[0] }) => (
+                                <div
+                                    key={game.id}
+                                    onClick={() => router.push(`/gamecast/${game.id}`)}
+                                    className="bg-gradient-to-br from-blue-500/20 to-surface border border-blue-500/20 rounded-2xl overflow-hidden shadow-sm flex flex-col hover:shadow-md hover:-translate-y-1 transition-all duration-300 cursor-pointer relative"
+                                >
+                                    {game.status === 'in_progress' && (
+                                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 to-orange-500" />
+                                    )}
+                                    {/* Header */}
+                                    <div className="px-4 py-2 border-b border-black/5 dark:border-white/5 flex justify-between items-center bg-black/5 dark:bg-white/5">
+                                        <div className="text-xs font-bold opacity-70 flex items-center gap-2">
+                                            <Clock className="w-3.5 h-3.5" />
+                                            {new Date(game.scheduledDate).toLocaleDateString('es-MX', { month: 'short', day: 'numeric' })} &bull; {new Date(game.scheduledDate).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                                        </div>
+                                        <div className="text-xs font-bold opacity-50 flex items-center gap-1">
+                                            <MapPin className="w-3 h-3" />
+                                            {game.field || 'Sede Local'}
+                                        </div>
                                     </div>
-                                ) : (
-                                    <div className="space-y-4">
-                                        {tournament.games.map((game) => {
-                                            const inningLabel = game.status === 'scheduled' ? 'Programado'
-                                                : game.status === 'finished' ? 'Final'
-                                                    : `${game.half === 'top' ? '▲' : '▼'}${game.currentInning}`;
-                                            return (
-                                                <div key={game.id} className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm hover:border-primary/40 hover:shadow-md transition-all group">
-                                                    {/* Main Score Area */}
-                                                    <div className="p-3 sm:p-4 flex items-center justify-between border-b border-muted/10">
-                                                        <div className="flex items-center gap-2 sm:gap-6 w-full">
-                                                            <div className="flex flex-col items-center w-[60px] sm:w-20 shrink-0">
-                                                                <div className="w-10 h-10 rounded-xl bg-primary text-white font-black flex items-center justify-center text-lg shadow-sm">{game.awayTeam.shortName || game.awayTeam.name.substring(0, 2).toUpperCase()}</div>
-                                                                <span className="text-[10px] sm:text-xs font-semibold mt-1.5 text-foreground text-center line-clamp-1">{game.awayTeam.name}</span>
-                                                            </div>
-                                                            <div className="flex-1 flex justify-center items-center text-xl sm:text-3xl font-black text-foreground tracking-widest font-mono italic">{game.awayScore} - {game.homeScore}</div>
-                                                            <div className="flex flex-col items-center w-[60px] sm:w-20 shrink-0">
-                                                                <div className="w-10 h-10 rounded-xl bg-slate-700 text-white font-black flex items-center justify-center text-lg shadow-sm">{game.homeTeam.shortName || game.homeTeam.name.substring(0, 2).toUpperCase()}</div>
-                                                                <span className="text-[10px] sm:text-xs font-semibold mt-1.5 text-foreground text-center line-clamp-1">{game.homeTeam.name}</span>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex flex-col items-end gap-1 ml-4 border-l border-muted/10 pl-4">
-                                                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter ${game.status === 'in_progress' ? 'bg-red-500 text-white animate-pulse' : game.status === 'finished' ? 'bg-amber-500/10 text-amber-500' : 'bg-muted/10 text-muted-foreground'}`}>
-                                                                {inningLabel}
-                                                            </span>
-                                                            <span className="text-[9px] font-bold text-muted-foreground whitespace-nowrap">{new Date(game.scheduledDate).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}</span>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Bottom Actions/MVP Area */}
-                                                    {(game.status === 'finished' || game.status === 'in_progress') && (
-                                                        <div className="flex border-t border-muted/5">
-                                                            {/* 2/3 MVP/Pitcher Section */}
-                                                            <div className="flex-[2] grid grid-cols-2 divide-x divide-muted/10 bg-muted/5">
-                                                                {game.status === 'finished' ? (
-                                                                    <>
-                                                                        <div className="p-3 flex items-center gap-3">
-                                                                            <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0 border border-amber-500/30">
-                                                                                <Trophy className="w-4 h-4 text-amber-600" />
-                                                                            </div>
-                                                                            <div className="min-w-0">
-                                                                                <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Pitcher Ganador</p>
-                                                                                <p className="text-[11px] font-bold text-foreground truncate">MVP Pitcher</p>
-                                                                                <p className="text-[10px] text-muted-foreground">7.0 IP</p>
-                                                                            </div>
-                                                                        </div>
-                                                                        <div className="p-3 flex items-center gap-3">
-                                                                            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0 border border-primary/30 text-primary">
-                                                                                <Target className="w-4 h-4" />
-                                                                            </div>
-                                                                            <div className="min-w-0">
-                                                                                <p className="text-[9px] font-black text-primary uppercase tracking-widest">MVP Bateador</p>
-                                                                                <p className="text-[11px] font-bold text-foreground truncate">MVP Batter</p>
-                                                                                <p className="text-[10px] text-muted-foreground">4-3, 1 HR</p>
-                                                                            </div>
-                                                                        </div>
-                                                                    </>
-                                                                ) : (
-                                                                    <>
-                                                                        <div className="p-3 flex items-center gap-3">
-                                                                            <div className="w-8 h-8 rounded-full bg-slate-200 border border-slate-300 flex items-center justify-center shrink-0 overflow-hidden">
-                                                                                <Users className="w-4 h-4 text-slate-500" />
-                                                                            </div>
-                                                                            <div className="min-w-0">
-                                                                                <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">{game.awayTeam.shortName}</p>
-                                                                                <p className="text-[11px] font-bold text-foreground truncate">Pitcher Visitante</p>
-                                                                                <p className="text-[10px] text-primary font-black">2.1 IP</p>
-                                                                            </div>
-                                                                        </div>
-                                                                        <div className="p-3 flex items-center gap-3">
-                                                                            <div className="w-8 h-8 rounded-full bg-slate-200 border border-slate-300 flex items-center justify-center shrink-0 overflow-hidden">
-                                                                                <Users className="w-4 h-4 text-slate-500" />
-                                                                            </div>
-                                                                            <div className="min-w-0">
-                                                                                <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">{game.homeTeam.shortName}</p>
-                                                                                <p className="text-[11px] font-bold text-foreground truncate">Pitcher Local</p>
-                                                                                <p className="text-[10px] text-primary font-black">3.0 IP</p>
-                                                                            </div>
-                                                                        </div>
-                                                                    </>
-                                                                )}
-                                                            </div>
-
-                                                            {/* 1/3 Action Button Section */}
-                                                            <div className="flex-1 border-l border-muted/10">
-                                                                <Link
-                                                                    href={`/gamecast/${game.id}`}
-                                                                    className={`w-full h-full flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-wider transition-all hover:bg-muted/10 ${game.status === 'in_progress' ? 'bg-red-600 text-white hover:bg-red-700' : 'text-primary'}`}
-                                                                >
-                                                                    {game.status === 'in_progress' ? (
-                                                                        <>
-                                                                            <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                                                                            GAMECAST
-                                                                        </>
-                                                                    ) : (
-                                                                        <>
-                                                                            <CheckCircle2 className="w-3.5 h-3.5" />
-                                                                            BOXSCORE
-                                                                        </>
-                                                                    )}
-                                                                </Link>
-                                                            </div>
-                                                        </div>
-                                                    )}
+                                    {/* Body */}
+                                    <div className="flex flex-col flex-1">
+                                        <div className="p-4 md:p-6 flex items-center justify-between">
+                                            {/* Away Team */}
+                                            <Link href={`/equipos/${game.awayTeam.id}`} onClick={(e) => e.stopPropagation()} className="flex flex-col items-center gap-2 flex-1 group hover:-translate-y-1 transition-transform">
+                                                <div className="w-14 h-14 md:w-20 md:h-20 bg-surface rounded-full shadow-md flex items-center justify-center border-2 border-muted/20 overflow-hidden font-black text-2xl shrink-0 group-hover:border-primary/50 transition-colors">
+                                                    {game.awayTeam.logoUrl ? <img src={game.awayTeam.logoUrl} alt="A" className="w-full h-full object-cover" /> : game.awayTeam.shortName || game.awayTeam.name.substring(0, 2)}
                                                 </div>
-                                            );
-                                        })}
+                                                <span className="text-[10px] md:text-sm font-black text-center leading-tight line-clamp-2 group-hover:text-primary transition-colors">{game.awayTeam.name}</span>
+                                            </Link>
+                                            {/* Score */}
+                                            <div className="flex flex-col items-center justify-center flex-shrink-0 px-2 md:px-6">
+                                                {game.status === 'in_progress' && (
+                                                    <span className="text-[10px] font-black tracking-widest uppercase text-red-500 animate-pulse mb-1 flex items-center gap-1">
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-red-500" /> EN VIVO
+                                                    </span>
+                                                )}
+                                                <div className="bg-surface/60 backdrop-blur-md border border-muted/20 px-4 py-2 rounded-2xl">
+                                                    <div className="text-3xl md:text-5xl font-black tabular-nums tracking-tighter text-foreground text-center drop-shadow-sm flex items-center justify-center gap-3">
+                                                        <span>{game.status === 'scheduled' ? '-' : game.awayScore}</span>
+                                                        <span className="text-muted-foreground/30 font-light text-2xl md:text-4xl">-</span>
+                                                        <span>{game.status === 'scheduled' ? '-' : game.homeScore}</span>
+                                                    </div>
+                                                </div>
+                                                {game.status === 'finished' && (
+                                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-2 bg-muted/10 px-2 py-0.5 rounded">Finalizado</span>
+                                                )}
+                                                {game.status === 'scheduled' && (
+                                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-2 bg-muted/10 px-2 py-0.5 rounded">Programado</span>
+                                                )}
+                                            </div>
+                                            {/* Home Team */}
+                                            <Link href={`/equipos/${game.homeTeam.id}`} onClick={(e) => e.stopPropagation()} className="flex flex-col items-center gap-2 flex-1 group hover:-translate-y-1 transition-transform">
+                                                <div className="w-14 h-14 md:w-20 md:h-20 bg-surface rounded-full shadow-md flex items-center justify-center border-2 border-muted/20 overflow-hidden font-black text-2xl shrink-0 group-hover:border-primary/50 transition-colors">
+                                                    {game.homeTeam.logoUrl ? <img src={game.homeTeam.logoUrl} alt="H" className="w-full h-full object-cover" /> : game.homeTeam.shortName || game.homeTeam.name.substring(0, 2)}
+                                                </div>
+                                                <span className="text-[10px] md:text-sm font-black text-center leading-tight line-clamp-2 group-hover:text-primary transition-colors">{game.homeTeam.name}</span>
+                                            </Link>
+                                        </div>
+                                        {/* Bottom Stats Bar */}
+                                        <div className="flex border-t border-black/10 dark:border-white/10">
+                                            <div className="flex-1 p-3 md:p-4 flex items-center gap-3 md:gap-4">
+                                                {game.status === 'in_progress' ? (
+                                                    <span className="text-xs font-black text-red-500 uppercase tracking-widest bg-red-500/10 px-2 py-1 rounded border border-red-500/20 flex items-center gap-1 animate-pulse">
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                                        {game.half === 'top' ? 'Alta' : 'Baja'} {game.currentInning || 1}
+                                                    </span>
+                                                ) : game.status === 'finished' ? (
+                                                    <>
+                                                        <div className="flex-1 flex items-center justify-start">
+                                                            {game.winningPitcher && (
+                                                                <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                                                    <Link href={`/jugadores/${game.winningPitcher.id}`}>
+                                                                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-surface border-2 border-amber-500/50 overflow-hidden shadow-md shrink-0">
+                                                                            <img src={game.winningPitcher.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${game.winningPitcher.firstName}`} alt="PG" className="w-full h-full object-cover" />
+                                                                        </div>
+                                                                    </Link>
+                                                                    <div className="flex flex-col min-w-0">
+                                                                        <span className="text-[12px] font-black text-amber-500 uppercase tracking-wider flex items-center gap-1">
+                                                                            <Trophy className="w-3 h-3" /> P. Ganador
+                                                                        </span>
+                                                                        <span className="text-xs md:text-sm font-bold text-foreground capitalize truncate">{game.winningPitcher.firstName.charAt(0)}. {game.winningPitcher.lastName}</span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        {game.winningPitcher && (game.mvpBatter1 || game.mvpBatter2) && (
+                                                            <div className="w-px h-10 bg-white/10 shrink-0" />
+                                                        )}
+                                                        <div className="flex-1 flex items-center justify-end">
+                                                            {(game.mvpBatter1 || game.mvpBatter2) && (
+                                                                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                                                    <span className="text-[12px] font-black uppercase text-blue-500 tracking-wider">MVP</span>
+                                                                    <div className="flex space-x-2">
+                                                                        {game.mvpBatter1 && (
+                                                                            <Link href={`/jugadores/${game.mvpBatter1.id}`}>
+                                                                                <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-surface border-2 border-blue-400 overflow-hidden shadow-md" title={`${game.mvpBatter1.firstName} ${game.mvpBatter1.lastName}`}>
+                                                                                    <img src={game.mvpBatter1.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${game.mvpBatter1.firstName}`} alt="MVP1" className="w-full h-full object-cover" />
+                                                                                </div>
+                                                                            </Link>
+                                                                        )}
+                                                                        {game.mvpBatter2 && (
+                                                                            <Link href={`/jugadores/${game.mvpBatter2.id}`}>
+                                                                                <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-surface border-2 border-blue-400 overflow-hidden shadow-md" title={`${game.mvpBatter2.firstName} ${game.mvpBatter2.lastName}`}>
+                                                                                    <img src={game.mvpBatter2.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${game.mvpBatter2.firstName}`} alt="MVP2" className="w-full h-full object-cover" />
+                                                                                </div>
+                                                                            </Link>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </>
+                                                ) : null}
+                                            </div>
+                                            <Link
+                                                href={`/gamecast/${game.id}`}
+                                                onClick={(e) => e.stopPropagation()}
+                                                className={`px-4 flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-wider border-l border-black/10 dark:border-white/10 transition-all hover:bg-muted/10 ${game.status === 'in_progress' ? 'bg-red-600 text-white hover:bg-red-700' : 'text-primary'}`}
+                                            >
+                                                {game.status === 'in_progress' ? (
+                                                    <><div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /> GAMECAST</>
+                                                ) : game.status === 'finished' ? (
+                                                    <><CheckCircle2 className="w-3.5 h-3.5" /> BOXSCORE</>
+                                                ) : (
+                                                    <><Calendar className="w-3.5 h-3.5" /> VER</>
+                                                )}
+                                            </Link>
+                                        </div>
                                     </div>
-                                )}
-                            </div>
-                        )}
+                                </div>
+                            );
+
+                            return (
+                                <div className="animate-fade-in-up space-y-10">
+                                    {tournament.games.length === 0 ? (
+                                        <div className="bg-surface border border-muted/30 rounded-2xl p-6 md:p-12 text-center shadow-sm">
+                                            <Clock className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+                                            <h3 className="text-lg font-bold text-foreground mb-2">No hay juegos</h3>
+                                            <p className="text-muted-foreground">Aún no se han programado juegos.</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            {liveGames.length > 0 && (
+                                                <div>
+                                                    <div className="flex items-center mb-5 pl-2 border-l-4 border-red-500">
+                                                        <h3 className="text-xl font-black text-foreground uppercase tracking-widest flex items-center gap-2">
+                                                            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> En Vivo
+                                                        </h3>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                                                        {liveGames.map(g => <GameCard key={g.id} game={g} />)}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {finishedGames.length > 0 && (
+                                                <div>
+                                                    <div className="flex items-center mb-5 pl-2 border-l-4 border-primary">
+                                                        <h3 className="text-xl font-black text-foreground uppercase tracking-widest">Partidos Recientes</h3>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                                                        {finishedGames.map(g => <GameCard key={g.id} game={g} />)}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {scheduledGames.length > 0 && (
+                                                <div>
+                                                    <div className="flex items-center mb-5 pl-2 border-l-4 border-muted-foreground">
+                                                        <h3 className="text-xl font-black text-foreground uppercase tracking-widest">Próximos Partidos</h3>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                                                        {scheduledGames.map(g => <GameCard key={g.id} game={g} />)}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            );
+                        })()}
 
                         {activeTab === 'posiciones' && (
                             <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm animate-fade-in-up">
