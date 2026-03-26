@@ -336,70 +336,90 @@ export default function TournamentProfilePage() {
             <Navbar />
 
             <main className="animate-fade-in-up">
-                {/* ═══ HEADER SECTION (CENTERED) ═══ */}
-                <div className="relative pt-6 pb-12 px-4 shadow-2xl overflow-hidden" style={{ background: 'linear-gradient(to bottom, #0f172a, #1e293b)' }}>
-                    {/* Floating Back Button */}
-                    <div className="max-w-7xl mx-auto relative z-10">
-                        <Link href="/torneos" className="inline-flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-white transition-colors mb-4">
-                            <ArrowLeft className="w-3.5 h-3.5" />
-                            Volver a torneos
-                        </Link>
-                    </div>
+                {/* ═══ HEADER SECTION (PROFILE CARD) ═══ */}
+                <div className="max-w-7xl mx-auto px-1 md:px-4 pt-4 pb-0">
+                    <Link href="/torneos" className="inline-flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-white transition-colors mb-3 px-3 md:px-0">
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                        Volver a torneos
+                    </Link>
 
-                    <div className="max-w-4xl mx-auto text-center relative z-10 flex flex-col items-center">
-                        {/* Lugar & Liga Label */}
-                        <div className="mb-6 space-y-1">
-                            <p className="text-slate-300 text-base font-serif italic tracking-wide">
-                                Lugar : {tournament?.location_city + ', ' + tournament?.location_state || 'No se ha establecido una ubicación'}
-                            </p>
-                            <h2 className="text-white text-2xl md:text-3xl font-black uppercase tracking-[0.2em]">
-                                {tournament?.league?.name || 'LIGA MUNICIPAL DE SOFTBOL DE AHOME'}
-                            </h2>
+                    {/* Unified Profile Card */}
+                    <div className="bg-surface border border-muted/30 md:rounded-xl overflow-hidden shadow-md flex flex-col relative">
+
+                        {/* Top Banner */}
+                        <div className="bg-[#1a2d42] text-white py-12 md:py-20 px-6 md:px-8 text-center md:text-left md:pl-72 relative">
+                            {(tournament?.location_city || tournament?.location_state) && (
+                                <div className="flex items-center justify-center md:justify-start gap-1.5 text-[10px] text-white/50 font-black uppercase tracking-widest mb-2">
+                                    <MapPin className="w-3 h-3" />
+                                    {[tournament?.location_city, tournament?.location_state].filter(Boolean).join(', ')}
+                                </div>
+                            )}
+                            <h1 className="text-xl md:text-3xl font-black uppercase tracking-[0.15em] text-white drop-shadow-md leading-tight">
+                                {tournament?.league?.name || tournament?.name}
+                            </h1>
+                            {tournament?.league?.name && tournament?.name !== tournament?.league?.name && (
+                                <p className="text-white/50 text-xs font-bold mt-1.5 italic tracking-wider">{tournament?.name}</p>
+                            )}
                         </div>
 
-                        {/* Centered Logo with Action Icons */}
-                        <div className="relative mb-8 group">
-                            {/* Settings Icon (Admin Only) */}
-                            {userRole === 'admin' && (
-                                <button
-                                    onClick={() => setIsEditingProfile(true)}
-                                    className="absolute -left-16 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl bg-slate-800/80 border border-slate-700 hover:bg-slate-700 flex items-center justify-center text-slate-300 hover:text-white transition-all shadow-lg"
-                                    title="Configuración"
-                                >
-                                    <Settings className="w-5 h-5 border-slate-400" />
-                                </button>
-                            )}
+                        {/* Info Section */}
+                        <div className="bg-[#2a303c] p-5 pt-20 md:pt-4 flex flex-col md:flex-row items-center md:items-start gap-4 relative z-10">
 
-                            {/* Main Logo */}
-                            <div className="w-48 h-48 md:w-56 md:h-56 bg-white rounded-[2rem] border-[6px] border-slate-800 shadow-2xl overflow-hidden flex items-center justify-center relative">
+                            {/* Logo Overlapping */}
+                            <div className="absolute -top-8 left-1/2 -translate-x-1/2 md:translate-x-0 md:left-8 w-28 h-28 md:w-52 md:h-52 bg-white rounded-xl md:rounded-2xl border-4 border-[#2a303c] shadow-xl overflow-hidden flex items-center justify-center shrink-0 z-20">
                                 {tournament?.logoUrl ? (
-                                    <img src={tournament.logoUrl} alt="Logo" className="w-full h-full object-contain p-4" />
+                                    <img src={tournament.logoUrl} alt="Logo" className="w-full h-full object-contain p-2" />
                                 ) : (
-                                    <Image src={`https://api.dicebear.com/7.x/shapes/svg?seed=${tournamentId}`} alt="Logo" width={224} height={224} className="object-cover" />
+                                    <Image src={`https://api.dicebear.com/7.x/shapes/svg?seed=${tournamentId}`} alt="Logo" width={208} height={208} className="object-cover" />
                                 )}
                             </div>
 
-                            {/* Share Icon */}
-                            <button className="absolute -right-16 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl bg-slate-800/80 border border-slate-700 hover:bg-slate-700 flex items-center justify-center text-slate-300 hover:text-white transition-all shadow-lg">
-                                <Radio className="w-5 h-5" />
-                            </button>
-                        </div>
+                            {/* Mobile action buttons */}
+                            <div className="absolute top-16 right-4 md:hidden flex gap-2 z-30">
+                                {userRole === 'admin' && (
+                                    <button onClick={() => setIsEditingProfile(true)} className="w-9 h-9 rounded-full border border-white/20 bg-white/10 flex items-center justify-center text-white/70" title="Configuración">
+                                        <Settings className="w-4 h-4" />
+                                    </button>
+                                )}
+                                <button className="w-9 h-9 rounded-full border border-white/20 bg-white/10 flex items-center justify-center text-white" title="Compartir">
+                                    <Radio className="w-4 h-4" />
+                                </button>
+                            </div>
 
-                        {/* Simple Info Badges */}
-                        <div className="flex flex-wrap justify-center items-center gap-3">
-                            <div className="bg-slate-800/80 border border-slate-700 px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm min-w-[100px] justify-center">
-                                <span className="text-lg">{tournament?.rulesType?.includes('softball') ? '🥎' : '⚾'}</span>
-                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">
-                                    {tournament?.rulesType?.includes('softball') ? 'Softbol' : 'Béisbol'}
-                                </span>
-                            </div>
-                            <div className="bg-slate-800/80 border border-slate-700 px-4 py-2 rounded-xl flex flex-col items-center shadow-sm min-w-[80px]">
-                                <span className="text-lg font-black text-white">{tournament?.teams?.length || 0}</span>
-                                <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Equipos</span>
-                            </div>
-                            <div className="bg-slate-800/80 border border-slate-700 px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm min-w-[100px] justify-center">
-                                <Calendar className="w-4 h-4 text-slate-400" />
-                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">{tournament?.season || '2026'}</span>
+                            {/* Info */}
+                            <div className="flex-1 flex flex-col items-center md:items-start md:ml-56 w-full text-center md:text-left">
+                                <div className="flex flex-col md:flex-row justify-between w-full md:items-center gap-3">
+                                    <div className="space-y-2">
+                                        <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight tracking-tight">{tournament?.name}</h2>
+                                        <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-3 gap-y-1">
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-white/60 flex items-center gap-1.5">
+                                                <span>{tournament?.rulesType?.includes('softball') ? '🥎' : '⚾'}</span>
+                                                {tournament?.rulesType?.includes('softball') ? 'Softbol' : 'Béisbol'}
+                                            </span>
+                                            <span className="text-white/30 text-sm">·</span>
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-white/60">
+                                                {tournament?.teams?.length || 0} {(tournament?.teams?.length || 0) === 1 ? 'Equipo' : 'Equipos'}
+                                            </span>
+                                            <span className="text-white/30 text-sm">·</span>
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-white/60 flex items-center gap-1.5">
+                                                <Calendar className="w-3 h-3" />
+                                                {tournament?.season || '2026'}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Desktop action buttons */}
+                                    <div className="hidden md:flex gap-3 shrink-0">
+                                        {userRole === 'admin' && (
+                                            <button onClick={() => setIsEditingProfile(true)} className="w-10 h-10 rounded-full border border-white/20 bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/70 hover:text-white transition-colors" title="Configuración">
+                                                <Settings className="w-5 h-5" />
+                                            </button>
+                                        )}
+                                        <button className="w-10 h-10 rounded-full border border-white/20 bg-white/5 hover:bg-white/10 flex items-center justify-center text-white transition-colors" title="Compartir">
+                                            <Radio className="w-5 h-5" />
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

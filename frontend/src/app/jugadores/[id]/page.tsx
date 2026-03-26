@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import api from "@/lib/api";
-import { ArrowLeft, Trophy, Users, Calendar, Star } from "lucide-react";
+import { ArrowLeft, Trophy, Users, Calendar, Star, Clock, MapPin, ChevronRight } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -149,28 +149,85 @@ function StatRow({ label, value, highlight }: { label: string; value: string | n
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
-type Tab = "bateo" | "pitcheo" | "juegos" | "torneos";
+type Tab = "estadisticas" | "juegos" | "equipos" | "torneos";
+
+interface ComputedStats {
+    playerId: string; gp: number; ab: number; h: number;
+    doubles: number; triples: number; hr: number; r: number;
+    rbi: number; bb: number; so: number; avg: string;
+    // pitching (may not exist)
+    w?: number; l?: number; ipOuts?: number; hAllowed?: number;
+    erAllowed?: number; bbAllowed?: number; soPitching?: number;
+}
 
 export default function PlayerProfilePage() {
     const { id } = useParams();
     const router = useRouter();
     const [player, setPlayer] = useState<PlayerData | null>(null);
+    const [computedStats, setComputedStats] = useState<ComputedStats | null>(null);
+    const [gameBoxscores, setGameBoxscores] = useState<Record<string, { ab: number; h: number; rbi: number; results: string[] }>>({});
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<Tab>("bateo");
+    const [activeTab, setActiveTab] = useState<Tab>("estadisticas");
 
     useEffect(() => {
-        const fetch = async () => {
+        const fetchData = async () => {
             try {
-                const { data } = await api.get(`/players/${id}`);
-                setPlayer(data);
+                const [playerRes, statsRes] = await Promise.all([
+                    api.get(`/players/${id}`),
+                    api.get(`/players/${id}/stats`).catch(() => ({ data: null })),
+                ]);
+                setPlayer(playerRes.data);
+                setComputedStats(statsRes.data);
             } catch (err) {
                 console.error(err);
             } finally {
                 setLoading(false);
             }
         };
-        fetch();
+        fetchData();
     }, [id]);
+
+    // Fetch per-game boxscores once we have the player
+    useEffect(() => {
+        if (!player) return;
+        const gameIds = player.lineupEntries
+            .filter((e, i, arr) => arr.findIndex(x => x.game.id === e.game.id) === i)
+            .map(e => e.game.id);
+        if (!gameIds.length) return;
+
+        const fetchBoxscores = async () => {
+            const results: Record<string, { ab: number; h: number; rbi: number; results: string[] }> = {};
+            await Promise.all(gameIds.map(async (gid) => {
+                try {
+                    const { data: box } = await api.get(`/games/${gid}/boxscore`);
+                    const allPlayers = [...(box.homeTeam?.lineup || []), ...(box.awayTeam?.lineup || [])];
+                    const me = allPlayers.find((p: any) => p.playerId === id);
+                    if (me) {
+                        // Extract at-bat results in inning order
+                        const plays = me.plays || {};
+                        const sortedInnings = Object.keys(plays).map(Number).sort((a, b) => a - b);
+                        const atBatResults: string[] = [];
+                        for (const inn of sortedInnings) {
+                            for (const play of plays[inn]) {
+                                // Simplify result: take the primary result before any | pipe
+                                const raw = play.result as string;
+                                const primary = raw.split('|')[0];
+                                atBatResults.push(primary);
+                            }
+                        }
+                        results[gid] = {
+                            ab: me.atBats ?? 0,
+                            h: me.hits ?? 0,
+                            rbi: me.rbi ?? 0,
+                            results: atBatResults,
+                        };
+                    }
+                } catch { /* skip */ }
+            }));
+            setGameBoxscores(results);
+        };
+        fetchBoxscores();
+    }, [player, id]);
 
     if (loading) {
         return (
@@ -202,9 +259,28 @@ export default function PlayerProfilePage() {
     }
 
     const totals = aggregateStats(player.playerStats);
-    const hasPitching = totals.ipOuts > 0 || totals.wins > 0 || totals.losses > 0;
-    const playerAvg = avg(totals.hits, totals.atBats);
-    const playerERA = era(totals.erAllowed, totals.ipOuts);
+    // Use computed stats from the plays table when available (they override the empty playerStats)
+    const cs = computedStats;
+    const displayAB = cs?.ab ?? totals.atBats;
+    const displayH = cs?.h ?? totals.hits;
+    const displayHR = cs?.hr ?? totals.hr;
+    const displayRBI = cs?.rbi ?? totals.rbi;
+    const displaySO = cs?.so ?? totals.so;
+    const displayBB = cs?.bb ?? totals.bb;
+    const displayR = cs?.r ?? totals.runs;
+    const display2B = cs?.doubles ?? totals.h2;
+    const display3B = cs?.triples ?? totals.h3;
+    const displayAvg = cs?.avg ?? avg(totals.hits, totals.atBats);
+
+    const hasPitching = (cs?.ipOuts ?? totals.ipOuts) > 0 || (cs?.w ?? totals.wins) > 0 || (cs?.l ?? totals.losses) > 0;
+    const displayWins = cs?.w ?? totals.wins;
+    const displayLosses = cs?.l ?? totals.losses;
+    const displayIPOuts = cs?.ipOuts ?? totals.ipOuts;
+    const displayERAllowed = cs?.erAllowed ?? totals.erAllowed;
+    const displayHAllowed = cs?.hAllowed ?? totals.hAllowed;
+    const displayBBAllowed = cs?.bbAllowed ?? totals.bbAllowed;
+    const displaySOPitching = cs?.soPitching ?? totals.soPitching;
+    const playerERA = era(displayERAllowed, displayIPOuts);
 
     // Unique games, sorted by date desc
     const games = player.lineupEntries
@@ -212,9 +288,9 @@ export default function PlayerProfilePage() {
         .sort((a, b) => new Date(b.game.scheduledDate).getTime() - new Date(a.game.scheduledDate).getTime());
 
     const tabs: { id: Tab; label: string }[] = [
-        { id: "bateo", label: "Bateo" },
-        ...(hasPitching ? [{ id: "pitcheo" as Tab, label: "Pitcheo" }] : []),
-        { id: "juegos", label: "Por Juego" },
+        { id: "estadisticas", label: "Estadísticas" },
+        { id: "juegos", label: "Juegos Jugados" },
+        { id: "equipos", label: "Equipos" },
         { id: "torneos", label: "Torneos" },
     ];
 
@@ -293,12 +369,12 @@ export default function PlayerProfilePage() {
 
                         {/* Primary stats bar */}
                         <div className="flex flex-wrap justify-center sm:justify-start gap-2">
-                            <StatBox label="AVG" value={playerAvg} accent />
-                            <StatBox label="HR" value={totals.hr} />
-                            <StatBox label="RBI" value={totals.rbi} />
-                            <StatBox label="K" value={totals.so} />
+                            <StatBox label="AVG" value={displayAvg} accent />
+                            <StatBox label="HR" value={displayHR} />
+                            <StatBox label="RBI" value={displayRBI} />
+                            <StatBox label="K" value={displaySO} />
                             {hasPitching && <StatBox label="ERA" value={playerERA} accent />}
-                            {hasPitching && <StatBox label="W-L" value={`${totals.wins}-${totals.losses}`} />}
+                            {hasPitching && <StatBox label="W-L" value={`${displayWins}-${displayLosses}`} />}
                         </div>
                     </div>
                 </div>
@@ -308,8 +384,8 @@ export default function PlayerProfilePage() {
                     <div className="max-w-4xl mx-auto px-4 flex flex-wrap gap-4 text-[11px] font-bold uppercase tracking-widest text-white/40">
                         <span>Batea: <span className="text-white/70">{player.bats === 'L' ? 'Zurdo' : player.bats === 'S' ? 'Ambos' : 'Derecho'}</span></span>
                         <span>Tira: <span className="text-white/70">{player.throws === 'L' ? 'Zurdo' : 'Derecho'}</span></span>
-                        <span>Juegos: <span className="text-white/70">{games.length}</span></span>
-                        <span>Torneos: <span className="text-white/70">{player.playerStats.length}</span></span>
+                        <span>Juegos: <span className="text-white/70">{cs?.gp ?? games.length}</span></span>
+                        <span>Torneos: <span className="text-white/70">{player.playerStats.length || (player.team.tournament ? 1 : 0)}</span></span>
                     </div>
                 </div>
             </div>
@@ -336,18 +412,18 @@ export default function PlayerProfilePage() {
             {/* ── Tab Content ───────────────────────────────────────────────── */}
             <main className="max-w-4xl mx-auto px-4 py-8">
 
-                {/* BATEO */}
-                {activeTab === "bateo" && (
+                {/* ESTADÍSTICAS (Combined Batting + Pitching) */}
+                {activeTab === "estadisticas" && (
                     <div className="space-y-6 animate-fade-in-up">
-                        {/* Totals card */}
+                        {/* Batting card */}
                         <div className="bg-surface border border-muted/20 rounded-2xl p-6 shadow-sm">
-                            <SectionTitle>Estadísticas Totales de Bateo</SectionTitle>
+                            <SectionTitle>Bateo</SectionTitle>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
                                 {[
-                                    { label: "AVG", value: avg(totals.hits, totals.atBats), color: "text-primary" },
-                                    { label: "OBP", value: obp(totals.hits, totals.bb, totals.hbp, totals.atBats), color: "text-primary" },
-                                    { label: "SLG", value: slg(totals.hits, totals.h2, totals.h3, totals.hr, totals.atBats), color: "text-primary" },
-                                    { label: "OPS", value: opsCalc(totals.hits, totals.h2, totals.h3, totals.hr, totals.bb, totals.hbp, totals.atBats), color: "text-primary" },
+                                    { label: "AVG", value: displayAvg, color: "text-primary" },
+                                    { label: "OBP", value: obp(displayH, displayBB, totals.hbp, displayAB), color: "text-primary" },
+                                    { label: "SLG", value: slg(displayH, display2B, display3B, displayHR, displayAB), color: "text-primary" },
+                                    { label: "OPS", value: opsCalc(displayH, display2B, display3B, displayHR, displayBB, totals.hbp, displayAB), color: "text-primary" },
                                 ].map(s => (
                                     <div key={s.label} className="bg-background rounded-xl p-4 text-center border border-muted/10">
                                         <p className={`text-2xl font-black font-mono ${s.color}`}>{s.value}</p>
@@ -356,52 +432,50 @@ export default function PlayerProfilePage() {
                                 ))}
                             </div>
                             <div>
-                                <StatRow label="Turnos al Bate (AB)" value={totals.atBats} />
-                                <StatRow label="Hits (H)" value={totals.hits} />
-                                <StatRow label="Dobles (2B)" value={totals.h2} />
-                                <StatRow label="Triples (3B)" value={totals.h3} />
-                                <StatRow label="Jonrones (HR)" value={totals.hr} highlight="text-primary" />
-                                <StatRow label="Carreras Impulsadas (RBI)" value={totals.rbi} />
-                                <StatRow label="Carreras Anotadas (R)" value={totals.runs} />
-                                <StatRow label="Bases por Bolas (BB)" value={totals.bb} />
-                                <StatRow label="Ponches (K)" value={totals.so} />
+                                <StatRow label="Turnos al Bate (AB)" value={displayAB} />
+                                <StatRow label="Hits (H)" value={displayH} />
+                                <StatRow label="Dobles (2B)" value={display2B} />
+                                <StatRow label="Triples (3B)" value={display3B} />
+                                <StatRow label="Jonrones (HR)" value={displayHR} highlight="text-primary" />
+                                <StatRow label="Carreras Impulsadas (RBI)" value={displayRBI} />
+                                <StatRow label="Carreras Anotadas (R)" value={displayR} />
+                                <StatRow label="Bases por Bolas (BB)" value={displayBB} />
+                                <StatRow label="Ponches (K)" value={displaySO} />
                                 <StatRow label="Golpeado por Lanzador (HBP)" value={totals.hbp} />
                                 <StatRow label="Sacrificio (SAC)" value={totals.sac} />
                             </div>
                         </div>
-                    </div>
-                )}
 
-                {/* PITCHEO */}
-                {activeTab === "pitcheo" && hasPitching && (
-                    <div className="space-y-6 animate-fade-in-up">
-                        <div className="bg-surface border border-muted/20 rounded-2xl p-6 shadow-sm">
-                            <SectionTitle>Estadísticas Totales de Pitcheo</SectionTitle>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-                                {[
-                                    { label: "ERA", value: era(totals.erAllowed, totals.ipOuts), color: "text-primary" },
-                                    { label: "WHIP", value: whip(totals.bbAllowed, totals.hAllowed, totals.ipOuts), color: "text-primary" },
-                                    { label: "W-L", value: `${totals.wins}-${totals.losses}`, color: "text-foreground" },
-                                    { label: "IP", value: ipDisplay(totals.ipOuts), color: "text-foreground" },
-                                ].map(s => (
-                                    <div key={s.label} className="bg-background rounded-xl p-4 text-center border border-muted/10">
-                                        <p className={`text-2xl font-black font-mono ${s.color}`}>{s.value}</p>
-                                        <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mt-1">{s.label}</p>
-                                    </div>
-                                ))}
+                        {/* Pitching card (only if has pitching stats) */}
+                        {hasPitching && (
+                            <div className="bg-surface border border-muted/20 rounded-2xl p-6 shadow-sm">
+                                <SectionTitle>Pitcheo</SectionTitle>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                                    {[
+                                        { label: "ERA", value: era(displayERAllowed, displayIPOuts), color: "text-primary" },
+                                        { label: "WHIP", value: whip(displayBBAllowed, displayHAllowed, displayIPOuts), color: "text-primary" },
+                                        { label: "W-L", value: `${displayWins}-${displayLosses}`, color: "text-foreground" },
+                                        { label: "IP", value: ipDisplay(displayIPOuts), color: "text-foreground" },
+                                    ].map(s => (
+                                        <div key={s.label} className="bg-background rounded-xl p-4 text-center border border-muted/10">
+                                            <p className={`text-2xl font-black font-mono ${s.color}`}>{s.value}</p>
+                                            <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mt-1">{s.label}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                                <StatRow label="Victorias (W)" value={displayWins} highlight="text-emerald-500" />
+                                <StatRow label="Derrotas (L)" value={displayLosses} />
+                                <StatRow label="Entradas Lanzadas (IP)" value={ipDisplay(displayIPOuts)} />
+                                <StatRow label="Hits Permitidos (H)" value={displayHAllowed} />
+                                <StatRow label="Carreras Limpias (ER)" value={displayERAllowed} />
+                                <StatRow label="Bases por Bolas Dadas (BB)" value={displayBBAllowed} />
+                                <StatRow label="Ponches (K)" value={displaySOPitching} highlight="text-primary" />
                             </div>
-                            <StatRow label="Victorias (W)" value={totals.wins} highlight="text-emerald-500" />
-                            <StatRow label="Derrotas (L)" value={totals.losses} />
-                            <StatRow label="Entradas Lanzadas (IP)" value={ipDisplay(totals.ipOuts)} />
-                            <StatRow label="Hits Permitidos (H)" value={totals.hAllowed} />
-                            <StatRow label="Carreras Limpias (ER)" value={totals.erAllowed} />
-                            <StatRow label="Bases por Bolas Dadas (BB)" value={totals.bbAllowed} />
-                            <StatRow label="Ponches (K)" value={totals.soPitching} highlight="text-primary" />
-                        </div>
+                        )}
                     </div>
                 )}
 
-                {/* POR JUEGO */}
+                {/* JUEGOS JUGADOS — Team-profile style cards */}
                 {activeTab === "juegos" && (
                     <div className="animate-fade-in-up">
                         <SectionTitle>Historial de Juegos ({games.length})</SectionTitle>
@@ -410,63 +484,116 @@ export default function PlayerProfilePage() {
                                 <p className="text-muted-foreground">No hay juegos registrados.</p>
                             </div>
                         ) : (
-                            <div className="space-y-2">
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                 {games.map(entry => {
                                     const g = entry.game;
                                     const isHome = g.homeTeamId === player.team.id;
-                                    const opponent = isHome ? g.awayTeam : g.homeTeam;
                                     const myScore = isHome ? g.homeScore : g.awayScore;
                                     const oppScore = isHome ? g.awayScore : g.homeScore;
-                                    const won = myScore > oppScore;
                                     const finished = g.status === "finished";
-                                    const date = new Date(g.scheduledDate).toLocaleDateString("es-MX", {
-                                        day: "2-digit", month: "short", year: "numeric"
-                                    });
+                                    let winStatus: 'win' | 'loss' | 'tie' | 'live' = 'live';
+                                    if (finished) {
+                                        if (myScore > oppScore) winStatus = 'win';
+                                        else if (myScore < oppScore) winStatus = 'loss';
+                                        else winStatus = 'tie';
+                                    }
+
+                                    let bgGradient = 'bg-surface';
+                                    let borderClass = 'border-muted/30';
+                                    if (winStatus === 'win') { bgGradient = 'bg-gradient-to-br from-emerald-500/20 to-surface'; borderClass = 'border-emerald-500/30'; }
+                                    else if (winStatus === 'loss') { bgGradient = 'bg-gradient-to-br from-red-500/20 to-surface'; borderClass = 'border-red-500/30'; }
+                                    else if (winStatus === 'tie') { bgGradient = 'bg-gradient-to-br from-amber-500/20 to-surface'; borderClass = 'border-amber-500/30'; }
+                                    else if (winStatus === 'live') { bgGradient = 'bg-gradient-to-br from-blue-500/20 to-surface'; borderClass = 'border-blue-500/30'; }
 
                                     return (
-                                        <Link
-                                            key={g.id}
-                                            href={`/gamecast/${g.id}`}
-                                            className="flex items-center gap-4 bg-surface border border-muted/20 rounded-xl px-4 py-3 hover:border-primary/40 hover:bg-primary/5 transition-all group"
-                                        >
-                                            {/* Result dot */}
-                                            <div className={`w-1.5 h-8 rounded-full shrink-0 ${!finished ? "bg-yellow-500" : won ? "bg-emerald-500" : "bg-red-400"}`} />
-
-                                            {/* Date + Tournament */}
-                                            <div className="w-24 shrink-0">
-                                                <p className="text-xs font-bold text-foreground">{date}</p>
-                                                {g.tournament && (
-                                                    <p className="text-[10px] text-muted-foreground truncate">{g.tournament.name}</p>
-                                                )}
-                                            </div>
-
-                                            {/* Matchup */}
-                                            <div className="flex-1 flex items-center gap-2 min-w-0">
-                                                <span className="text-xs text-muted-foreground font-bold uppercase shrink-0">
-                                                    {isHome ? "vs" : "@"}
-                                                </span>
-                                                <span className="font-bold text-sm truncate group-hover:text-primary transition-colors">
-                                                    {opponent.shortName || opponent.name}
-                                                </span>
-                                            </div>
-
-                                            {/* Score */}
-                                            {finished ? (
-                                                <div className="text-right shrink-0">
-                                                    <p className={`font-black font-mono text-base ${won ? "text-emerald-500" : "text-red-400"}`}>
-                                                        {won ? "G" : "P"} {myScore}-{oppScore}
-                                                    </p>
+                                        <Link key={g.id} href={`/gamecast/${g.id}`} className={`${bgGradient} border ${borderClass} rounded-2xl overflow-hidden shadow-sm flex flex-col hover:shadow-md hover:-translate-y-1 transition-all`}>
+                                            {/* Game Header */}
+                                            <div className="px-4 py-1.5 border-b border-black/5 dark:border-white/5 flex justify-between items-center bg-black/5 dark:bg-white/5">
+                                                <div className="text-xs font-bold opacity-70 flex items-center gap-2">
+                                                    <Clock className="w-3.5 h-3.5" />
+                                                    {new Date(g.scheduledDate).toLocaleDateString('es-MX', { month: 'short', day: 'numeric' })} &bull; {new Date(g.scheduledDate).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
                                                 </div>
-                                            ) : (
-                                                <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-wider shrink-0">
-                                                    {g.status === "live" ? "En Vivo" : "Prog."}
-                                                </span>
-                                            )}
+                                                <div className="text-[10px] font-bold opacity-50 capitalize flex items-center gap-1">
+                                                    <MapPin className="w-3 h-3" />
+                                                    Sede Local
+                                                </div>
+                                            </div>
 
-                                            {/* Position */}
-                                            <span className="text-[10px] bg-muted/10 text-muted-foreground px-2 py-1 rounded font-bold shrink-0">
-                                                {entry.position}
-                                            </span>
+                                            {/* Score & Teams */}
+                                            <div className="p-4 flex items-center justify-between">
+                                                {/* Away Team */}
+                                                <div className="flex flex-col items-center gap-1.5 flex-1 w-20">
+                                                    <div className="w-12 h-12 bg-surface rounded-full shadow-md flex items-center justify-center border-2 border-muted/20 overflow-hidden font-black text-lg shrink-0">
+                                                        {g.awayTeam.shortName || g.awayTeam.name?.substring(0, 2)}
+                                                    </div>
+                                                    <span className="text-[10px] font-black text-center leading-tight line-clamp-2">{g.awayTeam.name}</span>
+                                                </div>
+
+                                                {/* Score */}
+                                                <div className="flex flex-col items-center justify-center px-3">
+                                                    {g.status === 'in_progress' && (
+                                                        <span className="text-[10px] font-black tracking-widest uppercase text-red-500 animate-pulse mb-1 flex items-center gap-1">
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-red-500" /> EN VIVO
+                                                        </span>
+                                                    )}
+                                                    <div className="bg-surface/60 backdrop-blur-md border border-muted/20 px-3 py-1.5 rounded-xl">
+                                                        <div className="text-2xl font-black tabular-nums tracking-tighter text-foreground text-center flex items-center gap-2">
+                                                            <span className={!isHome && winStatus === 'win' ? 'text-emerald-500' : ''}>{g.awayScore ?? '-'}</span>
+                                                            <span className="text-muted-foreground/30 font-light text-xl">-</span>
+                                                            <span className={isHome && winStatus === 'win' ? 'text-emerald-500' : ''}>{g.homeScore ?? '-'}</span>
+                                                        </div>
+                                                    </div>
+                                                    {finished && (
+                                                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-1">Finalizado</span>
+                                                    )}
+                                                </div>
+
+                                                {/* Home Team */}
+                                                <div className="flex flex-col items-center gap-1.5 flex-1 w-20">
+                                                    <div className="w-12 h-12 bg-surface rounded-full shadow-md flex items-center justify-center border-2 border-muted/20 overflow-hidden font-black text-lg shrink-0">
+                                                        {g.homeTeam.shortName || g.homeTeam.name?.substring(0, 2)}
+                                                    </div>
+                                                    <span className="text-[10px] font-black text-center leading-tight line-clamp-2">{g.homeTeam.name}</span>
+                                                </div>
+                                            </div>
+
+                                            {/* Bottom Stats Bar — Player's game performance */}
+                                            <div className="flex border-t border-black/10 dark:border-white/10">
+                                                <div className="flex-1 p-3 flex items-center gap-2 flex-wrap">
+                                                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">POS</span>
+                                                    <span className="text-xs font-black bg-primary/20 text-primary px-2 py-0.5 rounded">{entry.position}</span>
+                                                    {gameBoxscores[g.id] && (
+                                                        <>
+                                                            <div className="w-px h-4 bg-muted/20" />
+                                                            <span className="text-xs font-black font-mono text-foreground">
+                                                                {gameBoxscores[g.id].ab}-{gameBoxscores[g.id].h}
+                                                            </span>
+                                                            {gameBoxscores[g.id].results.length > 0 && (
+                                                                <>
+                                                                    <span className="text-muted-foreground/40">—</span>
+                                                                    {gameBoxscores[g.id].results.map((r, i) => (
+                                                                        <span key={i} className={`text-[11px] font-bold font-mono px-1.5 py-0.5 rounded ${
+                                                                            r.startsWith('HR') ? 'bg-primary/20 text-primary' :
+                                                                            r.startsWith('H') ? 'bg-emerald-500/15 text-emerald-400' :
+                                                                            r === 'BB' || r === 'HBP' ? 'bg-blue-500/15 text-blue-400' :
+                                                                            r.startsWith('K') ? 'bg-red-500/15 text-red-400' :
+                                                                            'bg-muted/10 text-muted-foreground'
+                                                                        }`}>
+                                                                            {r}
+                                                                        </span>
+                                                                    ))}
+                                                                </>
+                                                            )}
+                                                            {gameBoxscores[g.id].rbi > 0 && (
+                                                                <>
+                                                                    <div className="w-px h-4 bg-muted/20" />
+                                                                    <span className="text-[11px] font-black font-mono text-amber-400">{gameBoxscores[g.id].rbi} RBI</span>
+                                                                </>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
                                         </Link>
                                     );
                                 })}
@@ -475,74 +602,91 @@ export default function PlayerProfilePage() {
                     </div>
                 )}
 
-                {/* TORNEOS */}
-                {activeTab === "torneos" && (
-                    <div className="animate-fade-in-up space-y-4">
-                        <SectionTitle>Estadísticas por Torneo</SectionTitle>
-                        {player.playerStats.length === 0 ? (
-                            <div className="bg-surface border border-muted/20 rounded-2xl p-10 text-center">
-                                <p className="text-muted-foreground">Sin estadísticas registradas.</p>
-                            </div>
-                        ) : (
-                            player.playerStats.map(s => {
-                                const a = avg(s.hits, s.atBats);
-                                const hasPitch = s.ipOuts > 0 || s.wins > 0;
-                                return (
-                                    <div key={s.id} className="bg-surface border border-muted/20 rounded-2xl p-5 shadow-sm">
-                                        <div className="flex items-start justify-between gap-2 mb-4">
-                                            <div>
-                                                <h4 className="font-black text-base text-foreground leading-tight">
-                                                    {s.tournament?.name || "Sin torneo"}
-                                                </h4>
-                                                {s.tournament?.season && (
-                                                    <p className="text-[11px] text-muted-foreground font-medium mt-0.5">
-                                                        {s.tournament.season}
-                                                    </p>
-                                                )}
-                                            </div>
-                                            <span className="text-xl font-black font-mono text-primary">{a}</span>
-                                        </div>
-
-                                        {/* Batting quick row */}
-                                        <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 text-center text-[11px]">
-                                            {[
-                                                { l: "AB", v: s.atBats },
-                                                { l: "H", v: s.hits },
-                                                { l: "HR", v: s.hr },
-                                                { l: "RBI", v: s.rbi },
-                                                { l: "BB", v: s.bb },
-                                                { l: "K", v: s.so },
-                                                { l: "2B", v: s.h2 },
-                                                { l: "3B", v: s.h3 },
-                                            ].map(({ l, v }) => (
-                                                <div key={l} className="bg-background rounded-lg py-2">
-                                                    <p className="font-black font-mono text-sm text-foreground">{v}</p>
-                                                    <p className="text-muted-foreground uppercase tracking-wider font-bold mt-0.5">{l}</p>
-                                                </div>
-                                            ))}
-                                        </div>
-
-                                        {hasPitch && (
-                                            <div className="mt-3 pt-3 border-t border-muted/10">
-                                                <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-black mb-2">Pitcheo</p>
-                                                <div className="grid grid-cols-4 gap-2 text-center text-[11px]">
-                                                    {[
-                                                        { l: "W-L", v: `${s.wins}-${s.losses}` },
-                                                        { l: "IP", v: ipDisplay(s.ipOuts) },
-                                                        { l: "ERA", v: era(s.erAllowed, s.ipOuts) },
-                                                        { l: "K", v: s.soPitching },
-                                                    ].map(({ l, v }) => (
-                                                        <div key={l} className="bg-background rounded-lg py-2">
-                                                            <p className="font-black font-mono text-sm text-primary">{v}</p>
-                                                            <p className="text-muted-foreground uppercase tracking-wider font-bold mt-0.5">{l}</p>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
+                {/* EQUIPOS */}
+                {activeTab === "equipos" && (
+                    <div className="animate-fade-in-up">
+                        <SectionTitle>Equipos en los que juega</SectionTitle>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {/* Current team card */}
+                            <Link href={`/equipos/${player.team.id}`} className="bg-surface border border-muted/20 rounded-2xl p-5 shadow-sm hover:border-primary/40 hover:-translate-y-1 transition-all group">
+                                <div className="flex items-center gap-4 mb-3">
+                                    <div className="w-14 h-14 bg-surface rounded-full shadow-md flex items-center justify-center border-2 border-muted/20 overflow-hidden font-black text-lg shrink-0 group-hover:border-primary/50 transition-colors">
+                                        {player.team.logoUrl ? (
+                                            <img src={player.team.logoUrl} alt={player.team.name} className="w-full h-full object-cover" />
+                                        ) : (
+                                            player.team.shortName || player.team.name?.substring(0, 2)
                                         )}
                                     </div>
-                                );
-                            })
+                                    <div className="flex-1 min-w-0">
+                                        <h4 className="font-black text-base text-foreground leading-tight group-hover:text-primary transition-colors truncate">
+                                            {player.team.name}
+                                        </h4>
+                                        {player.team.tournament && (
+                                            <p className="text-[11px] text-muted-foreground font-medium mt-0.5 flex items-center gap-1">
+                                                <Trophy className="w-3 h-3" /> {player.team.tournament.name}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+                                </div>
+                                <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                                    <span className="bg-primary/20 text-primary px-2 py-0.5 rounded">{player.position || 'UTIL'}</span>
+                                    {player.number != null && <span>#{player.number}</span>}
+                                </div>
+                            </Link>
+                        </div>
+                    </div>
+                )}
+
+                {/* TORNEOS — Card style like tournament search page */}
+                {activeTab === "torneos" && (
+                    <div className="animate-fade-in-up">
+                        <SectionTitle>Torneos</SectionTitle>
+                        {!player.team.tournament ? (
+                            <div className="bg-surface border border-muted/20 rounded-2xl p-10 text-center">
+                                <p className="text-muted-foreground">No hay torneos registrados.</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {/* Tournament card — matching the search page design */}
+                                <Link href={`/torneos/${player.team.tournament.id}`} className="block group">
+                                    <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-md hover:shadow-xl hover:-translate-y-2 hover:border-primary/50 transition-all duration-300 h-full flex flex-col">
+                                        {/* Cover */}
+                                        <div className="relative h-40 w-full bg-gradient-to-br from-slate-800 to-slate-900 overflow-hidden">
+                                            <div className="absolute inset-0 bg-black/10 group-hover:bg-black/0 transition-colors" />
+                                            <div className="absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border backdrop-blur-md shadow-sm z-20 bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
+                                                Activo
+                                            </div>
+                                            <div className="w-full h-full flex items-center justify-center opacity-20 group-hover:scale-110 transition-transform duration-700">
+                                                <Trophy className="w-16 h-16 text-white" />
+                                            </div>
+                                        </div>
+
+                                        {/* Content */}
+                                        <div className="p-5 flex flex-col flex-1">
+                                            <h3 className="font-black text-lg text-foreground mb-3 leading-tight group-hover:text-primary transition-colors line-clamp-2">
+                                                {player.team.tournament.name}
+                                            </h3>
+                                            <div className="space-y-2 mb-4 flex-1">
+                                                <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+                                                    <Calendar className="w-3.5 h-3.5 text-muted-foreground/70 shrink-0" />
+                                                    <span>{player.team.tournament.season}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+                                                    <Users className="w-3.5 h-3.5 text-muted-foreground/70 shrink-0" />
+                                                    <span>{player.team.name}</span>
+                                                </div>
+                                            </div>
+                                            <div className="border-t border-muted/20 pt-3 mt-auto flex items-center justify-between">
+                                                <div className="text-xs text-muted-foreground font-medium">
+                                                    {cs?.gp ?? games.length} juegos
+                                                </div>
+                                                <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </Link>
+                            </div>
                         )}
                     </div>
                 )}

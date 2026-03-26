@@ -61,9 +61,13 @@ export class TournamentsService {
 
     async update(id: string, updateData: UpdateTournamentDto) {
         await this.findOne(id); // Valida existencia
+        const { startDate, ...rest } = updateData as any;
         return this.prisma.tournament.update({
             where: { id },
-            data: updateData as any,
+            data: {
+                ...rest,
+                ...(startDate ? { startDate: new Date(startDate) } : {}),
+            } as any,
         });
     }
 

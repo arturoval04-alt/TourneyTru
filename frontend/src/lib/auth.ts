@@ -20,7 +20,7 @@ export function saveSession(user: AuthUser, tokens: AuthTokens) {
     localStorage.setItem('refreshToken', tokens.refreshToken);
     localStorage.setItem('user', JSON.stringify(user));
     // Cookie ligera para el middleware de Next.js (sin datos sensibles)
-    document.cookie = `accessToken=${tokens.accessToken}; path=/; SameSite=Strict`;
+    document.cookie = `accessToken=true; path=/; SameSite=Lax; max-age=86400`;
 }
 
 export function clearSession() {
