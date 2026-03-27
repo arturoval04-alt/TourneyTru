@@ -47,6 +47,10 @@ export class AuthService {
                     lastName: (dto.lastName || '').trim(),
                     phone: dto.phone,
                     roleId: role.id,
+                    ...(dto.organizerRequestNote ? {
+                        organizerRequestNote: dto.organizerRequestNote,
+                        organizerRequestedAt: new Date(),
+                    } : {}),
                 },
                 include: { role: true },
             });
@@ -110,6 +114,12 @@ export class AuthService {
                 phone: user.phone,
                 profilePicture: user.profilePicture,
                 role: user.role.name,
+                scorekeeperLeagueId: (user as any).scorekeeperLeagueId ?? null,
+                maxLeagues: (user as any).maxLeagues ?? 0,
+                maxTournamentsPerLeague: (user as any).maxTournamentsPerLeague ?? 0,
+                maxTeamsPerTournament: (user as any).maxTeamsPerTournament ?? 0,
+                maxPlayersPerTeam: (user as any).maxPlayersPerTeam ?? 25,
+                planLabel: (user as any).planLabel ?? 'public',
             },
             ...tokens,
         };

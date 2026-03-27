@@ -73,6 +73,19 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private activeGames: Record<string, any> = {};
 
   handleConnection(client: Socket) {
+    // Si el cliente envía un token al conectarse, verificarlo de inmediato.
+    // Clientes sin token (espectadores del gamecast) se aceptan.
+    const token = this.getAuthToken(client);
+    if (token) {
+      const payload = this.verifySocketAuth(client);
+      if (!payload) {
+        this.logger.warn(`Cliente ${client.id} desconectado: token inválido`);
+        client.disconnect(true);
+        return;
+      }
+      // Guardar el payload en los datos del socket para usarlo después
+      (client.data as any).user = payload;
+    }
     console.log(`Client connected: ${client.id}`);
   }
 
@@ -103,9 +116,10 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // Permite a cualquier cliente solicitar el estado completo del juego (resync completo)
   @SubscribeMessage('requestFullSync')
   async handleRequestFullSync(
-    @MessageBody() gameId: string,
+    @MessageBody() payload: any,
     @ConnectedSocket() client: Socket,
   ) {
+    const gameId: string = typeof payload === 'string' ? payload : payload?.gameId;
     // 1. Try in-memory state first
     if (this.activeGames[gameId]) {
       client.emit('fullStateSync', {
@@ -151,7 +165,9 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
   ) {
     const auth = this.verifySocketAuth(client, payload.token);
-    if (!auth) throw new WsException('Unauthorized');
+    if (!auth || !['admin', 'organizer', 'scorekeeper'].includes(auth.role)) {
+      throw new WsException('Unauthorized');
+    }
     const { gameId, fullState } = payload;
     this.activeGames[gameId] = fullState;
 
@@ -169,7 +185,9 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
   ) {
     const auth = this.verifySocketAuth(client, payload.token);
-    if (!auth) throw new WsException('Unauthorized');
+    if (!auth || !['admin', 'organizer', 'scorekeeper'].includes(auth.role)) {
+      throw new WsException('Unauthorized');
+    }
     const { gameId, playInfo, fullState } = payload;
 
     // Aquí (en fase 3 completa) se validaría la jugada y se actualizarían bases y Score.

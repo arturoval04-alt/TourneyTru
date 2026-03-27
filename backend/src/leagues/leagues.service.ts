@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLeagueDto, UpdateLeagueDto } from './dto/league.dto';
 
@@ -7,11 +7,28 @@ export class LeaguesService {
     constructor(private prisma: PrismaService) { }
 
     async create(data: CreateLeagueDto) {
+        // Verificar cuota de ligas del usuario (skip para admin: maxLeagues >= 999)
+        if (data.adminId) {
+            const user = await this.prisma.user.findUnique({ where: { id: data.adminId } }) as any;
+            if (user && user.maxLeagues < 999) {
+                const count = await this.prisma.league.count({ where: { adminId: data.adminId } });
+                if (count >= user.maxLeagues) {
+                    throw new ForbiddenException({
+                        code: 'QUOTA_EXCEEDED',
+                        resource: 'leagues',
+                        message: `Alcanzaste el límite de ligas de tu plan (${user.maxLeagues}).`,
+                        limit: user.maxLeagues,
+                        current: count,
+                    });
+                }
+            }
+        }
         return this.prisma.league.create({ data });
     }
 
-    async findAll() {
+    async findAll(adminId?: string) {
         return this.prisma.league.findMany({
+            where: adminId ? { adminId } : undefined,
             include: {
                 admin: { select: { id: true, firstName: true, lastName: true } },
                 _count: { select: { tournaments: true, umpires: true } },

@@ -6,8 +6,11 @@ import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { saveSession } from "@/lib/auth";
 
+type Intent = "viewer" | "organizer";
+
 export default function RegisterPage() {
     const router = useRouter();
+    const [intent, setIntent] = useState<Intent>("viewer");
     const [formData, setFormData] = useState({
         nombre: "",
         apellido: "",
@@ -46,6 +49,9 @@ export default function RegisterPage() {
                 firstName: formData.nombre.trim(),
                 lastName: formData.apellido.trim(),
                 phone: formData.celular || undefined,
+                ...(intent === "organizer" ? {
+                    organizerRequestNote: "Solicitud de acceso como organizador desde el formulario de registro.",
+                } : {}),
             });
 
             saveSession({
@@ -54,6 +60,8 @@ export default function RegisterPage() {
                 firstName: data.user.firstName,
                 lastName: data.user.lastName,
                 role: data.user.role,
+                phone: data.user.phone ?? null,
+                profilePicture: data.user.profilePicture ?? null,
             }, {
                 accessToken: data.accessToken,
                 refreshToken: data.refreshToken,
@@ -85,12 +93,50 @@ export default function RegisterPage() {
                     Crea tu Cuenta
                 </h2>
                 <p className="mt-2 text-center text-sm font-medium text-muted-foreground">
-                    Únete a TourneyTru como aficionado para acceder a estadísticas y jugadores.
+                    Únete a TourneyTru para seguir estadísticas en tiempo real.
                 </p>
             </div>
 
             <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
                 <div className="bg-surface py-8 px-4 shadow-xl sm:rounded-2xl sm:px-10 border border-muted/30">
+
+                    {/* Intent selector */}
+                    <div className="mb-6">
+                        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">¿Cómo quieres usar TourneyTru?</p>
+                        <div className="grid grid-cols-2 gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setIntent("viewer")}
+                                className={`relative flex flex-col items-start p-4 rounded-xl border text-left transition-all ${intent === "viewer"
+                                    ? "border-primary bg-primary/10 text-foreground"
+                                    : "border-muted/30 bg-background text-muted-foreground hover:border-muted/60"
+                                    }`}
+                            >
+                                {intent === "viewer" && (
+                                    <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-primary" />
+                                )}
+                                <span className="text-xl mb-1">👀</span>
+                                <span className="font-bold text-sm">Solo ver</span>
+                                <span className="text-xs mt-0.5 opacity-70">Estadísticas y juegos en vivo</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setIntent("organizer")}
+                                className={`relative flex flex-col items-start p-4 rounded-xl border text-left transition-all ${intent === "organizer"
+                                    ? "border-primary bg-primary/10 text-foreground"
+                                    : "border-muted/30 bg-background text-muted-foreground hover:border-muted/60"
+                                    }`}
+                            >
+                                {intent === "organizer" && (
+                                    <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-primary" />
+                                )}
+                                <span className="text-xl mb-1">🏆</span>
+                                <span className="font-bold text-sm">Quiero organizar</span>
+                                <span className="text-xs mt-0.5 opacity-70">Crear y gestionar torneos</span>
+                            </button>
+                        </div>
+                    </div>
+
                     {error && (
                         <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm font-medium">
                             {error}
@@ -153,6 +199,18 @@ export default function RegisterPage() {
                                 placeholder="••••••••" onChange={handleChange} value={formData.confirmPassword}
                             />
                         </div>
+
+                        {/* Mensaje de solicitud de organizador */}
+                        {intent === "organizer" && (
+                            <div className="p-4 rounded-xl border border-primary/20 bg-primary/5">
+                                <p className="text-xs font-bold text-primary mb-1">Solicitud de acceso como organizador</p>
+                                <p className="text-xs text-muted-foreground leading-relaxed">
+                                    Tu cuenta se creará como visitante. Para activar el acceso de organizador, manda un correo a{" "}
+                                    <span className="text-primary font-semibold">valdezarturoval@gmail.com</span>{" "}
+                                    con tu nombre y correo registrado. Recibirás respuesta en máximo 2 días hábiles.
+                                </p>
+                            </div>
+                        )}
 
                         <div className="pt-2">
                             <button

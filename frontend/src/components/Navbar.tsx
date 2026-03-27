@@ -36,6 +36,7 @@ export default function Navbar() {
         { href: "/torneos", label: "Torneos" },
         { href: "/equipos", label: "Equipos" },
         { href: "/jugadores", label: "Jugadores" },
+        { href: "/planes", label: "Planes" },
     ];
 
     return (
@@ -80,7 +81,7 @@ export default function Navbar() {
                                         <p className="text-sm font-black text-foreground">{user.role}</p>
                                     </div>
                                     <div className="p-1">
-                                        {(user.role === 'admin' || user.role === 'scorekeeper') && (
+                                        {(user.role === 'admin' || user.role === 'organizer' || user.role === 'scorekeeper') && (
                                             <Link href="/admin/dashboard" onClick={() => setIsMenuOpen(false)} className="block px-4 py-2 text-sm text-foreground hover:bg-muted/10 font-medium transition-colors rounded-lg">
                                                 Dashboard
                                             </Link>

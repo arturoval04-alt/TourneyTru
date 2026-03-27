@@ -1,6 +1,15 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
+
+// Cuotas por defecto según planLabel
+const PLAN_QUOTAS: Record<string, { maxLeagues: number; maxTournamentsPerLeague: number; maxTeamsPerTournament: number; maxPlayersPerTeam: number }> = {
+    public:   { maxLeagues: 0, maxTournamentsPerLeague: 0, maxTeamsPerTournament: 0,  maxPlayersPerTeam: 25 },
+    demo:     { maxLeagues: 1, maxTournamentsPerLeague: 1, maxTeamsPerTournament: 6,  maxPlayersPerTeam: 25 },
+    standard: { maxLeagues: 1, maxTournamentsPerLeague: 3, maxTeamsPerTournament: 10, maxPlayersPerTeam: 30 },
+    pro:      { maxLeagues: 1, maxTournamentsPerLeague: 10, maxTeamsPerTournament: 50, maxPlayersPerTeam: 50 },
+    admin:    { maxLeagues: 999, maxTournamentsPerLeague: 999, maxTeamsPerTournament: 999, maxPlayersPerTeam: 999 },
+};
 
 @Injectable()
 export class UsersService {
@@ -8,9 +17,20 @@ export class UsersService {
 
     async findAll() {
         try {
-            const users = await this.prisma.user.findMany({
-                include: { role: true },
+            const users = await (this.prisma.user.findMany as any)({
+                include: {
+                    role: true,
+                    _count: { select: { leaguesAdmin: true } },
+                },
+                orderBy: { createdAt: 'asc' },
+            }) as any[];
+            // Para cada organizador, contar torneos en sus ligas
+            const tournamentCounts = await this.prisma.tournament.groupBy({
+                by: ['adminId'],
+                _count: { id: true },
             });
+            const tournCountMap: Record<string, number> = {};
+            tournamentCounts.forEach((t: any) => { if (t.adminId) tournCountMap[t.adminId] = t._count.id; });
             return users.map(u => ({
                 id: u.id,
                 firstName: u.firstName,
@@ -19,6 +39,16 @@ export class UsersService {
                 role: u.role ? u.role.name : 'general',
                 phone: u.phone,
                 profilePicture: u.profilePicture,
+                planLabel: u.planLabel,
+                maxLeagues: u.maxLeagues,
+                maxTournamentsPerLeague: u.maxTournamentsPerLeague,
+                maxTeamsPerTournament: u.maxTeamsPerTournament,
+                maxPlayersPerTeam: u.maxPlayersPerTeam,
+                organizerRequestNote: u.organizerRequestNote,
+                organizerRequestedAt: u.organizerRequestedAt,
+                scorekeeperLeagueId: u.scorekeeperLeagueId,
+                usedLeagues: u._count?.leaguesAdmin ?? 0,
+                usedTournaments: tournCountMap[u.id] ?? 0,
             }));
         } catch (e) {
             console.error('Error fetching users', e);
@@ -32,14 +62,123 @@ export class UsersService {
             include: { role: true },
         });
         if (!user) return null;
+        const u2 = user as any;
         return {
-            id: user.id,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            email: user.email,
-            role: user.role.name,
-            phone: user.phone,
-            profilePicture: user.profilePicture,
+            id: u2.id,
+            firstName: u2.firstName,
+            lastName: u2.lastName,
+            email: u2.email,
+            role: u2.role.name,
+            phone: u2.phone,
+            profilePicture: u2.profilePicture,
+            planLabel: u2.planLabel,
+            maxLeagues: u2.maxLeagues,
+            maxTournamentsPerLeague: u2.maxTournamentsPerLeague,
+            maxTeamsPerTournament: u2.maxTeamsPerTournament,
+            maxPlayersPerTeam: u2.maxPlayersPerTeam,
+        };
+    }
+
+    // Admin: cambiar rol, plan y cuotas de un usuario
+    async updateAccess(targetUserId: string, dto: {
+        role?: string;
+        planLabel?: string;
+        maxLeagues?: number;
+        maxTournamentsPerLeague?: number;
+        maxTeamsPerTournament?: number;
+        maxPlayersPerTeam?: number;
+        scorekeeperLeagueId?: string | null;
+    }) {
+        const user = await this.prisma.user.findUnique({ where: { id: targetUserId } });
+        if (!user) throw new NotFoundException('Usuario no encontrado');
+
+        const data: any = {};
+
+        // Si se cambia planLabel y no se enviaron cuotas manuales, aplicar defaults del plan
+        if (dto.planLabel) {
+            const planKey = dto.planLabel.toLowerCase();
+            const quotas = PLAN_QUOTAS[planKey] ?? PLAN_QUOTAS['public'];
+            data.planLabel = dto.planLabel;
+            // Aplicar cuotas default del plan, a menos que vengan sobreescritas manualmente
+            data.maxLeagues = dto.maxLeagues ?? quotas.maxLeagues;
+            data.maxTournamentsPerLeague = dto.maxTournamentsPerLeague ?? quotas.maxTournamentsPerLeague;
+            data.maxTeamsPerTournament = dto.maxTeamsPerTournament ?? quotas.maxTeamsPerTournament;
+            data.maxPlayersPerTeam = dto.maxPlayersPerTeam ?? quotas.maxPlayersPerTeam;
+        } else {
+            // Solo cuotas manuales → planLabel = custom
+            if (dto.maxLeagues !== undefined || dto.maxTournamentsPerLeague !== undefined ||
+                dto.maxTeamsPerTournament !== undefined || dto.maxPlayersPerTeam !== undefined) {
+                data.planLabel = 'custom';
+                if (dto.maxLeagues !== undefined) data.maxLeagues = dto.maxLeagues;
+                if (dto.maxTournamentsPerLeague !== undefined) data.maxTournamentsPerLeague = dto.maxTournamentsPerLeague;
+                if (dto.maxTeamsPerTournament !== undefined) data.maxTeamsPerTournament = dto.maxTeamsPerTournament;
+                if (dto.maxPlayersPerTeam !== undefined) data.maxPlayersPerTeam = dto.maxPlayersPerTeam;
+            }
+        }
+
+        if (dto.scorekeeperLeagueId !== undefined) {
+            data.scorekeeperLeagueId = dto.scorekeeperLeagueId;
+        }
+
+        // Cambiar rol si se especifica
+        if (dto.role) {
+            let role = await this.prisma.role.findUnique({ where: { name: dto.role } });
+            if (!role) role = await this.prisma.role.create({ data: { name: dto.role } });
+            data.roleId = role.id;
+        }
+
+        const updated = await this.prisma.user.update({ where: { id: targetUserId }, data, include: { role: true } }) as any;
+        return {
+            id: updated.id,
+            email: updated.email,
+            role: updated.role.name,
+            planLabel: updated.planLabel,
+            maxLeagues: updated.maxLeagues,
+            maxTournamentsPerLeague: updated.maxTournamentsPerLeague,
+            maxTeamsPerTournament: updated.maxTeamsPerTournament,
+            maxPlayersPerTeam: updated.maxPlayersPerTeam,
+        };
+    }
+
+    // Admin: crear cuenta de scorekeeper vinculada a una liga
+    async createScorekeeper(dto: {
+        email: string;
+        password: string;
+        firstName: string;
+        lastName: string;
+        leagueId: string;
+    }) {
+        const existing = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } });
+        if (existing) throw new ForbiddenException('Ya existe una cuenta con ese correo');
+
+        const league = await this.prisma.league.findUnique({ where: { id: dto.leagueId } });
+        if (!league) throw new NotFoundException('Liga no encontrada');
+
+        let role = await this.prisma.role.findUnique({ where: { name: 'scorekeeper' } });
+        if (!role) role = await this.prisma.role.create({ data: { name: 'scorekeeper' } });
+
+        const passwordHash = await bcrypt.hash(dto.password, 12);
+
+        const user = await (this.prisma.user.create as any)({
+            data: {
+                email: dto.email.toLowerCase(),
+                passwordHash,
+                firstName: dto.firstName.trim(),
+                lastName: dto.lastName.trim(),
+                roleId: role.id,
+                scorekeeperLeagueId: dto.leagueId,
+            },
+            include: { role: true },
+        });
+
+        const sc = user as any;
+        return {
+            id: sc.id,
+            email: sc.email,
+            firstName: sc.firstName,
+            lastName: sc.lastName,
+            role: sc.role.name,
+            scorekeeperLeagueId: sc.scorekeeperLeagueId,
         };
     }
 
@@ -53,21 +192,27 @@ export class UsersService {
 
             const passwordHash = await bcrypt.hash(dto.password, 12);
 
-            const user = await this.prisma.user.create({
+            const user = await (this.prisma.user.create as any)({
                 data: {
                     email: dto.email.toLowerCase(),
                     passwordHash,
                     firstName: dto.firstName,
                     lastName: dto.lastName,
                     roleId: role.id,
+                    planLabel: 'admin',
+                    maxLeagues: 999,
+                    maxTournamentsPerLeague: 999,
+                    maxTeamsPerTournament: 999,
+                    maxPlayersPerTeam: 999,
                 },
                 include: { role: true },
             });
 
+            const adm = user as any;
             return {
-                id: user.id,
-                email: user.email,
-                role: user.role.name,
+                id: adm.id,
+                email: adm.email,
+                role: adm.role.name,
             };
         } catch (e) {
             console.error('Error creating admin user', e);
@@ -95,6 +240,66 @@ export class UsersService {
         } catch (e) {
             console.error('Error updating user profile', e);
             throw new InternalServerErrorException('Error al actualizar el perfil');
+        }
+    }
+
+    // Organizer: obtener scorekeepers vinculados a sus ligas
+    async findScorekeepersByOrganizer(organizerId: string) {
+        const leagues = await this.prisma.league.findMany({
+            where: { adminId: organizerId },
+            select: { id: true },
+        });
+        const leagueIds = leagues.map(l => l.id);
+        if (leagueIds.length === 0) return [];
+
+        const users = await (this.prisma.user as any).findMany({
+            where: { scorekeeperLeagueId: { in: leagueIds } },
+            include: { role: true },
+        });
+        return users.map((u: any) => ({
+            id: u.id,
+            firstName: u.firstName,
+            lastName: u.lastName,
+            email: u.email,
+            role: u.role?.name ?? 'scorekeeper',
+            scorekeeperLeagueId: u.scorekeeperLeagueId,
+            planLabel: u.planLabel ?? 'public',
+            maxLeagues: u.maxLeagues ?? 0,
+            maxTournamentsPerLeague: u.maxTournamentsPerLeague ?? 0,
+            maxTeamsPerTournament: u.maxTeamsPerTournament ?? 0,
+            maxPlayersPerTeam: u.maxPlayersPerTeam ?? 25,
+        }));
+    }
+
+    // Verificar cuota antes de crear un recurso
+    async checkQuota(userId: string, resource: 'leagues' | 'tournaments' | 'teams' | 'players', leagueId?: string) {
+        const user = await this.prisma.user.findUnique({ where: { id: userId } }) as any;
+        if (!user) throw new NotFoundException('Usuario no encontrado');
+
+        if (resource === 'leagues') {
+            const count = await this.prisma.league.count({ where: { adminId: userId } });
+            if (count >= user.maxLeagues) {
+                throw new ForbiddenException({
+                    code: 'QUOTA_EXCEEDED',
+                    resource: 'leagues',
+                    message: `Alcanzaste el límite de ligas de tu plan (${user.maxLeagues}).`,
+                    limit: user.maxLeagues,
+                    current: count,
+                });
+            }
+        }
+
+        if (resource === 'tournaments' && leagueId) {
+            const count = await this.prisma.tournament.count({ where: { leagueId } });
+            if (count >= user.maxTournamentsPerLeague) {
+                throw new ForbiddenException({
+                    code: 'QUOTA_EXCEEDED',
+                    resource: 'tournaments',
+                    message: `Alcanzaste el límite de torneos por liga de tu plan (${user.maxTournamentsPerLeague}).`,
+                    limit: user.maxTournamentsPerLeague,
+                    current: count,
+                });
+            }
         }
     }
 }

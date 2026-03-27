@@ -1,4 +1,4 @@
-import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { LeaguesService } from './leagues.service';
 import { CreateLeagueDto, UpdateLeagueDto } from './dto/league.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -14,8 +14,8 @@ export class LeaguesController {
     }
 
     @Get()
-    findAll() {
-        return this.leaguesService.findAll();
+    findAll(@Query('adminId') adminId?: string) {
+        return this.leaguesService.findAll(adminId);
     }
 
     @Get(':id')

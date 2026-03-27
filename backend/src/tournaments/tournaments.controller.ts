@@ -1,4 +1,4 @@
-import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { TournamentsService } from './tournaments.service';
 import { CreateTournamentDto, UpdateTournamentDto } from './dto/tournament.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -14,8 +14,8 @@ export class TournamentsController {
     }
 
     @Get()
-    findAll() {
-        return this.tournamentsService.findAll();
+    findAll(@Query('adminId') adminId?: string, @Query('leagueId') leagueId?: string) {
+        return this.tournamentsService.findAll(adminId, leagueId);
     }
 
     @Get(':id')

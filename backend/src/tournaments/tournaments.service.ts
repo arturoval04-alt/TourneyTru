@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTournamentDto, UpdateTournamentDto } from './dto/tournament.dto';
 
@@ -7,11 +7,40 @@ export class TournamentsService {
     constructor(private prisma: PrismaService) { }
 
     async create(data: CreateTournamentDto) {
-        return this.prisma.tournament.create({ data });
+        // Verificar cuota de torneos por liga
+        if (data.adminId && data.leagueId) {
+            const user = await this.prisma.user.findUnique({ where: { id: data.adminId } }) as any;
+            if (user && user.maxTournamentsPerLeague < 999) {
+                const count = await this.prisma.tournament.count({ where: { leagueId: data.leagueId } });
+                if (count >= user.maxTournamentsPerLeague) {
+                    throw new ForbiddenException({
+                        code: 'QUOTA_EXCEEDED',
+                        resource: 'tournaments',
+                        message: `Alcanzaste el límite de torneos por liga de tu plan (${user.maxTournamentsPerLeague}).`,
+                        limit: user.maxTournamentsPerLeague,
+                        current: count,
+                    });
+                }
+            }
+        }
+        const tournament = await this.prisma.tournament.create({ data });
+
+        // Auto-agregar al creador como organizador del torneo
+        if (data.adminId) {
+            await this.prisma.tournamentOrganizer.create({
+                data: { tournamentId: tournament.id, userId: data.adminId },
+            }).catch(() => { /* ignora si ya existe */ });
+        }
+
+        return tournament;
     }
 
-    async findAll() {
+    async findAll(adminId?: string, leagueId?: string) {
+        const where: any = {};
+        if (adminId) where.league = { adminId };
+        if (leagueId) where.leagueId = leagueId;
         return this.prisma.tournament.findMany({
+            where: (adminId || leagueId) ? where : undefined,
             include: {
                 league: true,
                 _count: { select: { teams: true, games: true } },

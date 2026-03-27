@@ -14,7 +14,7 @@ import api from '@/lib/api';
 import { calculateBoxscore } from '@/lib/boxscore';
 import { Users, LayoutDashboard, Radio, ChevronLeft, Trophy } from 'lucide-react';
 import Navbar from '@/components/Navbar';
-import { isLoggedIn } from '@/lib/auth';
+import { isLoggedIn, getUser } from '@/lib/auth';
 import StreamAdminPanel from '@/components/live/StreamAdminPanel';
 
 // Mapa de código numérico a nombre de posición
@@ -42,6 +42,7 @@ export default function ScorekeeperLivePanel() {
     const [boxscoreError, setBoxscoreError] = useState(false);
 
     const [activeTab, setActiveTab] = useState<"alineaciones" | "scorekeeper" | "stream">("scorekeeper");
+    const [authorized, setAuthorized] = useState(false);
 
     // Wrap-up modal states
     const [showWrapUpModal, setShowWrapUpModal] = useState(false);
@@ -49,11 +50,44 @@ export default function ScorekeeperLivePanel() {
     const [selectedBatter1Id, setSelectedBatter1Id] = useState<string>('');
     const [selectedBatter2Id, setSelectedBatter2Id] = useState<string>('');
 
-    // Client-side auth guard (middleware handles server-side, this covers edge cases)
+    // Auth + role + scope guard — no renderiza nada hasta confirmar acceso
     useEffect(() => {
         if (!isLoggedIn()) {
             router.replace(`/login?redirect=/game/${params.id}`);
+            return;
         }
+        const user = getUser();
+        const allowedRoles = ['admin', 'organizer', 'scorekeeper'];
+        if (!user || !allowedRoles.includes(user.role)) {
+            router.replace('/');
+            return;
+        }
+        // Admin: acceso total sin verificación de scope
+        if (user.role === 'admin') {
+            setAuthorized(true);
+            return;
+        }
+
+        // Organizer y Scorekeeper: verificar que el juego pertenece a su liga
+        api.get(`/games/${params.id}`).then(({ data }) => {
+            const gameLeagueId = data.tournament?.leagueId;
+            const leagueAdminId = data.tournament?.league?.adminId;
+
+            if (user.role === 'scorekeeper') {
+                if (gameLeagueId && user.scorekeeperLeagueId && gameLeagueId !== user.scorekeeperLeagueId) {
+                    router.replace('/');
+                    return;
+                }
+            } else if (user.role === 'organizer') {
+                if (leagueAdminId && leagueAdminId !== user.id) {
+                    router.replace('/');
+                    return;
+                }
+            }
+            setAuthorized(true);
+        }).catch(() => {
+            router.replace('/');
+        });
     }, [router, params.id]);
 
     // Live base tracking
@@ -215,6 +249,8 @@ export default function ScorekeeperLivePanel() {
             return () => clearTimeout(timer);
         }
     }, [playLogs.length, params.id, fetchBoxscore]);
+
+    if (!authorized) return null;
 
     return (
         <>

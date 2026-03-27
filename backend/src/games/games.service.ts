@@ -74,10 +74,12 @@ export class GamesService {
         return this.prisma.game.create({ data });
     }
 
-    async findAll(filters?: { status?: string; tournamentId?: string; limit?: number }) {
+    async findAll(filters?: { status?: string; tournamentId?: string; limit?: number; adminId?: string; leagueId?: string }) {
         const where: any = {};
         if (filters?.status) where.status = filters.status;
         if (filters?.tournamentId) where.tournamentId = filters.tournamentId;
+        if (filters?.adminId) where.tournament = { league: { adminId: filters.adminId } };
+        if (filters?.leagueId) where.tournament = { leagueId: filters.leagueId };
 
         return this.prisma.game.findMany({
             where,
@@ -97,7 +99,11 @@ export class GamesService {
             include: {
                 homeTeam: { include: { players: true } },
                 awayTeam: { include: { players: true } },
-                tournament: true,
+                tournament: {
+                    include: {
+                        league: { select: { id: true, adminId: true } },
+                    },
+                },
                 winningPitcher: true,
                 mvpBatter1: true,
                 mvpBatter2: true,

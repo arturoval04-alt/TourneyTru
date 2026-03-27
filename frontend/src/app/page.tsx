@@ -5,8 +5,10 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import Navbar from '@/components/Navbar';
-import { Trophy, PlayCircle, BarChart3, Share2, Search } from 'lucide-react';
+import { Trophy, PlayCircle, BarChart3, Share2, Search, ArrowRight, Activity, Users } from 'lucide-react';
 import api from '@/lib/api';
+// Use motion from framer-motion
+import { motion, AnimatePresence, Variants } from 'framer-motion';
 
 interface GameItem {
   id: string;
@@ -20,11 +22,26 @@ interface GameItem {
   tournament?: { name: string; id: string; logoUrl?: string };
 }
 
+// Reusable animation variants
+const fadeUpObj: Variants = {
+  hidden: { opacity: 0, y: 40 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: 'easeOut' } }
+};
+
+const staggerContainer: Variants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.1 }
+  }
+};
+
 export default function LobbyPage() {
   const router = useRouter();
   const [recentGames, setRecentGames] = useState<GameItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<'live' | 'finished'>('live');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     const fetchRecentGames = async () => {
@@ -40,330 +57,468 @@ export default function LobbyPage() {
     fetchRecentGames();
   }, []);
 
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      // Basic navigation or filtering logic could go here
+      // For now, let's just push to /torneos which has its own search
+      router.push('/torneos');
+    }
+  };
+
+  const filteredGames = recentGames.filter(game =>
+    activeFilter === 'live'
+      ? (game.status === 'in_progress' || game.status === 'scheduled')
+      : game.status === 'finished'
+  );
+
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans transition-colors duration-300 selection:bg-primary/30">
-      {/* Background Decorative Elements */}
-      <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none gap-1">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/20 rounded-full blur-[120px] mix-blend-screen opacity-50 dark:opacity-20 animate-pulse-slow"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary-light/50 rounded-full blur-[120px] mix-blend-screen opacity-50 dark:opacity-20"></div>
+    <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary/30 overflow-x-hidden">
+
+      {/* ── Background Ambient Glows ── */}
+      <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+        {/* Top center giant glow */}
+        <div className="absolute -top-[20%] left-1/2 -translate-x-1/2 w-[80%] h-[50%] bg-primary/10 rounded-[100%] blur-[120px] mix-blend-screen opacity-50 dark:opacity-30"></div>
+        {/* Bottom right glow */}
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-600/10 rounded-full blur-[120px] mix-blend-screen opacity-40"></div>
+        {/* Bottom left glow */}
+        <div className="absolute top-[40%] left-[-10%] w-[30%] h-[50%] bg-primary/5 rounded-full blur-[120px] mix-blend-screen opacity-40"></div>
+
+        {/* Subtle grid pattern overlay */}
+        <div className="absolute inset-0 bg-[url('/images/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))] opacity-[0.03]"></div>
       </div>
 
       <Navbar />
 
-      <main className="relative z-10">
-        {/* Hero Section */}
-        <section className="relative overflow-hidden">
-          {/* Background Image with Gradient Fade */}
-          <div className="absolute inset-0 z-0">
-            <Image
-              src="/images/bg/hero.png"
-              alt="Stadium Background"
-              fill
-              className="object-cover opacity-30"
-              priority
-            />
-            <div className="absolute inset-0 bg-gradient-to-b from-background/10 via-background/60 to-background"></div>
-          </div>
+      <main className="relative z-10 flex flex-col gap-20 sm:gap-32 pb-20">
 
-          <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-2 md:py-15 text-center">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-6 sm:mb-8 animate-fade-in-up">
-              <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-              Plataforma Oficial
-            </div>
-            <h2 className="text-3xl sm:text-4xl md:text-5xl font-black text-foreground tracking-tighter mb-4 sm:mb-6 animate-fade-in-up animation-delay-100 px-2">
-              Sigue Cada <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-primary-light drop-shadow-sm">Jugada</span>.
-            </h2>
-            <p className="text-muted-foreground text-sm sm:text-base md:text-lg max-w-2xl mx-auto mb-8 sm:mb-10 animate-fade-in-up animation-delay-200 px-4">
-              Resultados en vivo, estadísticas detalladas y gestión completa de torneos de béisbol y softbol en una sola plataforma que llevará los juegos a una inmersión total con el espectador
+        {/* ════════════════════════════════════════════════════════════════════════ */}
+        {/* ── HERO SECTION ──────────────────────────────────────────────────────── */}
+        {/* ════════════════════════════════════════════════════════════════════════ */}
+
+        <section className="relative pt-24 sm:pt-32 lg:pt-40 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full flex flex-col items-center text-center">
+
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5 }}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-zinc-300 text-[10px] sm:text-xs font-bold uppercase tracking-widest mb-8 backdrop-blur-md shadow-2xl"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+            </span>
+            La evolución de llevar un torneo
+          </motion.div>
+
+          <motion.h1
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.1 }}
+            className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-black tracking-tighter mb-6 leading-[1.05]"
+          >
+            Sigue Cada <br className="hidden sm:block" />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-blue-400 to-indigo-400 drop-shadow-[0_0_30px_rgba(59,130,246,0.3)]">
+              Jugada en Vivo
+            </span>
+          </motion.h1>
+
+          <motion.p
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.2 }}
+            className="text-zinc-400 text-base sm:text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed"
+          >
+            Resultados en tiempo real, estadísticas avanzadas y gestión profesional de torneos. Una experiencia inmersiva diseñada para jugadores, coaches y aficionados.
+          </motion.p>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.3 }}
+            className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full max-w-md sm:max-w-none"
+          >
+            <button
+              onClick={() => router.push('/torneos')}
+              className="px-8 py-4 bg-primary hover:bg-primary-light text-white font-bold rounded-xl border border-primary-light/50 shadow-[0_0_20px_rgba(var(--primary),0.4)] hover:shadow-[0_0_30px_rgba(var(--primary),0.6)] transition-all cursor-pointer w-full sm:w-auto flex items-center justify-center gap-2 group"
+            >
+              Explorar Torneos
+              <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+            </button>
+            <form onSubmit={handleSearch} className="relative w-full sm:w-auto sm:min-w-[300px] h-[58px]">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+              <input
+                type="text"
+                placeholder="Buscar equipo o torneo..."
+                className="w-full h-full bg-white/5 backdrop-blur-md border border-white/10 hover:border-white/20 rounded-xl py-3 pl-12 pr-4 text-white outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all text-sm font-medium shadow-2xl"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </form>
+          </motion.div>
+
+        </section>
+
+
+        {/* ════════════════════════════════════════════════════════════════════════ */}
+        {/* ── FEATURES SECTION ──────────────────────────────────────────────────── */}
+        {/* ════════════════════════════════════════════════════════════════════════ */}
+
+        <section className="relative px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full ">
+
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-100px" }}
+            variants={fadeUpObj}
+            className="text-center mb-16"
+          >
+            <h2 className="text-3xl md:text-5xl font-black text-white mb-4 tracking-tight">Potencia tu Liga</h2>
+            <p className="text-zinc-400 text-lg max-w-2xl mx-auto">
+              Diseñado para ofrecer la mejor experiencia deportiva digital.
             </p>
+          </motion.div>
 
-            <div className="flex justify-center mb-6 sm:mb-8 w-full max-w-xl mx-auto animate-fade-in-up animation-delay-300 px-2 sm:px-0">
-              <div className="relative flex-1 group w-full">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
-                <input
-                  type="text"
-                  placeholder="Buscar torneos por nombre o ubicación..."
-                  className="w-full bg-surface/80 backdrop-blur-sm border border-muted/30 rounded-xl py-3 pl-12 pr-4 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/50 transition-all text-sm font-medium shadow-lg"
-                />
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-50px" }}
+            variants={staggerContainer}
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
+          >
+            {/* Feature 1 */}
+            <motion.div variants={fadeUpObj} className="group relative bg-white/[0.02] border border-white/[0.05] rounded-3xl p-8 hover:bg-white/[0.04] hover:border-white/10 transition-all duration-500 overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-[50px] group-hover:bg-primary/20 transition-colors"></div>
+              <div className="relative z-10">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 flex items-center justify-center mb-6 shadow-inner">
+                  <Trophy className="w-6 h-6 text-primary" />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-3">Gestión Total</h3>
+                <p className="text-zinc-400 text-sm leading-relaxed">
+                  Crea torneos, organiza rosters, asigna campos y programa juegos en un dashboard intuitivo.
+                </p>
               </div>
-            </div>
+            </motion.div>
 
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-fade-in-up animation-delay-300">
-              <button onClick={() => router.push('/torneos')} className="px-6 py-3 bg-primary hover:bg-primary-light text-white font-black rounded-xl border border-primary/50 shadow-lg hover:shadow-primary/40 transition-all cursor-pointer w-full sm:w-auto transform hover:-translate-y-1 text-sm">
-                Explorar Torneos
-              </button>
-              <button onClick={() => router.push('/jugadores')} className="px-6 py-3 bg-surface hover:bg-surface/80 text-foreground font-bold rounded-xl border border-muted/50 hover:border-primary/50 transition-all cursor-pointer w-full sm:w-auto text-sm">
-                Ver Jugadores
-              </button>
-            </div>
-          </div>
+            {/* Feature 2 */}
+            <motion.div variants={fadeUpObj} className="group relative bg-white/[0.02] border border-white/[0.05] rounded-3xl p-8 hover:bg-white/[0.04] hover:border-white/10 transition-all duration-500 overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-[50px] group-hover:bg-blue-500/20 transition-colors"></div>
+              <div className="relative z-10">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500/20 to-blue-500/5 border border-blue-500/20 flex items-center justify-center mb-6 shadow-inner">
+                  <Activity className="w-6 h-6 text-blue-400" />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-3">Scoreboard en Vivo</h3>
+                <p className="text-zinc-400 text-sm leading-relaxed">
+                  Anota bola por bola. Los fans y jugadores verán la actualización al instante, sin recargar la página.
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Feature 3 */}
+            <motion.div variants={fadeUpObj} className="group relative bg-white/[0.02] border border-white/[0.05] rounded-3xl p-8 hover:bg-white/[0.04] hover:border-white/10 transition-all duration-500 overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-[50px] group-hover:bg-indigo-500/20 transition-colors"></div>
+              <div className="relative z-10">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-indigo-500/5 border border-indigo-500/20 flex items-center justify-center mb-6 shadow-inner">
+                  <BarChart3 className="w-6 h-6 text-indigo-400" />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-3">Métricas PRO</h3>
+                <p className="text-zinc-400 text-sm leading-relaxed">
+                  Estadísticas automáticas de bateo y pitcheo. Tablas de líderes y métricas al estilo Ligas Mayores.
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Feature 4 */}
+            <motion.div variants={fadeUpObj} className="group relative bg-white/[0.02] border border-white/[0.05] rounded-3xl p-8 hover:bg-white/[0.04] hover:border-white/10 transition-all duration-500 overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-[50px] group-hover:bg-purple-500/20 transition-colors"></div>
+              <div className="relative z-10">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500/20 to-purple-500/5 border border-purple-500/20 flex items-center justify-center mb-6 shadow-inner">
+                  <Users className="w-6 h-6 text-purple-400" />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-3">Perfiles de Jugador</h3>
+                <p className="text-zinc-400 text-sm leading-relaxed">
+                  Cada jugador tiene su propio perfil digital acumulando su historial a lo largo de los torneos.
+                </p>
+              </div>
+            </motion.div>
+          </motion.div>
         </section>
 
-        {/* Features Section - Todo lo que necesitas */}
-        <section className="relative bg-surface/30 border-y border-muted/10 md:py-15 sm:py-24 mb-12 sm:mb-1 overflow-hidden">
-          {/* Background Image Overlay */}
-          <div className="absolute inset-0 z-0 scale-110">
-            <Image
-              src="/images/bg/features.png"
-              alt="Baseball Background"
-              fill
-              className="object-cover opacity-10 blur-sm"
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-background via-transparent to-background"></div>
-            <div className="absolute inset-0 bg-gradient-to-b from-background via-transparent to-background"></div>
-          </div>
 
-          <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-10 sm:mb-12 animate-fade-in-up px-2">
-              <h2 className="text-2xl md:text-3xl font-black text-foreground mb-3 sm:mb-4">Todo lo que necesitas está aquí</h2>
-              <p className="text-muted-foreground text-sm sm:text-base">Herramientas completas para organizar, gestionar y seguir torneos de béisbol y softbol</p>
+        {/* ════════════════════════════════════════════════════════════════════════ */}
+        {/* ── LIVE GAMES SECTION ────────────────────────────────────────────────── */}
+        {/* ════════════════════════════════════════════════════════════════════════ */}
+
+        <section className="relative px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
+
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-100px" }}
+            variants={fadeUpObj}
+            className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-6 mb-10"
+          >
+            <div>
+              <h2 className="text-3xl md:text-4xl font-black text-white mb-2 flex items-center gap-3">
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                </span>
+                Gamecast
+              </h2>
+              <p className="text-zinc-400">La emoción de la liga en tiempo real.</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {/* Feature 1 */}
-              <div className="bg-surface border border-muted/20 rounded-3xl p-6 hover:bg-muted/5 hover:border-primary/30 transition-all duration-300 animate-fade-in-up">
-                <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-5">
-                  <Trophy className="w-5 h-5 text-primary" />
-                </div>
-                <h3 className="text-lg font-bold text-foreground mb-2">Gestión de Torneos</h3>
-                <p className="text-muted-foreground text-xs leading-relaxed">
-                  Crea y administra torneos con facilidad. Configura equipos, campos y árbitros.
-                </p>
-              </div>
-
-              {/* Feature 2 */}
-              <div className="bg-surface border border-muted/20 rounded-3xl p-6 hover:bg-muted/5 hover:border-primary/30 transition-all duration-300 animate-fade-in-up" style={{ animationDelay: '100ms' }}>
-                <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-5">
-                  <PlayCircle className="w-5 h-5 text-primary" />
-                </div>
-                <h3 className="text-lg font-bold text-foreground mb-2">Scoreboard en Vivo</h3>
-                <p className="text-muted-foreground text-xs leading-relaxed">
-                  Registra jugadas en tiempo real con controles intuitivos y estadísticas automáticas.
-                </p>
-              </div>
-
-              {/* Feature 3 */}
-              <div className="bg-surface border border-muted/20 rounded-3xl p-6 hover:bg-muted/5 hover:border-primary/30 transition-all duration-300 animate-fade-in-up" style={{ animationDelay: '200ms' }}>
-                <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-5">
-                  <BarChart3 className="w-5 h-5 text-primary" />
-                </div>
-                <h3 className="text-lg font-bold text-foreground mb-2">Estadísticas</h3>
-                <p className="text-muted-foreground text-xs leading-relaxed">
-                  Seguimiento completo de estadísticas de jugadores y equipos. Exporta a PDF/Excel.
-                </p>
-              </div>
-
-              {/* Feature 4 */}
-              <div className="bg-surface border border-muted/20 rounded-3xl p-6 hover:bg-muted/5 hover:border-primary/30 transition-all duration-300 animate-fade-in-up" style={{ animationDelay: '300ms' }}>
-                <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-5">
-                  <Share2 className="w-5 h-5 text-primary" />
-                </div>
-                <h3 className="text-lg font-bold text-foreground mb-2">Compartir</h3>
-                <p className="text-muted-foreground text-xs leading-relaxed">
-                  Comparte resultados en redes sociales con imágenes prediseñadas.
-                </p>
-              </div>
+            <div className="flex bg-white/5 backdrop-blur-md rounded-xl p-1 border border-white/10 shadow-xl w-full sm:w-auto self-start sm:self-auto">
+              <button
+                onClick={() => setActiveFilter('live')}
+                className={`flex-1 sm:flex-none px-6 py-2.5 text-sm font-bold rounded-lg transition-all cursor-pointer text-center ${activeFilter === 'live' ? 'text-white bg-white/10 shadow-lg border border-white/5' : 'text-zinc-500 hover:text-white'}`}
+              >
+                En Vivo / Prog
+              </button>
+              <button
+                onClick={() => setActiveFilter('finished')}
+                className={`flex-1 sm:flex-none px-6 py-2.5 text-sm font-bold rounded-lg transition-all cursor-pointer text-center ${activeFilter === 'finished' ? 'text-white bg-white/10 shadow-lg border border-white/5' : 'text-zinc-500 hover:text-white'}`}
+              >
+                Terminados
+              </button>
             </div>
-          </div>
-        </section>
+          </motion.div>
 
-        {/* Live Games Section */}
-        <section className="relative w-full pb-35 overflow-hidden pt-10">
-          <div className="relative z-10 max-w-7xl mx-auto px-10 sm:px-6 lg:px-8">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 sm:mb-8">
-              <h3 className="text-lg sm:text-xl font-bold flex items-center gap-3 text-foreground">
-                <span className="w-1.5 h-5 bg-primary rounded-full"></span>
-                Juegos Recientes
-              </h3>
-              <div className="flex bg-surface rounded-lg p-1 border border-muted/30 shadow-sm w-full sm:w-auto">
-                <button
-                  onClick={() => setActiveFilter('live')}
-                  className={`flex-1 sm:flex-none px-3 py-2 sm:py-1 text-xs font-bold rounded shadow transition-all cursor-pointer text-center ${activeFilter === 'live' ? 'text-white bg-primary animate-pulse' : 'text-muted-foreground hover:text-foreground'}`}
-                >
-                  En Vivo
-                </button>
-                <button
-                  onClick={() => setActiveFilter('finished')}
-                  className={`flex-1 sm:flex-none px-3 py-2 sm:py-1 text-xs font-bold rounded shadow transition-all cursor-pointer text-center ${activeFilter === 'finished' ? 'text-white bg-amber-600' : 'text-muted-foreground hover:text-foreground'}`}
-                >
-                  Terminados
-                </button>
-              </div>
-            </div>
+          <AnimatePresence mode="wait">
+            {loading ? (
+              <motion.div
+                key="loading"
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+              >
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-72 bg-white/5 border border-white/5 rounded-3xl animate-pulse backdrop-blur-sm"></div>
+                ))}
+              </motion.div>
+            ) : filteredGames.length === 0 ? (
+              <motion.div
+                key="empty"
+                initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
+                className="w-full py-32 text-center bg-white/[0.02] border border-white/[0.05] rounded-3xl backdrop-blur-sm flex flex-col items-center justify-center"
+              >
+                <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4">
+                  <PlayCircle size={28} className="text-zinc-600" />
+                </div>
+                <h3 className="text-xl font-bold text-zinc-300 mb-2">No hay juegos aquí</h3>
+                <p className="text-zinc-500 max-w-sm">
+                  {activeFilter === 'live' ? 'No hay juegos en progreso o programados en este momento.' : 'No hay juegos finalizados recientemente.'}
+                </p>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="grid"
+                variants={staggerContainer}
+                initial="hidden"
+                animate="visible"
+                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+              >
+                {filteredGames.map((game, i) => {
+                  const inningLabel = game.status === 'scheduled' ? 'Pre-Game'
+                    : game.status === 'finished' ? 'Final'
+                      : `${game.half === 'top' ? '▲' : '▼'}${game.currentInning}`;
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {loading ? (
-                [1, 2, 3].map((i) => (
-                  <div key={i} className="h-64 bg-surface border border-muted/30 rounded-2xl animate-pulse shadow-sm"></div>
-                ))
-              ) : (
-                recentGames
-                  .filter(game => activeFilter === 'live' ? (game.status === 'in_progress' || game.status === 'scheduled') : game.status === 'finished')
-                  .length === 0 ? (
-                  <div className="col-span-full py-35 text-center bg-surface border border-muted/30 rounded-2xl">
-                    <p className="text-muted-foreground font-medium text-lg px-10">
-                      No hay partidos {activeFilter === 'live' ? 'en vivo' : 'finalizados'} registrados.
+                  const isLive = game.status === 'in_progress';
+                  const isFinished = game.status === 'finished';
 
-                    </p>
-                  </div>
-                ) : (
-                  recentGames
-                    .filter(game => activeFilter === 'live' ? (game.status === 'in_progress' || game.status === 'scheduled') : game.status === 'finished')
-                    .map((game) => {
-                      const inningLabel = game.status === 'scheduled' ? 'Pre-Game'
-                        : game.status === 'finished' ? 'Final'
-                          : `${game.half === 'top' ? '▲' : '▼'}${game.currentInning}`;
-                      return (
-                        <div key={game.id} className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 group cursor-pointer flex flex-col transform hover:-translate-y-1">
-                          {/* Game Status Header */}
-                          <div className="bg-muted/5 px-6 py-4 border-b border-muted/20 flex justify-between items-center group-hover:bg-primary/5 transition-colors">
-                            <span className={`text-xs font-black tracking-widest uppercase ${game.status === 'in_progress' ? 'text-primary animate-pulse' : 'text-muted-foreground'}`}>
-                              {game.status === 'scheduled' ? 'Programado' : game.status === 'finished' ? 'Finalizado' : 'En Curso'}
-                            </span>
-                            <span className={`text-sm font-bold px-2 py-0.5 rounded border border-muted/30 ${game.status === 'finished' ? 'bg-amber-500/10 text-amber-500 border-amber-500/30' : 'bg-surface text-foreground'}`}>
-                              {inningLabel}
-                            </span>
-                          </div>
-
-                          {/* Score Area */}
-                          <div className="p-4 sm:p-6 flex-1 flex flex-col justify-center gap-4 sm:gap-6 relative group/score">
-                            {/* Tournament Watermark/Logo in Middle - More visible and larger */}
-                            {(game.tournament?.logoUrl || (game.tournament as any)?.image || (game.tournament as any)?.logo) && (
-                              <div className="absolute inset-0 flex items-center justify-center blur-xs opacity-10 pointer-events-none group-hover/score:opacity-20 transition-opacity">
-                                <Image
-                                  src={game.tournament?.logoUrl || (game.tournament as any)?.image || (game.tournament as any)?.logo}
-                                  alt="Tournament Logo"
-                                  width={385}
-                                  height={385}
-                                  className="object-contain"
-                                  unoptimized
-                                />
-                              </div>
-                            )}
-
-                            {/* Away Team */}
-                            <div className="flex items-center justify-between gap-5 relative z-10">
-                              <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
-                                <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 bg-muted/10 rounded-full flex items-center justify-center font-black text-primary text-base sm:text-lg border border-primary/20 shadow-inner group-hover:bg-primary/20 transition-colors overflow-hidden">
-                                  {game.awayTeam.logoUrl ? (
-                                    <Image
-                                      src={game.awayTeam.logoUrl}
-                                      alt={game.awayTeam.name}
-                                      width={70}
-                                      height={70}
-                                      className="w-full h-full "
-                                      unoptimized
-                                    />
-                                  ) : (
-                                    <span className="text-primary font-black">{game.awayTeam.name.substring(0, 1)}</span>
-                                  )}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="font-bold text-base sm:text-lg text-foreground truncate">{game.awayTeam.name}</p>
-                                  <p className="text-[10px] sm:text-xs text-muted-foreground uppercase font-black tracking-wider truncate">Visitante</p>
-                                </div>
-                              </div>
-                              <span className="text-2xl sm:text-3xl font-black text-foreground drop-shadow-sm shrink-0">{game.awayScore ?? '-'}</span>
-                            </div>
-
-                            {/* Home Team */}
-                            <div className="flex items-center justify-between gap-2 relative z-10">
-                              <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
-                                <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 bg-muted/10 rounded-full flex items-center justify-center font-black text-primary text-base sm:text-lg border border-primary/20 shadow-inner group-hover:bg-primary/20 transition-colors overflow-hidden">
-                                  {game.homeTeam.logoUrl ? (
-                                    <Image
-                                      src={game.homeTeam.logoUrl}
-                                      alt={game.homeTeam.name}
-                                      width={70}
-                                      height={70}
-                                      className="w-full h-full"
-                                      unoptimized
-                                    />
-                                  ) : (
-                                    <span className="text-primary font-black">{game.homeTeam.name.substring(0, 1)}</span>
-                                  )}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="font-bold text-base sm:text-lg text-foreground truncate">{game.homeTeam.name}</p>
-                                  <p className="text-[10px] sm:text-xs text-muted-foreground uppercase font-black tracking-wider truncate">Local</p>
-                                </div>
-                              </div>
-                              <span className="text-2xl sm:text-3xl font-black text-foreground drop-shadow-sm shrink-0">{game.homeScore ?? '-'}</span>
-                            </div>
-                          </div>
-
-                          {/* Action Footer */}
-                          <div className="px-4 sm:px-6 py-4 bg-muted/5 border-t border-muted/20 flex items-center justify-between mt-auto gap-2">
-                            <div className="text-xs sm:text-sm font-bold text-muted-foreground truncate flex-1">
-                              {game.tournament?.name || 'Torneo'}
-                            </div>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                router.push(`/gamecast/${game.id}`);
-                              }}
-                              className={`px-4 sm:px-5 py-2 text-white text-xs sm:text-sm font-bold rounded-lg transition-colors shadow shrink-0 ${game.status === 'finished' ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-500/20' : 'bg-primary hover:bg-primary-light shadow-primary/20'}`}
-                            >
-                              {game.status === 'finished' ? 'Ver Boxscore' : 'Gamecast'}
-                            </button>
-                          </div>
+                  return (
+                    <motion.div
+                      key={game.id}
+                      variants={fadeUpObj}
+                      onClick={() => router.push(`/gamecast/${game.id}`)}
+                      className={`group relative bg-surface hover:bg-surface/80 border rounded-3xl overflow-hidden transition-all duration-500 cursor-pointer flex flex-col ${isLive ? 'border-primary/30 shadow-[0_0_20px_rgba(var(--primary),0.1)] hover:shadow-[0_0_30px_rgba(var(--primary),0.2)] hover:border-primary/50' : 'border-white/10 hover:border-white/20 shadow-xl'}`}
+                    >
+                      {/* Subtie tournament background watermark */}
+                      {(game.tournament?.logoUrl) && (
+                        <div className="absolute right-[-20%] top-[-10%] w-[80%] aspect-square opacity-[0.03] group-hover:opacity-[0.06] transition-opacity duration-700 pointer-events-none grayscale">
+                          <Image src={game.tournament.logoUrl} alt="Logo" fill className="object-contain blur-sm" unoptimized />
                         </div>
-                      );
-                    })
-                )
-              )}
-            </div>
-          </div>
+                      )}
+
+                      {/* Header */}
+                      <div className="px-6 py-4 border-b border-white/5 flex justify-between items-center relative z-10">
+                        <span className={`text-[10px] font-bold tracking-widest uppercase flex items-center gap-2 ${isLive ? 'text-primary' : 'text-zinc-500'}`}>
+                          {isLive && <span className="animate-pulse w-1.5 h-1.5 rounded-full bg-primary inline-block"></span>}
+                          {isLive ? 'EN CURSO' : game.status === 'scheduled' ? 'PROGRAMADO' : 'FINALIZADO'}
+                        </span>
+                        <span className={`text-xs font-black px-2.5 py-1 rounded-md border ${isFinished ? 'bg-zinc-800 text-zinc-400 border-zinc-700' : 'bg-primary/10 text-primary border-primary/20 shadow-inner'}`}>
+                          {inningLabel}
+                        </span>
+                      </div>
+
+                      {/* Teams & Scores */}
+                      <div className="p-6 flex-1 flex flex-col justify-center gap-6 relative z-10">
+
+                        {/* Away */}
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-4 flex-1 min-w-0">
+                            <div className="w-14 h-14 shrink-0 bg-white/5 rounded-2xl flex items-center justify-center font-black text-xl border border-white/10 shadow-inner overflow-hidden relative group-hover:bg-white/10 transition-colors">
+                              {game.awayTeam.logoUrl ? (
+                                <Image src={game.awayTeam.logoUrl} alt={game.awayTeam.name} width={56} height={56} className="object-cover" unoptimized />
+                              ) : (
+                                <span className="text-zinc-400">{game.awayTeam.name.substring(0, 1)}</span>
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-bold text-lg text-white truncate">{game.awayTeam.shortName || game.awayTeam.name}</p>
+                              <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest mt-0.5">Visita</p>
+                            </div>
+                          </div>
+                          <span className={`text-4xl font-black drop-shadow-lg ${isFinished && game.awayScore > game.homeScore ? 'text-white' : isFinished ? 'text-zinc-500' : 'text-white'}`}>
+                            {game.awayScore ?? '-'}
+                          </span>
+                        </div>
+
+                        {/* Divider */}
+                        <div className="w-full h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
+
+                        {/* Home */}
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-4 flex-1 min-w-0">
+                            <div className="w-14 h-14 shrink-0 bg-white/5 rounded-2xl flex items-center justify-center font-black text-xl border border-white/10 shadow-inner overflow-hidden relative group-hover:bg-white/10 transition-colors">
+                              {game.homeTeam.logoUrl ? (
+                                <Image src={game.homeTeam.logoUrl} alt={game.homeTeam.name} width={56} height={56} className="object-cover" unoptimized />
+                              ) : (
+                                <span className="text-zinc-400">{game.homeTeam.name.substring(0, 1)}</span>
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-bold text-lg text-white truncate">{game.homeTeam.shortName || game.homeTeam.name}</p>
+                              <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest mt-0.5">Local</p>
+                            </div>
+                          </div>
+                          <span className={`text-4xl font-black drop-shadow-lg ${isFinished && game.homeScore > game.awayScore ? 'text-white' : isFinished ? 'text-zinc-500' : 'text-white'}`}>
+                            {game.homeScore ?? '-'}
+                          </span>
+                        </div>
+
+                      </div>
+
+                      {/* Footer */}
+                      <div className="px-6 py-4 bg-black/40 border-t border-white/5 flex items-center justify-between">
+                        <div className="text-xs font-bold text-zinc-500 truncate pr-4">
+                          {game.tournament?.name || 'Torneo'}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs font-bold text-primary group-hover:translate-x-1 transition-transform">
+                          {isFinished ? 'Ver Boxscore' : 'Gamecast'}
+                          <ArrowRight size={14} />
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </section>
+
+        {/* ════════════════════════════════════════════════════════════════════════ */}
+        {/* ── CTA BOTTOM ────────────────────────────────────────────────────────── */}
+        {/* ════════════════════════════════════════════════════════════════════════ */}
+
+        <section className="relative w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 mt-10">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-100px" }}
+            variants={fadeUpObj}
+            className="relative overflow-hidden bg-gradient-to-br from-primary/20 via-blue-900/20 to-background border border-primary/20 rounded-[2.5rem] p-10 sm:p-16 text-center shadow-2xl"
+          >
+            <div className="absolute inset-0 bg-[url('/images/grid.svg')] bg-center opacity-10"></div>
+
+            <div className="relative z-10 flex flex-col items-center">
+              <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center text-primary mb-6 ring-8 ring-primary/5">
+                <Trophy size={28} />
+              </div>
+              <h2 className="text-3xl sm:text-5xl font-black text-white mb-4 tracking-tight">Eleva el Nivel de tu Liga</h2>
+              <p className="text-zinc-400 text-lg max-w-xl mx-auto mb-8">
+                Únete a la plataforma que transofrmará la manera de ver y visualizar tu liga.
+              </p>
+              <button
+                onClick={() => router.push('/torneos')}
+                className="px-8 py-4 bg-white text-black hover:bg-zinc-200 font-bold rounded-xl shadow-xl transition-all hover:scale-105"
+              >
+                Comenzar Ahora
+              </button>
+            </div>
+          </motion.div>
+        </section>
+
       </main>
 
-      {/* Footer Section */}
-      <footer className="border-t border-muted/20 bg-background pt-6 pb-2 mt-1 relative z-10 w-full overflow-hidden">
+      {/* ════════════════════════════════════════════════════════════════════════ */}
+      {/* ── FOOTER ────────────────────────────────────────────────────────────── */}
+      {/* ════════════════════════════════════════════════════════════════════════ */}
+
+      <footer className="border-t border-white/5 bg-background pt-16 gap-10 pb-8 mt-10 relative z-100 w-full">
         <div className="max-w-7xl mx-auto px-6 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-12 md:gap-8 mb-12">
-            <div className="col-span-1 md:col-span-1">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-8 h-8 rounded-lg bg-surface flex items-center justify-center border border-muted/30 shadow-sm relative overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-br from-primary/30 to-transparent"></div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-1 md:gap-8 mb-16">
+
+            {/* Brand */}
+            <div className="md:col-span-1">
+              <div className="flex items-center gap-1 mb-6">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center border border-primary/20 shadow-sm relative overflow-hidden">
                   <span className="font-black text-primary text-sm relative z-10">TT</span>
                 </div>
-                <span className="font-black text-2xl tracking-tight text-foreground">TourneyTru</span>
+                <span className="font-black text-2xl tracking-tight text-white">TourneyTru</span>
               </div>
-              <p className="text-muted-foreground text-sm leading-relaxed max-w-[290px]">
-                La plataforma líder para la gestión de torneos de cualquier deporte.
+              <p className="text-zinc-500 text-sm leading-relaxed max-w-[250px]">
+                La tecnología al servicio del deporte. Scoreboard oficial, gamecast e identidad digital para torneos.
               </p>
             </div>
 
+            {/* Links */}
             <div>
-              <h4 className="font-bold text-foreground mb-4">Enlaces</h4>
-              <ul className="space-y-1">
-                <li><Link href="/" className="text-muted-foreground hover:text-primary transition-colors text-sm font-medium">Inicio</Link></li>
-                <li><Link href="/torneos" className="text-muted-foreground hover:text-primary transition-colors text-sm font-medium">Torneos</Link></li>
-                <li><Link href="/equipos" className="text-muted-foreground hover:text-primary transition-colors text-sm font-medium">Equipos</Link></li>
-                <li><Link href="/jugadores" className="text-muted-foreground hover:text-primary transition-colors text-sm font-medium">Jugadores</Link></li>
+              <h4 className="font-bold text-white mb-1 text-xs uppercase tracking-widest opacity-80">Explorar</h4>
+              <ul className="space-y-4">
+                <li><Link href="/ligas" className="text-zinc-500 hover:text-white transition-colors text-xs font-medium">Ligas</Link></li>
+                <li><Link href="/torneos" className="text-zinc-500 hover:text-white transition-colors text-xs font-medium">Torneos Activos</Link></li>
+                <li><Link href="/equipos" className="text-zinc-500 hover:text-white transition-colors text-xs font-medium">Equipos</Link></li>
+                <li><Link href="/jugadores" className="text-zinc-500 hover:text-white transition-colors text-xs font-medium">Directorio de Jugadores</Link></li>
               </ul>
             </div>
 
+            {/* Legal */}
             <div>
-              <h4 className="font-bold text-foreground mb-4">Legal</h4>
-              <ul className="space-y-1">
-                <li><a href="#" className="text-muted-foreground hover:text-primary transition-colors text-sm font-medium">Términos de uso</a></li>
-                <li><a href="#" className="text-muted-foreground hover:text-primary transition-colors text-sm font-medium">Privacidad</a></li>
-                <li><a href="#" className="text-muted-foreground hover:text-primary transition-colors text-sm font-medium">Cookies</a></li>
+              <h4 className="font-bold text-white mb-5 text-sm uppercase tracking-widest opacity-80">Legal</h4>
+              <ul className="space-y-3">
+                <li><a href="#" className="text-zinc-500 hover:text-white transition-colors text-xs font-medium">Términos del Servicio</a></li>
+                <li><a href="#" className="text-zinc-500 hover:text-white transition-colors text-xs font-medium">Política de Privacidad</a></li>
               </ul>
             </div>
 
+            {/* Contact */}
             <div>
-              <h4 className="font-bold text-foreground mb-4">Contacto</h4>
-              <ul className="space-y-1 text-sm text-muted-foreground font-medium">
-                <li className="hover:text-foreground transition-colors">arturoval04@gmail.com</li>
-                <li className="hover:text-foreground transition-colors">+526681697097</li>
+              <h4 className="font-bold text-white mb-5 text-sm uppercase tracking-widest opacity-80">Soporte</h4>
+              <ul className="space-y-3 text-sm text-zinc-500 font-medium">
+                <li className="flex items-center gap-2 hover:text-white transition-colors cursor-pointer">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+                  Sistemas Operativos
+                </li>
+                <li>arturoval04@gmail.com</li>
+                <li>6681697097</li>
               </ul>
             </div>
           </div>
 
-          <div className="pt-8 border-t border-muted/20 flex flex-col items-center justify-center text-center">
-            <p className="text-muted-foreground text-xs sm:text-sm font-medium">© 2026 TourneyTru. Todos los derechos reservados.</p>
+          <div className="pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between text-center gap-4">
+            <p className="text-zinc-600 text-sm font-medium">© {new Date().getFullYear()} TourneyTru. Todos los derechos reservados.</p>
+            <div className="flex gap-4">
+              {/* social icons placehoder */}
+              <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-zinc-500 hover:bg-white/10 hover:text-white cursor-pointer transition-colors">
+                <span className="sr-only">X</span>
+                𝕏
+              </div>
+              <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-zinc-500 hover:bg-white/10 hover:text-white cursor-pointer transition-colors">
+                <span className="sr-only">IG</span>
+                IG
+              </div>
+            </div>
           </div>
         </div>
       </footer>

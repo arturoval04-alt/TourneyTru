@@ -35,4 +35,9 @@ export class RegisterDto {
     @IsString()
     @MaxLength(20)
     phone?: string;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(500)
+    organizerRequestNote?: string;
 }

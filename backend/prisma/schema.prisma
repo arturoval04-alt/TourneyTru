@@ -22,9 +22,21 @@ model User {
   emailVerified               Boolean               @default(false) @map("email_verified")
   verificationToken           String?               @map("verification_token")
   verificationTokenExpiresAt  DateTime?             @map("verification_token_expires_at")
+  // Cuotas del plan
+  maxLeagues              Int     @default(0) @map("max_leagues")
+  maxTournamentsPerLeague Int     @default(0) @map("max_tournaments_per_league")
+  maxTeamsPerTournament   Int     @default(0) @map("max_teams_per_tournament")
+  maxPlayersPerTeam       Int     @default(25) @map("max_players_per_team")
+  planLabel               String  @default("public") @map("plan_label")
+  // Solicitud de acceso como organizador
+  organizerRequestNote    String? @map("organizer_request_note") @db.NVarChar(Max)
+  organizerRequestedAt    DateTime? @map("organizer_requested_at")
+  // Scorekeeper: liga a la que pertenece
+  scorekeeperLeagueId     String? @map("scorekeeper_league_id")
   createdAt                   DateTime              @default(now()) @map("created_at")
   updatedAt                   DateTime              @default(now()) @updatedAt @map("updated_at")
   leaguesAdmin         League[]              @relation("LeagueAdmin")
+  scorekeeperLeague    League?               @relation("LeagueScorekeepers", fields: [scorekeeperLeagueId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   tournamentNews       TournamentNews[]
   tournamentOrganizers TournamentOrganizer[]
   tournamentsAdmin     Tournament[]          @relation("TournamentAdmin")
@@ -59,6 +71,7 @@ model League {
   createdAt   DateTime     @default(now()) @map("created_at")
   updatedAt   DateTime     @default(now()) @updatedAt @map("updated_at")
   admin         User           @relation("LeagueAdmin", fields: [adminId], references: [id])
+  scorekeepers  User[]         @relation("LeagueScorekeepers")
   tournaments   Tournament[]
   umpires       Umpire[]
   subscriptions Subscription[]

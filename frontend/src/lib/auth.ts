@@ -8,6 +8,12 @@ export interface AuthUser {
     role: string;
     phone?: string | null;
     profilePicture?: string | null;
+    scorekeeperLeagueId?: string | null;
+    maxLeagues?: number | null;
+    maxTournamentsPerLeague?: number | null;
+    maxTeamsPerTournament?: number | null;
+    maxPlayersPerTeam?: number | null;
+    planLabel?: string | null;
 }
 
 export interface AuthTokens {

@@ -18,8 +18,10 @@ export class GamesController {
         @Query('status') status?: string,
         @Query('tournamentId') tournamentId?: string,
         @Query('limit') limit?: string,
+        @Query('adminId') adminId?: string,
+        @Query('leagueId') leagueId?: string,
     ) {
-        return this.gamesService.findAll({ status, tournamentId, limit: limit ? parseInt(limit) : undefined });
+        return this.gamesService.findAll({ status, tournamentId, limit: limit ? parseInt(limit) : undefined, adminId, leagueId });
     }
 
     @Get(':id')
