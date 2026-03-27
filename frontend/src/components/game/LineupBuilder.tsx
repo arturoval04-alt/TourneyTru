@@ -7,8 +7,9 @@
  */
 
 import { useState, useMemo } from 'react';
-import { ChevronRight, ChevronLeft, Save, UserPlus, X, Edit2 } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Save, UserPlus, X, Edit2, Wand2, Users } from 'lucide-react';
 import PositionSelectorMini, { Position } from './PositionSelectorMini';
+import AILineupScanner from './AILineupScanner';
 
 export interface Player {
   id: string;
@@ -51,6 +52,7 @@ export default function LineupBuilder({
   const [lineup, setLineup] = useState<LineupEntry[]>(initialLineup ?? []);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [showPositionPicker, setShowPositionPicker] = useState(false);
+  const [activeMode, setActiveMode] = useState<'manual' | 'ai'>('manual');
 
   // Form del slot actual
   const [selectedPlayerId, setSelectedPlayerId] = useState('');
@@ -177,6 +179,12 @@ export default function LineupBuilder({
   const isAddingNew = editingIndex === null;
   const formActive = isAddingNew ? true : editingIndex !== null;
 
+  // Callback cuando la IA confirma su lineup
+  const handleAIResult = (entries: LineupEntry[]) => {
+    setLineup(entries);
+    setActiveMode('manual');
+  };
+
   return (
     <div className="flex flex-col gap-4 w-full">
       {/* Header */}
@@ -195,6 +203,40 @@ export default function LineupBuilder({
         </div>
       </div>
 
+      {/* Tabs: Manual / IA */}
+      <div className="flex bg-zinc-800/50 p-1 rounded-xl w-fit border border-zinc-700">
+        <button
+          onClick={() => setActiveMode('manual')}
+          className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+            activeMode === 'manual'
+              ? 'bg-zinc-700 text-white shadow'
+              : 'text-zinc-400 hover:text-white hover:bg-zinc-700/50'
+          }`}
+        >
+          <Users size={13} />
+          Manual
+        </button>
+        <button
+          onClick={() => setActiveMode('ai')}
+          className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+            activeMode === 'ai'
+              ? 'bg-blue-600 text-white shadow'
+              : 'text-zinc-400 hover:text-white hover:bg-zinc-700/50'
+          }`}
+        >
+          <Wand2 size={13} />
+          Escaneo IA
+        </button>
+      </div>
+
+      {activeMode === 'ai' ? (
+        <AILineupScanner
+          roster={players}
+          onLineupReady={handleAIResult}
+          onCancel={() => setActiveMode('manual')}
+        />
+      ) : (
+      <>
       <div className="flex flex-col lg:flex-row gap-4">
         {/* Panel izquierdo: Lista del lineup */}
         <div className="lg:w-52 flex-shrink-0">
@@ -381,6 +423,8 @@ export default function LineupBuilder({
         Guardar Lineup {teamName} ({lineup.length} jugadores)
         {!canFinish && <span className="text-zinc-500 font-normal text-xs ml-1">— mínimo 9</span>}
       </button>
+      </>
+      )}
     </div>
   );
 }

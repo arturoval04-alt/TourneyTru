@@ -32,6 +32,7 @@ export default function Navbar() {
     };
 
     const navLinks = [
+        { href: "/ligas", label: "Ligas" },
         { href: "/torneos", label: "Torneos" },
         { href: "/equipos", label: "Equipos" },
         { href: "/jugadores", label: "Jugadores" },

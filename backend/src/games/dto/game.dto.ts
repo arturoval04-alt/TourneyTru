@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt, IsUUID, IsDateString, IsArray, ValidateNested, IsBoolean, IsIn } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsUUID, IsDateString, IsArray, ValidateNested, IsBoolean, IsIn, Min, Max, MaxLength } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateGameDto {
@@ -15,53 +15,64 @@ export class CreateGameDto {
     scheduledDate: string;
 
     @IsOptional()
-    @IsString()
+    @IsIn(['scheduled', 'in_progress', 'finished', 'cancelled'])
     status?: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(100)
     field?: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(100)
     umpirePlate?: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(100)
     umpireBase1?: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(100)
     umpireBase2?: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(100)
     umpireBase3?: string;
 
     @IsOptional()
     @IsInt()
+    @Min(1)
+    @Max(15)
     maxInnings?: number;
 }
 
 export class UpdateGameDto {
     @IsOptional()
-    @IsString()
+    @IsIn(['scheduled', 'in_progress', 'finished', 'cancelled'])
     status?: string;
 
     @IsOptional()
     @IsInt()
+    @Min(0)
     homeScore?: number;
 
     @IsOptional()
     @IsInt()
+    @Min(0)
     awayScore?: number;
 
     @IsOptional()
     @IsInt()
+    @Min(1)
+    @Max(15)
     currentInning?: number;
 
     @IsOptional()
-    @IsString()
+    @IsIn(['top', 'bottom'])
     half?: string;
 
     @IsOptional()
@@ -83,21 +94,31 @@ export class UpdateGameDto {
 
 export class CreateLineupDto {
     @IsOptional()
+    @IsInt()
+    @Min(1)
+    @Max(12)
     battingOrder: number;
 
     @IsOptional()
+    @IsString()
+    @MaxLength(10)
     position: string;
 
     @IsOptional()
+    @IsString()
+    @MaxLength(10)
     dhForPosition?: string;
 
     @IsOptional()
+    @IsBoolean()
     isStarter?: boolean;
 
     @IsOptional()
+    @IsUUID()
     teamId?: string;
 
     @IsOptional()
+    @IsUUID()
     playerId: string;
 }
 
@@ -112,6 +133,8 @@ export class ChangeLineupDto {
     teamId: string;
 
     @IsInt()
+    @Min(1)
+    @Max(12)
     battingOrder: number;
 
     @IsUUID()
@@ -122,10 +145,12 @@ export class ChangeLineupDto {
     playerOutId?: string;
 
     @IsString()
+    @MaxLength(10)
     position: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(10)
     dhForPosition?: string;
 }
 
@@ -142,18 +167,22 @@ export class CambioSustitucionDto {
     playerInId: string;
 
     @IsString()
+    @MaxLength(10)
     position: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(10)
     dhForPosition?: string;
 }
 
 export class PosicionSwapDto {
     @IsString()
+    @MaxLength(10)
     fromPosition: string;
 
     @IsString()
+    @MaxLength(10)
     toPosition: string;
 }
 

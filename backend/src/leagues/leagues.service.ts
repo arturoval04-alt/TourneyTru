@@ -11,15 +11,28 @@ export class LeaguesService {
     }
 
     async findAll() {
-        return this.prisma.league.findMany({ include: { admin: true } });
+        return this.prisma.league.findMany({
+            include: {
+                admin: { select: { id: true, firstName: true, lastName: true } },
+                _count: { select: { tournaments: true, umpires: true } },
+            },
+            orderBy: { name: 'asc' },
+        });
     }
 
     async findOne(id: string) {
         const league = await this.prisma.league.findUnique({
             where: { id },
             include: {
-                admin: true,
-                tournaments: true,
+                admin: { select: { id: true, firstName: true, lastName: true, email: true } },
+                tournaments: {
+                    orderBy: { createdAt: 'desc' },
+                    include: {
+                        _count: { select: { teams: true, games: true } },
+                    },
+                },
+                umpires: { select: { id: true, firstName: true, lastName: true } },
+                _count: { select: { tournaments: true, umpires: true } },
             },
         });
 

@@ -16,6 +16,40 @@ export class PlayersService {
         return this.prisma.player.findMany({ where, include: { team: true }, orderBy: { lastName: 'asc' } });
     }
 
+    async search(query: string) {
+        if (!query || query.trim().length < 2) return [];
+        const q = query.trim();
+        return this.prisma.player.findMany({
+            where: {
+                OR: [
+                    { firstName: { contains: q } },
+                    { lastName: { contains: q } },
+                ],
+            },
+            select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                number: true,
+                position: true,
+                photoUrl: true,
+                bats: true,
+                throws: true,
+                isVerified: true,
+                team: {
+                    select: {
+                        id: true,
+                        name: true,
+                        shortName: true,
+                        tournament: { select: { id: true, name: true, season: true } },
+                    },
+                },
+            },
+            orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+            take: 20,
+        });
+    }
+
     async findOne(id: string) {
         const player = await this.prisma.player.findUnique({
             where: { id },

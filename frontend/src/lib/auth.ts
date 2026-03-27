@@ -12,23 +12,27 @@ export interface AuthUser {
 
 export interface AuthTokens {
     accessToken: string;
-    refreshToken: string;
+    refreshToken?: string; // opcional: el servidor lo setea como cookie httpOnly, pero se acepta si el cliente lo envía
 }
 
 export function saveSession(user: AuthUser, tokens: AuthTokens) {
     localStorage.setItem('accessToken', tokens.accessToken);
-    localStorage.setItem('refreshToken', tokens.refreshToken);
     localStorage.setItem('user', JSON.stringify(user));
     // Cookie ligera para el middleware de Next.js (sin datos sensibles)
     document.cookie = `accessToken=true; path=/; SameSite=Lax; max-age=86400`;
 }
 
-export function clearSession() {
+export async function clearSession() {
     localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
-    // Limpiar cookie
+    // Limpiar cookie del middleware
     document.cookie = 'accessToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    // Pedir al servidor que elimine la cookie httpOnly del refreshToken
+    try {
+        await fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
+    } catch {
+        // Silencioso: si falla el logout remoto, la sesión local ya fue limpiada
+    }
 }
 
 export function getAccessToken(): string | null {

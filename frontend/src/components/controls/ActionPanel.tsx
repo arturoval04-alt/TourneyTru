@@ -53,16 +53,16 @@ export default function ActionPanel() {
                     <div className="flex flex-col gap-2">
                         <h4 className="section-title">Pitcheos</h4>
                         <div className="grid grid-cols-2 gap-1.5">
-                            <button onClick={() => addStrike()} className="action-btn-lift bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 sm:py-7 rounded-lg shadow-md shadow-red-900/30 text-sm">
+                            <button onClick={() => addStrike()} className="action-btn-lift bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 sm:py-7 rounded-lg shadow-md shadow-red-900/30 text-sm min-h-[48px] min-w-[48px]">
                                 STRIKE
                             </button>
-                            <button onClick={addBall} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 sm:py-7 rounded-lg shadow-md shadow-emerald-900/30 active:scale-95 transition-all text-sm">
+                            <button onClick={addBall} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 sm:py-7 rounded-lg shadow-md shadow-emerald-900/30 active:scale-95 transition-all text-sm min-h-[48px] min-w-[48px]">
                                 BOLA
                             </button>
-                            <button onClick={addFoul} className="bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold py-4  rounded-lg active:scale-95 transition-all border border-slate-600">
+                            <button onClick={addFoul} className="bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold py-4 rounded-lg active:scale-95 transition-all border border-slate-600 min-h-[48px] min-w-[48px]">
                                 FOUL
                             </button>
-                            <button onClick={() => executeWildPitchOrPassedBall("WP / PB")} className="bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold py-4 rounded-lg active:scale-95 transition-all border border-slate-600">
+                            <button onClick={() => executeWildPitchOrPassedBall("WP / PB")} className="bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold py-4 rounded-lg active:scale-95 transition-all border border-slate-600 min-h-[48px] min-w-[48px]">
                                 WP/PB
                             </button>
                         </div>
@@ -72,16 +72,16 @@ export default function ActionPanel() {
                     <div className="flex flex-col gap-2">
                         <h4 className="section-title">Hits (Contacto Bueno)</h4>
                         <div className="grid grid-cols-2 gap-1.5">
-                            <button onClick={() => openLocationModal('Hit', 'Sencillo', 1)} className="bg-sky-600 hover:bg-sky-500 text-white font-black text-xl sm:text-2xl py-3 sm:py-4 rounded-lg shadow-md shadow-sky-900/30 active:scale-95 transition-all">
+                            <button onClick={() => openLocationModal('Hit', 'Sencillo', 1)} className="bg-sky-600 hover:bg-sky-500 text-white font-black text-xl sm:text-2xl py-3 sm:py-4 rounded-lg shadow-md shadow-sky-900/30 active:scale-95 transition-all min-h-[48px] min-w-[48px]">
                                 H1
                             </button>
-                            <button onClick={() => openLocationModal('Hit', 'Doble', 2)} className="bg-sky-600 hover:bg-sky-500 text-white font-black text-xl sm:text-2xl py-3 sm:py-4 rounded-lg shadow-md shadow-sky-900/30 active:scale-95 transition-all">
+                            <button onClick={() => openLocationModal('Hit', 'Doble', 2)} className="bg-sky-600 hover:bg-sky-500 text-white font-black text-xl sm:text-2xl py-3 sm:py-4 rounded-lg shadow-md shadow-sky-900/30 active:scale-95 transition-all min-h-[48px] min-w-[48px]">
                                 H2
                             </button>
-                            <button onClick={() => openLocationModal('Hit', 'Triple', 3)} className="bg-sky-600 hover:bg-sky-500 text-white font-black text-xl sm:text-2xl py-3 sm:py-4 rounded-lg shadow-md shadow-sky-900/30 active:scale-95 transition-all">
+                            <button onClick={() => openLocationModal('Hit', 'Triple', 3)} className="bg-sky-600 hover:bg-sky-500 text-white font-black text-xl sm:text-2xl py-3 sm:py-4 rounded-lg shadow-md shadow-sky-900/30 active:scale-95 transition-all min-h-[48px] min-w-[48px]">
                                 H3
                             </button>
-                            <button onClick={() => openLocationModal('Hit', 'Jonrón', 4)} className="bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xl sm:text-2xl py-3 sm:py-4 rounded-lg shadow-md shadow-indigo-900/30 active:scale-95 transition-all">
+                            <button onClick={() => openLocationModal('Hit', 'Jonrón', 4)} className="bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xl sm:text-2xl py-3 sm:py-4 rounded-lg shadow-md shadow-indigo-900/30 active:scale-95 transition-all min-h-[48px] min-w-[48px]">
                                 H4
                             </button>
 
@@ -92,28 +92,28 @@ export default function ActionPanel() {
                     <div className="flex flex-col gap-2">
                         <h4 className="section-title">Outs (En Juego)</h4>
                         <div className="grid grid-cols-3 gap-1.5">
-                            <button onClick={() => openLocationModal('Out', 'Rola')} className="bg-red-800 hover:bg-red-700 text-white text-[11px] font-bold py-6 rounded-lg active:scale-95 transition-all shadow-sm">
+                            <button onClick={() => openLocationModal('Out', 'Rola')} className="bg-red-800 hover:bg-red-700 text-white text-[11px] font-bold py-6 rounded-lg active:scale-95 transition-all shadow-sm min-h-[48px] min-w-[48px]">
                                 ROLA
                             </button>
-                            <button onClick={() => openLocationModal('Out', 'Elevado')} className="bg-red-800 hover:bg-red-700 text-white text-[11px] font-bold py-6 rounded-lg active:scale-95 transition-all shadow-sm">
+                            <button onClick={() => openLocationModal('Out', 'Elevado')} className="bg-red-800 hover:bg-red-700 text-white text-[11px] font-bold py-6 rounded-lg active:scale-95 transition-all shadow-sm min-h-[48px] min-w-[48px]">
                                 FLY
                             </button>
-                            <button onClick={() => openLocationModal('Out', 'Línea')} className="bg-red-800 hover:bg-red-700 text-white text-[11px] font-bold py-6 rounded-lg active:scale-95 transition-all shadow-sm">
+                            <button onClick={() => openLocationModal('Out', 'Línea')} className="bg-red-800 hover:bg-red-700 text-white text-[11px] font-bold py-6 rounded-lg active:scale-95 transition-all shadow-sm min-h-[48px] min-w-[48px]">
                                 LINEA
                             </button>
                             <button onClick={() => {
                                 const batter = useGameStore.getState().currentBatter;
                                 addOut(`KS|${batter} es Ponchado Tirándole (K)`);
-                            }} className="bg-red-900 hover:bg-red-800 text-white text-[10px] font-bold py-4 rounded-lg active:scale-95 transition-all border border-red-500/30">
+                            }} className="bg-red-900 hover:bg-red-800 text-white text-[10px] font-bold py-4 rounded-lg active:scale-95 transition-all border border-red-500/30 min-h-[48px] min-w-[48px]">
                                 PONCHE (K)
                             </button>
                             <button onClick={() => {
                                 const batter = useGameStore.getState().currentBatter;
                                 addOut(`K|${batter} es Ponchado Sin Tirar (ꓘ)`);
-                            }} className="bg-red-900 hover:bg-red-800 text-white text-[10px] font-bold py-6 rounded-lg active:scale-95 transition-all border border-red-500/30">
+                            }} className="bg-red-900 hover:bg-red-800 text-white text-[10px] font-bold py-6 rounded-lg active:scale-95 transition-all border border-red-500/30 min-h-[48px] min-w-[48px]">
                                 K SWING
                             </button>
-                            <button onClick={() => openLocationModal('Out', 'Doble Play')} className="bg-orange-600 hover:bg-orange-500 text-white text-[10px] font-black py-6 rounded-lg active:scale-95 transition-all border border-orange-400/50 shadow-sm">
+                            <button onClick={() => openLocationModal('Out', 'Doble Play')} className="bg-orange-600 hover:bg-orange-500 text-white text-[10px] font-black py-6 rounded-lg active:scale-95 transition-all border border-orange-400/50 shadow-sm min-h-[48px] min-w-[48px]">
                                 DOBLE PLAY
                             </button>
                         </div>

@@ -100,6 +100,50 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return { status: 'joined', gameId };
   }
 
+  // Permite a cualquier cliente solicitar el estado completo del juego (resync completo)
+  @SubscribeMessage('requestFullSync')
+  async handleRequestFullSync(
+    @MessageBody() gameId: string,
+    @ConnectedSocket() client: Socket,
+  ) {
+    // 1. Try in-memory state first
+    if (this.activeGames[gameId]) {
+      client.emit('fullStateSync', {
+        gameId,
+        fullState: this.activeGames[gameId],
+        source: 'memory',
+      });
+      return { status: 'ok', source: 'memory' };
+    }
+
+    // 2. Fall back to DB
+    try {
+      const game = await this.withRetry(() =>
+        this.prisma.game.findUnique({
+          where: { id: gameId },
+          include: {
+            homeTeam: { include: { players: true } },
+            awayTeam: { include: { players: true } },
+            lineups: { include: { player: true } },
+            plays: true,
+          },
+        }),
+      );
+
+      if (!game) {
+        client.emit('fullStateSync', { gameId, fullState: null, source: 'db', error: 'Game not found' });
+        return { status: 'not_found' };
+      }
+
+      client.emit('fullStateSync', { gameId, fullState: game, source: 'db' });
+      return { status: 'ok', source: 'db' };
+    } catch (e) {
+      this.logger.error('Error fetching full game state from DB:', e);
+      client.emit('fullStateSync', { gameId, fullState: null, source: 'db', error: 'DB error' });
+      return { status: 'error' };
+    }
+  }
+
   // Permite al scorekeeper inyectar el estado inicial directamente (si refresca o recién crea el juego)
   @SubscribeMessage('syncState')
   handleSyncState(

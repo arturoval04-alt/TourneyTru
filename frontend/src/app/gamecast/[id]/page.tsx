@@ -44,7 +44,7 @@ export default function PublicGamecast() {
     const {
         baseIds, inning, half, currentBatter, currentBatterId,
         homeLineup, awayLineup, homeScore, awayScore, playLogs, status,
-        winningPitcher, mvpBatter1, mvpBatter2
+        winningPitcher, mvpBatter1, mvpBatter2, pendingPlays
     } = useGameStore();
 
     const pitcherInfo = useMemo(() => {
@@ -295,6 +295,12 @@ export default function PublicGamecast() {
                                     <h3 className="text-lg sm:text-xl font-black text-white uppercase tracking-wider flex items-center gap-2">
                                         <Trophy className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-500" /> RESUMEN OFICIAL (Boxscore)
                                     </h3>
+                                    {pendingPlays > 0 && (
+                                        <div className="flex items-center gap-2 bg-amber-500/15 border border-amber-500/40 text-amber-400 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider animate-pulse">
+                                            <div className="w-2 h-2 rounded-full bg-amber-400" />
+                                            {pendingPlays} jugada{pendingPlays > 1 ? 's' : ''} pendiente{pendingPlays > 1 ? 's' : ''}
+                                        </div>
+                                    )}
                                 </div>
                                 {boxscoreLoading ? (
                                     <div className="p-20 text-center animate-pulse text-slate-500 font-bold italic">Calculando estadísticas actualizadas...</div>

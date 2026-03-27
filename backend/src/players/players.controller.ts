@@ -13,6 +13,11 @@ export class PlayersController {
         return this.playersService.create(createPlayerDto);
     }
 
+    @Get('search')
+    search(@Query('q') q?: string) {
+        return this.playersService.search(q ?? '');
+    }
+
     @Get()
     findAll(@Query('teamId') teamId?: string) {
         return this.playersService.findAll({ teamId });

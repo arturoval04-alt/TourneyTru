@@ -84,7 +84,7 @@ export class GamesService {
             include: {
                 homeTeam: true,
                 awayTeam: true,
-                tournament: { select: { name: true, id: true, logoUrl: true } },
+                tournament: { select: { name: true, id: true, logoUrl: true, league: { select: { id: true, name: true } } } },
             },
             orderBy: { scheduledDate: 'desc' },
             ...(filters?.limit ? { take: filters.limit } : {}),

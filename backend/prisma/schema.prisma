@@ -17,10 +17,13 @@ model User {
   phone                String?               @map("phone")
   profilePicture       String?               @map("profile_picture") @db.NVarChar(Max)
   roleId               String                @map("role_id")
-  passwordResetToken   String?               @map("password_reset_token")
-  passwordResetExpiry  DateTime?             @map("password_reset_expiry")
-  createdAt            DateTime              @default(now()) @map("created_at")
-  updatedAt            DateTime              @default(now()) @updatedAt @map("updated_at")
+  passwordResetToken          String?               @map("password_reset_token")
+  passwordResetExpiry         DateTime?             @map("password_reset_expiry")
+  emailVerified               Boolean               @default(false) @map("email_verified")
+  verificationToken           String?               @map("verification_token")
+  verificationTokenExpiresAt  DateTime?             @map("verification_token_expires_at")
+  createdAt                   DateTime              @default(now()) @map("created_at")
+  updatedAt                   DateTime              @default(now()) @updatedAt @map("updated_at")
   leaguesAdmin         League[]              @relation("LeagueAdmin")
   tournamentNews       TournamentNews[]
   tournamentOrganizers TournamentOrganizer[]
@@ -41,13 +44,24 @@ model Role {
 model League {
   id          String       @id @default(uuid())
   name        String
+  shortName   String?      @map("short_name") @db.NVarChar(20)
   logoUrl     String?      @map("logo_url") @db.NVarChar(Max)
+  description String?      @db.NVarChar(Max)
+  city        String?      @db.NVarChar(100)
+  state       String?      @db.NVarChar(100)
+  country     String?      @default("MX") @db.NVarChar(10)
+  sport       String?      @default("baseball") @db.NVarChar(20)
+  foundedYear Int?         @map("founded_year")
+  websiteUrl  String?      @map("website_url") @db.NVarChar(500)
+  facebookUrl String?      @map("facebook_url") @db.NVarChar(500)
+  isVerified  Boolean      @default(false) @map("is_verified")
   adminId     String       @map("admin_id")
   createdAt   DateTime     @default(now()) @map("created_at")
   updatedAt   DateTime     @default(now()) @updatedAt @map("updated_at")
-  admin       User         @relation("LeagueAdmin", fields: [adminId], references: [id])
-  tournaments Tournament[]
-  umpires     Umpire[]
+  admin         User           @relation("LeagueAdmin", fields: [adminId], references: [id])
+  tournaments   Tournament[]
+  umpires       Umpire[]
+  subscriptions Subscription[]
 
   @@map("leagues")
 }
@@ -74,6 +88,7 @@ model Tournament {
   teams         Team[]
   news          TournamentNews[]
   organizers    TournamentOrganizer[]
+  rosterEntries RosterEntry[]
   admin         User                  @relation("TournamentAdmin", fields: [adminId], references: [id], onUpdate: NoAction)
   league        League                @relation(fields: [leagueId], references: [id], onDelete: Cascade)
 
@@ -119,6 +134,7 @@ model Team {
   lineups       Lineup[]
   playerStats   PlayerStat[]
   players       Player[]
+  rosterEntries RosterEntry[]
   homeField     Field?         @relation(fields: [homeFieldId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   tournament    Tournament     @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
 
@@ -126,16 +142,19 @@ model Team {
 }
 
 model Player {
-  id                String         @id @default(uuid())
-  firstName         String         @map("first_name")
-  lastName          String         @map("last_name")
-  number            Int?
-  position          String?
-  photoUrl          String?        @map("photo_url") @db.NVarChar(Max)
-  bats              String?        @default("R") @db.NVarChar(10)
-  throws            String?        @default("R") @db.NVarChar(10)
-  teamId            String         @map("team_id")
-  createdAt         DateTime       @default(now()) @map("created_at")
+  id                     String         @id @default(uuid())
+  firstName              String         @map("first_name")
+  lastName               String         @map("last_name")
+  number                 Int?
+  position               String?
+  photoUrl               String?        @map("photo_url") @db.NVarChar(Max)
+  bats                   String?        @default("R") @db.NVarChar(10)
+  throws                 String?        @default("R") @db.NVarChar(10)
+  teamId                 String         @map("team_id")
+  isVerified             Boolean        @default(false) @map("is_verified")
+  verifiedAt             DateTime?      @map("verified_at")
+  verificationMethod     String?        @map("verification_method") @db.NVarChar(50)
+  createdAt              DateTime       @default(now()) @map("created_at")
   gamesMvp1         Game[]         @relation("GameMvpBatter1")
   gamesMvp2         Game[]         @relation("GameMvpBatter2")
   gamesWonAsPitcher Game[]         @relation("GameWinningPitcher")
@@ -146,7 +165,9 @@ model Player {
   team              Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
   playsAsBatter     Play[]         @relation("BatterPlay")
   playsAsPitcher    Play[]         @relation("PitcherPlay")
+  rosterEntries     RosterEntry[]
 
+  @@index([lastName, firstName], map: "players_name_idx")
   @@map("players")
 }
 
@@ -210,6 +231,9 @@ model Game {
   lineups          Lineup[]
   plays            Play[]
 
+  @@index([tournamentId, status], map: "games_tournament_status_idx")
+  @@index([status, createdAt], map: "games_status_created_idx")
+  @@index([homeTeamId, awayTeamId], map: "games_teams_idx")
   @@map("games")
 }
 
@@ -229,6 +253,7 @@ model Lineup {
   player          Player   @relation(fields: [playerId], references: [id], onUpdate: NoAction)
   team            Team     @relation(fields: [teamId], references: [id], onUpdate: NoAction)
 
+  @@index([gameId, teamId], map: "lineups_game_team_idx")
   @@map("lineups")
 }
 
@@ -281,6 +306,8 @@ model PlayerStat {
   tournament   Tournament? @relation(fields: [tournamentId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "ps_tournament_id_fkey")
 
   @@unique([playerId, teamId, tournamentId], map: "player_stats_unique")
+  @@index([playerId, tournamentId], map: "player_stats_player_tournament_idx")
+  @@index([teamId, tournamentId], map: "player_stats_team_tournament_idx")
   @@map("player_stats")
 }
 
@@ -320,5 +347,80 @@ model Play {
   game           Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
   pitcher        Player   @relation("PitcherPlay", fields: [pitcherId], references: [id], onUpdate: NoAction)
 
+  @@index([gameId, inning], map: "plays_game_inning_idx")
+  @@index([batterId], map: "plays_batter_idx")
+  @@index([pitcherId], map: "plays_pitcher_idx")
   @@map("plays")
+}
+
+// ─────────────────────────────────────────────
+// ROSTER ENTRY — Jugador global vinculado a un equipo en un torneo
+// Permite reutilizar jugadores entre torneos/equipos
+// Player.teamId se mantiene por compatibilidad con el sistema actual
+// ─────────────────────────────────────────────
+model RosterEntry {
+  id           String     @id @default(uuid())
+  playerId     String     @map("player_id")
+  teamId       String     @map("team_id")
+  tournamentId String     @map("tournament_id")
+  number       Int?
+  position     String?    @db.NVarChar(10)
+  isActive     Boolean    @default(true) @map("is_active")
+  joinedAt     DateTime   @default(now(), map: "re_joined_at_df") @map("joined_at")
+  leftAt       DateTime?  @map("left_at")
+  player       Player     @relation(fields: [playerId], references: [id], onDelete: Cascade, map: "re_player_id_fkey")
+  team         Team       @relation(fields: [teamId], references: [id], onUpdate: NoAction, map: "re_team_id_fkey")
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onUpdate: NoAction, map: "re_tournament_id_fkey")
+
+  @@unique([playerId, teamId, tournamentId], map: "roster_entries_unique")
+  @@index([teamId, tournamentId], map: "roster_entries_team_idx")
+  @@index([playerId], map: "roster_entries_player_idx")
+  @@map("roster_entries")
+}
+
+// ─────────────────────────────────────────────
+// PLAN — Planes de pago (lógica de negocio pendiente)
+// ─────────────────────────────────────────────
+model Plan {
+  id                        String   @id @default(uuid())
+  name                      String   @db.NVarChar(50)
+  slug                      String   @unique @db.NVarChar(50)
+  price                     Float    @default(0)
+  currency                  String   @default("MXN") @db.NVarChar(10)
+  billingInterval           String   @default("month") @map("billing_interval") @db.NVarChar(20)
+  maxActiveTournaments      Int      @default(1) @map("max_active_tournaments")
+  maxTeamsPerTournament     Int      @default(8) @map("max_teams_per_tournament")
+  maxPlayersPerTeam         Int      @default(15) @map("max_players_per_team")
+  maxScorekeeperSlots       Int      @default(1) @map("max_scorekeeper_slots")
+  facebookLiveEnabled       Boolean  @default(false) @map("facebook_live_enabled")
+  bracketEnabled            Boolean  @default(false) @map("bracket_enabled")
+  advancedStatsEnabled      Boolean  @default(false) @map("advanced_stats_enabled")
+  customLogoEnabled         Boolean  @default(false) @map("custom_logo_enabled")
+  isActive                  Boolean  @default(true) @map("is_active")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  subscriptions             Subscription[]
+
+  @@map("plans")
+}
+
+// ─────────────────────────────────────────────
+// SUBSCRIPTION — Suscripciones de ligas a un plan
+// ─────────────────────────────────────────────
+model Subscription {
+  id                   String    @id @default(uuid())
+  leagueId             String    @map("league_id")
+  planId               String    @map("plan_id")
+  status               String    @default("active") @db.NVarChar(20)
+  currentPeriodStart   DateTime  @map("current_period_start")
+  currentPeriodEnd     DateTime  @map("current_period_end")
+  externalId           String?   @map("external_id") @db.NVarChar(200)
+  paymentMethod        String?   @map("payment_method") @db.NVarChar(100)
+  cancelledAt          DateTime? @map("cancelled_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  league               League    @relation(fields: [leagueId], references: [id], onDelete: Cascade, map: "sub_league_id_fkey")
+  plan                 Plan      @relation(fields: [planId], references: [id], onUpdate: NoAction, map: "sub_plan_id_fkey")
+
+  @@index([leagueId], map: "subscriptions_league_idx")
+  @@index([status], map: "subscriptions_status_idx")
+  @@map("subscriptions")
 }

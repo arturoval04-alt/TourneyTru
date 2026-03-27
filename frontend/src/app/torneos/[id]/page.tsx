@@ -9,6 +9,7 @@ import { getUser } from '@/lib/auth';
 import api from "@/lib/api";
 import { ArrowLeft, MapPin, Calendar, Users, Target, Clock, Settings, Radio, X, CheckCircle2, CheckCircle, ChevronRight, Trophy } from "lucide-react";
 import CreateGameWizard from "@/components/game/CreateGameWizard";
+import ImageUploader from "@/components/ui/ImageUploader";
 
 export default function TournamentProfilePage() {
     const params = useParams();
@@ -185,14 +186,6 @@ export default function TournamentProfilePage() {
         }
     };
 
-    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>, form: any, setForm: Function, field: string) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onloadend = () => setForm({ ...form, [field]: reader.result as string });
-            reader.readAsDataURL(file);
-        }
-    };
 
     const handleAddPlayerToForm = () => {
         setTeamForm({ ...teamForm, players: [...teamForm.players, { firstName: '', lastName: '', number: '', position: 'INF' }] });
@@ -1319,22 +1312,13 @@ export default function TournamentProfilePage() {
                                 <input type="date" value={profileForm.startDate} onChange={e => setProfileForm({ ...profileForm, startDate: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Logo del Torneo (URL o Subir)</label>
-                                <div className="flex gap-2">
-                                    <input type="text" value={profileForm.logoUrl} onChange={e => setProfileForm({ ...profileForm, logoUrl: e.target.value })} className="flex-1 bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-xs" placeholder="URL de la imagen" />
-                                    <label className="shrink-0 bg-muted/20 hover:bg-muted/30 text-foreground px-4 py-3 rounded-lg cursor-pointer transition text-xs font-bold border border-muted/30">
-                                        Subir
-                                        <input type="file" accept="image/*" className="hidden" onChange={e => handleImageChange(e, profileForm, setProfileForm, 'logoUrl')} />
-                                    </label>
-                                </div>
-                                {profileForm.logoUrl && (
-                                    <div className="mt-2 flex items-center gap-2 border border-muted/20 p-2 rounded-lg bg-muted/5">
-                                        <div className="w-12 h-12 rounded border border-muted/30 overflow-hidden bg-white flex items-center justify-center">
-                                            <img src={profileForm.logoUrl} alt="Preview" className="w-full h-full object-contain" />
-                                        </div>
-                                        <button type="button" onClick={() => setProfileForm({ ...profileForm, logoUrl: '' })} className="text-[10px] text-red-500 font-bold hover:underline">Eliminar Imagen</button>
-                                    </div>
-                                )}
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Logo del Torneo</label>
+                                <ImageUploader
+                                    value={profileForm.logoUrl}
+                                    onChange={url => setProfileForm({ ...profileForm, logoUrl: url })}
+                                    shape="square"
+                                    placeholder="🏆"
+                                />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Descripción</label>
@@ -1376,21 +1360,12 @@ export default function TournamentProfilePage() {
                                         </div>
                                         <div className="space-y-2">
                                             <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Logo del Equipo (Opcional)</label>
-                                            <div className="flex gap-2">
-                                                <input type="text" value={teamForm.logoUrl} onChange={e => setTeamForm({ ...teamForm, logoUrl: e.target.value })} className="flex-1 bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary transition text-xs" placeholder="URL del logo" />
-                                                <label className="shrink-0 bg-muted/20 hover:bg-muted/30 text-foreground px-4 py-3 rounded-lg cursor-pointer transition text-xs font-bold border border-muted/30">
-                                                    Subir
-                                                    <input type="file" accept="image/*" className="hidden" onChange={e => handleImageChange(e, teamForm, setTeamForm, 'logoUrl')} />
-                                                </label>
-                                            </div>
-                                            {teamForm.logoUrl && (
-                                                <div className="flex items-center gap-2 border border-muted/20 p-2 rounded-lg bg-muted/5">
-                                                    <div className="w-12 h-12 rounded border border-muted/30 overflow-hidden bg-white flex items-center justify-center">
-                                                        <img src={teamForm.logoUrl} alt="Preview" className="w-full h-full object-contain" />
-                                                    </div>
-                                                    <button type="button" onClick={() => setTeamForm({ ...teamForm, logoUrl: '' })} className="text-[10px] text-red-500 font-bold hover:underline">Eliminar Logo</button>
-                                                </div>
-                                            )}
+                                            <ImageUploader
+                                                value={teamForm.logoUrl}
+                                                onChange={url => setTeamForm({ ...teamForm, logoUrl: url })}
+                                                shape="square"
+                                                placeholder="🛡️"
+                                            />
                                         </div>
                                     </div>
                                 </section>

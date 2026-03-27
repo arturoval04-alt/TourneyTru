@@ -1,7 +1,10 @@
 import { ValidationPipe, BadRequestException } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import * as dotenv from 'dotenv';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const cookieParser = require('cookie-parser');
 
 dotenv.config();
 
@@ -13,14 +16,24 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Validación global de DTOs
+  // Parsear cookies (necesario para leer el refreshToken httpOnly)
+  app.use(cookieParser());
+
+  // Filtro global: mensajes de error limpios, errores 500 sin stack interno
+  app.useGlobalFilters(new HttpExceptionFilter());
+
+  // Validación global de DTOs — solo expone mensajes limpios, nunca el stack interno
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
     forbidNonWhitelisted: true,
     transform: true,
     exceptionFactory: (errors) => {
-      console.error('[Validation Error]', JSON.stringify(errors, null, 2));
-      return new BadRequestException(errors);
+      const messages = errors.flatMap((e) =>
+        Object.values(e.constraints ?? {})
+      );
+      return new BadRequestException(
+        messages.length === 1 ? messages[0] : messages,
+      );
     },
   }));
 

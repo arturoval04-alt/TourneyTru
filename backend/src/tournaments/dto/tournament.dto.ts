@@ -1,24 +1,28 @@
-import { IsString, IsOptional, IsUUID, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsDateString, MaxLength, IsIn } from 'class-validator';
 
 export class CreateTournamentDto {
     @IsString()
+    @MaxLength(100)
     name: string;
 
     @IsString()
+    @MaxLength(50)
     season: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(30)
     rulesType?: string; // Ej: 'baseball_9' o 'softball_7'
 
     @IsUUID()
     leagueId: string;
 
-    @IsString()
+    @IsUUID()
     adminId: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(50)
     category?: string;
 
     @IsOptional()
@@ -27,18 +31,22 @@ export class CreateTournamentDto {
 
     @IsOptional()
     @IsString()
+    @MaxLength(500)
     description?: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(100)
     locationCity?: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(100)
     locationState?: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(100)
     locationCountry?: string;
 
     @IsOptional()
@@ -92,6 +100,6 @@ export class UpdateTournamentDto {
     startDate?: string;
 
     @IsOptional()
-    @IsString()
+    @IsIn(['upcoming', 'active', 'finished', 'cancelled'])
     status?: string;
 }

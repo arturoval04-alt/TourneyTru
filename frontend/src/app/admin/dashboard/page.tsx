@@ -5,22 +5,25 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getUser, AuthUser } from '@/lib/auth';
 import CreateGameWizard from '@/components/game/CreateGameWizard';
+import ImageUploader from '@/components/ui/ImageUploader';
 import api from '@/lib/api';
+import { uploadToCloudinary } from '@/lib/cloudinary';
 
 export default function AdminDashboard() {
     const router = useRouter();
 
     // -- Types --
-    type TabType = 'perfil' | 'torneos' | 'equipos' | 'jugadores' | 'juegos' | 'usuarios';
+    type TabType = 'perfil' | 'ligas' | 'torneos' | 'equipos' | 'jugadores' | 'juegos' | 'usuarios';
 
     interface GameData {
         id: string;
         status: string;
-        awayTeam: { name: string };
-        homeTeam: { name: string };
+        awayTeam: { id: string; name: string };
+        homeTeam: { id: string; name: string };
         awayScore: number;
         homeScore: number;
         currentInning: number;
+        tournament?: { id: string; name: string; league?: { id: string; name: string } };
     }
 
     interface TournamentData {
@@ -41,6 +44,15 @@ export default function AdminDashboard() {
     interface LeagueData {
         id: string;
         name: string;
+        shortName?: string;
+        logoUrl?: string;
+        description?: string;
+        city?: string;
+        state?: string;
+        sport?: string;
+        isVerified: boolean;
+        adminId: string;
+        _count: { tournaments: number };
     }
 
     interface TeamData {
@@ -123,6 +135,11 @@ export default function AdminDashboard() {
 
     // -- Data Stores --
     const [games, setGames] = useState<GameData[]>([]);
+
+    // -- Filtros de juegos --
+    const [filterLeague, setFilterLeague] = useState('');
+    const [filterTournament, setFilterTournament] = useState('');
+    const [filterTeam, setFilterTeam] = useState('');
     const [tournaments, setTournaments] = useState<TournamentData[]>([]);
     const [leagues, setLeagues] = useState<LeagueData[]>([]);
     const [teams, setTeams] = useState<TeamData[]>([]);
@@ -164,8 +181,11 @@ export default function AdminDashboard() {
     const [userForm, setUserForm] = useState({ name: '', email: '', password: '', role: 'general', tournament_id: '' });
 
     // -- Form: Create League --
-    const [leagueName, setLeagueName] = useState('');
     const [showLeagueModal, setShowLeagueModal] = useState(false);
+    const [leagueForm, setLeagueForm] = useState({
+        name: '', shortName: '', city: '', state: '',
+        sport: 'softball', description: '', logoUrl: '',
+    });
 
     // --- API Fetchers ---
     const fetchGames = async () => {
@@ -173,6 +193,20 @@ export default function AdminDashboard() {
             const { data } = await api.get('/games');
             setGames(data || []);
         } catch (err) { console.error("Error fetching games:", err); }
+    };
+
+    const handleDeleteGame = async (gameId: string, homeTeam: string, awayTeam: string) => {
+        const confirmed = window.confirm(
+            `¿Eliminar el partido ${awayTeam} vs ${homeTeam}?\n\nEsto eliminará el juego y todas sus estadísticas permanentemente.`
+        );
+        if (!confirmed) return;
+        try {
+            await api.delete(`/games/${gameId}`);
+            setGames(prev => prev.filter(g => g.id !== gameId));
+        } catch (err) {
+            console.error(err);
+            alert('No se pudo eliminar el juego. Intenta de nuevo.');
+        }
     };
 
     const fetchTournaments = async () => {
@@ -508,7 +542,7 @@ export default function AdminDashboard() {
 
     const handleCreateLeague = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!leagueName) return;
+        if (!leagueForm.name) return;
         setSaving(true);
         try {
             if (!currentUser || currentUser.role !== 'admin') {
@@ -517,37 +551,23 @@ export default function AdminDashboard() {
                 return;
             }
             await api.post('/leagues', {
-                name: leagueName,
+                name: leagueForm.name,
+                shortName: leagueForm.shortName || undefined,
+                city: leagueForm.city || undefined,
+                state: leagueForm.state || undefined,
+                sport: leagueForm.sport || undefined,
+                description: leagueForm.description || undefined,
+                logoUrl: leagueForm.logoUrl || undefined,
                 adminId: currentUser.id,
             });
             alert('Liga Creada');
-            setLeagueName('');
+            setLeagueForm({ name: '', shortName: '', city: '', state: '', sport: 'softball', description: '', logoUrl: '' });
             setShowLeagueModal(false);
             fetchLeagues();
         } catch (err) { 
             console.error(err);
             alert('Error al crear liga');
         } finally { setSaving(false); }
-    };
-
-    const handleImageChange = (
-        e: React.ChangeEvent<HTMLInputElement>,
-        form: any,
-        setForm: (val: any) => void, 
-        field: string
-    ) => {
-        if (e.target.type === 'file') {
-            const file = e.target.files?.[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    setForm({ ...form, [field]: reader.result as string });
-                };
-                reader.readAsDataURL(file);
-            }
-        } else {
-            setForm({ ...form, [field]: e.target.value });
-        }
     };
 
     const handlePhoneUpdate = async () => {
@@ -565,44 +585,40 @@ export default function AdminDashboard() {
             setSaving(false);
         }
     };
-    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleProfileImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !currentUser) return;
-
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-            const base64String = reader.result as string;
-            setSaving(true);
-            try {
-                await api.patch('/users/profile', { profilePicture: base64String });
-                setUserProfilePicture(base64String);
-                updateStoredUser({ profilePicture: base64String });
-            } catch (error) {
-                console.error(error);
-                alert('Error al actualizar la foto de perfil');
-            } finally {
-                setSaving(false);
-            }
-        };
-        reader.readAsDataURL(file);
+        setSaving(true);
+        try {
+            const url = await uploadToCloudinary(file);
+            await api.patch('/users/profile', { profilePicture: url });
+            setUserProfilePicture(url);
+            updateStoredUser({ profilePicture: url });
+        } catch (error) {
+            console.error(error);
+            alert('Error al actualizar la foto de perfil');
+        } finally {
+            setSaving(false);
+        }
     };
 
     // --- Partials ---
     const SideMenu = () => {
         const menuItems = [
-            { id: 'perfil', label: 'Mi Perfil', icon: '👤' },
-            { id: 'torneos', label: 'Torneos', icon: '🏆' },
-            { id: 'equipos', label: 'Equipos', icon: '🛡️' },
-            { id: 'jugadores', label: 'Jugadores', icon: '⚾' },
-            { id: 'juegos', label: 'Juegos & Stats', icon: '📊' },
-            { id: 'usuarios', label: 'Cuentas Admin', icon: '🔑' },
+            { id: 'perfil', label: 'Mi Perfil', icon: '👤', roles: null },
+            { id: 'ligas', label: 'Ligas', icon: '🏟️', roles: ['admin', 'organizer'] },
+            { id: 'torneos', label: 'Torneos', icon: '🏆', roles: null },
+            { id: 'equipos', label: 'Equipos', icon: '🛡️', roles: null },
+            { id: 'jugadores', label: 'Jugadores', icon: '⚾', roles: null },
+            { id: 'juegos', label: 'Juegos & Stats', icon: '📊', roles: null },
+            { id: 'usuarios', label: 'Cuentas Admin', icon: '🔑', roles: ['admin'] },
         ];
         return (
             <div className="w-full md:w-64 shrink-0 bg-surface border border-muted/30 rounded-2xl p-3 sm:p-4 shadow-sm flex flex-row md:flex-col gap-2 overflow-x-auto scrollbar-hide">
                 <div className="hidden md:block px-4 py-2 border-b border-muted/20 mb-2">
                     <p className="text-xs font-black text-muted-foreground uppercase tracking-widest">Dashboard</p>
                 </div>
-                {menuItems.filter(item => item.id !== 'usuarios' || userRole === 'admin').map(item => (
+                {menuItems.filter(item => !item.roles || item.roles.includes(userRole ?? '')).map(item => (
                     <button
                         key={item.id}
                         onClick={() => setActiveTab(item.id as TabType)}
@@ -667,7 +683,7 @@ export default function AdminDashboard() {
                                         </div>
                                         <label className={`px-4 py-2 bg-muted/10 hover:bg-muted/20 text-foreground text-xs font-bold rounded-lg transition cursor-pointer text-center ${saving ? 'opacity-50 pointer-events-none' : ''}`}>
                                             {saving ? 'Guardando...' : 'Cambiar Foto'}
-                                            <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={saving} />
+                                            <input type="file" accept="image/*" className="hidden" onChange={handleProfileImageUpload} disabled={saving} />
                                         </label>
                                     </div>
                                     <div className="flex-1 space-y-6 w-full">
@@ -722,6 +738,73 @@ export default function AdminDashboard() {
                             </section>
                         )}
 
+                        {/* TAB: LIGAS */}
+                        {activeTab === 'ligas' && (
+                            <section className="animate-fade-in-up">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="text-xl font-black text-foreground flex items-center gap-2">
+                                        <span className="w-2 h-4 bg-primary rounded-full"></span>
+                                        {userRole === 'admin' ? 'Todas las Ligas' : 'Mi Liga'}
+                                    </h2>
+                                    {userRole === 'admin' && (
+                                        <button
+                                            onClick={() => setShowLeagueModal(true)}
+                                            className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-900 font-black rounded-lg transition shadow-md hover:shadow-amber-500/40 text-sm flex items-center gap-2 shrink-0"
+                                        >
+                                            + Nueva Liga
+                                        </button>
+                                    )}
+                                </div>
+
+                                {leagues.length === 0 ? (
+                                    <div className="bg-surface border border-muted/30 rounded-2xl p-12 text-center">
+                                        <p className="text-4xl mb-3">🏟️</p>
+                                        <p className="text-muted-foreground mb-4">No hay ligas registradas aún.</p>
+                                        {userRole === 'admin' && (
+                                            <button onClick={() => setShowLeagueModal(true)} className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-900 font-black rounded-lg transition text-sm">
+                                                + Crear primera liga
+                                            </button>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        {leagues
+                                            .filter(l => userRole === 'admin' || l.adminId === currentUser?.id)
+                                            .map(l => (
+                                                <div key={l.id} className="bg-surface border border-muted/30 rounded-2xl p-5 hover:border-primary/40 transition-all group">
+                                                    <div className="flex items-start justify-between gap-3 mb-3">
+                                                        <div className="min-w-0">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <h3 className="font-black truncate group-hover:text-primary transition-colors">
+                                                                    {l.shortName || l.name}
+                                                                </h3>
+                                                                {l.isVerified && (
+                                                                    <span className="text-xs px-2 py-0.5 bg-primary/10 text-primary rounded-full font-bold shrink-0">✓ Verificada</span>
+                                                                )}
+                                                            </div>
+                                                            {l.shortName && <p className="text-xs text-muted-foreground truncate mt-0.5">{l.name}</p>}
+                                                        </div>
+                                                        <span className="text-xs text-muted-foreground bg-muted/10 px-2 py-1 rounded-lg shrink-0 font-mono">
+                                                            {l._count?.tournaments ?? 0} torneos
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex gap-3 mt-4">
+                                                        <a href={`/ligas/${l.id}`} target="_blank" rel="noopener noreferrer"
+                                                            className="flex-1 text-center py-2 text-xs font-bold bg-muted/10 hover:bg-muted/20 rounded-lg transition">
+                                                            Ver Liga
+                                                        </a>
+                                                        <a href={`/torneos`}
+                                                            className="flex-1 text-center py-2 text-xs font-bold bg-primary/10 hover:bg-primary/20 text-primary rounded-lg transition">
+                                                            Ver Torneos
+                                                        </a>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                    </div>
+                                )}
+                            </section>
+                        )}
+
                         {/* TAB: TORNEOS */}
                         {activeTab === 'torneos' && (
                             <section className="animate-fade-in-up">
@@ -730,20 +813,12 @@ export default function AdminDashboard() {
                                         <span className="w-2 h-4 bg-primary rounded-full"></span> Mis Torneos
                                     </h2>
                                     {userRole === 'admin' && (
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={() => setShowLeagueModal(true)}
-                                                className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-900 font-black rounded-lg transition shadow-md hover:shadow-amber-500/40 text-sm flex items-center gap-2 shrink-0"
-                                            >
-                                                + Nueva Liga
-                                            </button>
-                                            <button
-                                                onClick={() => setShowTournamentModal(true)}
-                                                className="px-5 py-2 bg-primary hover:bg-primary-light text-white font-bold rounded-lg transition shadow-md hover:shadow-primary/40 text-sm flex items-center gap-2 shrink-0"
-                                            >
-                                                + Registrar Torneo
-                                            </button>
-                                        </div>
+                                        <button
+                                            onClick={() => setShowTournamentModal(true)}
+                                            className="px-5 py-2 bg-primary hover:bg-primary-light text-white font-bold rounded-lg transition shadow-md hover:shadow-primary/40 text-sm flex items-center gap-2 shrink-0"
+                                        >
+                                            + Registrar Torneo
+                                        </button>
                                     )}
                                 </div>
                                 <div className="bg-surface border border-muted/30 rounded-2xl overflow-x-auto overflow-y-hidden shadow-sm">
@@ -1021,24 +1096,94 @@ export default function AdminDashboard() {
                                         </button>
                                     </div>
                                 </div>
-                                <div className="bg-surface border border-muted/30 rounded-2xl overflow-x-auto overflow-y-hidden shadow-sm">
-                                    <table className="w-full text-left text-sm text-muted-foreground">
-                                        <thead className="bg-muted/10 text-xs uppercase text-foreground font-black tracking-wider border-b border-muted/20">
-                                            <tr>
-                                                <th className="px-6 py-4">Status</th>
-                                                <th className="px-6 py-4">Equipos</th>
-                                                <th className="px-6 py-4">Marcador</th>
-                                                <th className="px-6 py-4 text-right">Aplicativo</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-muted/10">
-                                            {games.length === 0 ? (
-                                                <tr>
-                                                    <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
-                                                        No hay partidos programados. Clic en &quot;Crear Ticket de Juego&quot;.
-                                                    </td>
-                                                </tr>
-                                            ) : games.map((game: GameData) => (
+
+                                {/* Filtros */}
+                                {(() => {
+                                    const leagueOptions = Array.from(
+                                        new Map(
+                                            games.filter(g => g.tournament?.league)
+                                                .map(g => [g.tournament!.league!.id, g.tournament!.league!.name])
+                                        ).entries()
+                                    );
+                                    const tournamentOptions = Array.from(
+                                        new Map(
+                                            games.filter(g => g.tournament && (!filterLeague || g.tournament.league?.id === filterLeague))
+                                                .map(g => [g.tournament!.id, g.tournament!.name])
+                                        ).entries()
+                                    );
+                                    const teamOptions = Array.from(
+                                        new Map(
+                                            games
+                                                .filter(g => (!filterLeague || g.tournament?.league?.id === filterLeague) && (!filterTournament || g.tournament?.id === filterTournament))
+                                                .flatMap(g => [
+                                                    [g.homeTeam.id, g.homeTeam.name] as [string, string],
+                                                    [g.awayTeam.id, g.awayTeam.name] as [string, string],
+                                                ])
+                                        ).entries()
+                                    );
+                                    const filteredGames = games.filter(g => {
+                                        if (filterLeague && g.tournament?.league?.id !== filterLeague) return false;
+                                        if (filterTournament && g.tournament?.id !== filterTournament) return false;
+                                        if (filterTeam && g.homeTeam.id !== filterTeam && g.awayTeam.id !== filterTeam) return false;
+                                        return true;
+                                    });
+                                    const hasFilters = filterLeague || filterTournament || filterTeam;
+
+                                    return (
+                                        <>
+                                            <div className="flex flex-wrap gap-3 mb-4">
+                                                <select
+                                                    value={filterLeague}
+                                                    onChange={e => { setFilterLeague(e.target.value); setFilterTournament(''); setFilterTeam(''); }}
+                                                    className="px-3 py-2 bg-surface border border-muted/30 rounded-lg text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                                                >
+                                                    <option value="">Todas las ligas</option>
+                                                    {leagueOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                                                </select>
+                                                <select
+                                                    value={filterTournament}
+                                                    onChange={e => { setFilterTournament(e.target.value); setFilterTeam(''); }}
+                                                    className="px-3 py-2 bg-surface border border-muted/30 rounded-lg text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                                                >
+                                                    <option value="">Todos los torneos</option>
+                                                    {tournamentOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                                                </select>
+                                                <select
+                                                    value={filterTeam}
+                                                    onChange={e => setFilterTeam(e.target.value)}
+                                                    className="px-3 py-2 bg-surface border border-muted/30 rounded-lg text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                                                >
+                                                    <option value="">Todos los equipos</option>
+                                                    {teamOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                                                </select>
+                                                {hasFilters && (
+                                                    <button
+                                                        onClick={() => { setFilterLeague(''); setFilterTournament(''); setFilterTeam(''); }}
+                                                        className="px-3 py-2 text-xs font-bold text-muted-foreground hover:text-foreground border border-muted/20 hover:border-muted/40 rounded-lg transition"
+                                                    >
+                                                        Limpiar filtros ✕
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            <div className="bg-surface border border-muted/30 rounded-2xl overflow-x-auto overflow-y-hidden shadow-sm">
+                                                <table className="w-full text-left text-sm text-muted-foreground">
+                                                    <thead className="bg-muted/10 text-xs uppercase text-foreground font-black tracking-wider border-b border-muted/20">
+                                                        <tr>
+                                                            <th className="px-6 py-4">Status</th>
+                                                            <th className="px-6 py-4">Equipos</th>
+                                                            <th className="px-6 py-4">Marcador</th>
+                                                            <th className="px-6 py-4 text-right">Aplicativo</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-muted/10">
+                                                        {filteredGames.length === 0 ? (
+                                                            <tr>
+                                                                <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
+                                                                    {hasFilters ? 'No hay partidos con los filtros seleccionados.' : 'No hay partidos programados. Clic en "Crear Ticket de Juego".'}
+                                                                </td>
+                                                            </tr>
+                                                        ) : filteredGames.map((game: GameData) => (
                                                 <tr key={game.id} className="hover:bg-muted/5 transition-colors">
                                                     <td className="px-6 py-4 font-bold">
                                                         {game.status === 'in_progress' ? (
@@ -1062,7 +1207,7 @@ export default function AdminDashboard() {
                                                             {game.status === 'finished' ? '(FINAL)' : `(${game.currentInning} INN)`}
                                                         </span>
                                                     </td>
-                                                    <td className="px-6 py-4 text-right flex justify-end gap-2">
+                                                    <td className="px-6 py-4 text-right flex justify-end items-center gap-2">
                                                         {game.status === 'finished' ? (
                                                             <button
                                                                 onClick={() => router.push(`/gamecast/${game.id}`)}
@@ -1086,12 +1231,22 @@ export default function AdminDashboard() {
                                                                 </button>
                                                             </>
                                                         )}
+                                                        <button
+                                                            onClick={() => handleDeleteGame(game.id, game.homeTeam?.name ?? '', game.awayTeam?.name ?? '')}
+                                                            title="Eliminar juego"
+                                                            className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-lg transition"
+                                                        >
+                                                            🗑️
+                                                        </button>
                                                     </td>
                                                 </tr>
                                             ))}
                                         </tbody>
                                     </table>
                                 </div>
+                            </>
+                        );
+                    })()}
                             </section>
                         )}
 
@@ -1232,33 +1387,13 @@ export default function AdminDashboard() {
                             </div>
 
                             <div>
-                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Logo del Torneo (URL o Subir)</label>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        value={tournForm.logoUrl}
-                                        onChange={e => setTournForm({ ...tournForm, logoUrl: e.target.value })}
-                                        className="flex-1 bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-xs"
-                                        placeholder="URL de la imagen"
-                                    />
-                                    <label className="shrink-0 bg-muted/20 hover:bg-muted/30 text-foreground px-4 py-3 rounded-lg cursor-pointer transition text-xs font-bold border border-muted/30">
-                                        Subir
-                                        <input
-                                            type="file"
-                                            accept="image/*"
-                                            className="hidden"
-                                            onChange={e => handleImageChange(e, tournForm, setTournForm, 'logoUrl')}
-                                        />
-                                    </label>
-                                </div>
-                                {tournForm.logoUrl && (
-                                    <div className="mt-2 flex items-center gap-2 border border-muted/20 p-2 rounded-lg bg-muted/5">
-                                        <div className="w-12 h-12 rounded border border-muted/30 overflow-hidden bg-white flex items-center justify-center">
-                                            <img src={tournForm.logoUrl} alt="Preview" className="w-full h-full object-contain" />
-                                        </div>
-                                        <button type="button" onClick={() => setTournForm({ ...tournForm, logoUrl: '' })} className="text-[10px] text-red-500 font-bold hover:underline">Eliminar Imagen</button>
-                                    </div>
-                                )}
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Logo del Torneo</label>
+                                <ImageUploader
+                                    value={tournForm.logoUrl}
+                                    onChange={url => setTournForm({ ...tournForm, logoUrl: url })}
+                                    shape="square"
+                                    placeholder="🏆"
+                                />
                             </div>
 
                             <div>
@@ -1352,33 +1487,13 @@ export default function AdminDashboard() {
                             </div>
 
                             <div>
-                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Logo del Torneo (URL o Subir)</label>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        value={tournForm.logoUrl}
-                                        onChange={e => setTournForm({ ...tournForm, logoUrl: e.target.value })}
-                                        className="flex-1 bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-xs"
-                                        placeholder="URL de la imagen"
-                                    />
-                                    <label className="shrink-0 bg-muted/20 hover:bg-muted/30 text-foreground px-4 py-3 rounded-lg cursor-pointer transition text-xs font-bold border border-muted/30">
-                                        Subir
-                                        <input
-                                            type="file"
-                                            accept="image/*"
-                                            className="hidden"
-                                            onChange={e => handleImageChange(e, tournForm, setTournForm, 'logoUrl')}
-                                        />
-                                    </label>
-                                </div>
-                                {tournForm.logoUrl && (
-                                    <div className="mt-2 flex items-center gap-2 border border-muted/20 p-2 rounded-lg bg-muted/5">
-                                        <div className="w-12 h-12 rounded border border-muted/30 overflow-hidden bg-white flex items-center justify-center">
-                                            <img src={tournForm.logoUrl} alt="Preview" className="w-full h-full object-contain" />
-                                        </div>
-                                        <button type="button" onClick={() => setTournForm({ ...tournForm, logoUrl: '' })} className="text-[10px] text-red-500 font-bold hover:underline">Eliminar Imagen</button>
-                                    </div>
-                                )}
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Logo del Torneo</label>
+                                <ImageUploader
+                                    value={tournForm.logoUrl}
+                                    onChange={url => setTournForm({ ...tournForm, logoUrl: url })}
+                                    shape="square"
+                                    placeholder="🏆"
+                                />
                             </div>
 
                             <div>
@@ -1450,33 +1565,13 @@ export default function AdminDashboard() {
                             </div>
 
                             <div>
-                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Logo del Equipo (URL o Subir)</label>
-                                <div className="flex gap-2">
-                                    <input 
-                                        type="text" 
-                                        value={teamForm.logoUrl} 
-                                        onChange={e => setTeamForm({ ...teamForm, logoUrl: e.target.value })} 
-                                        className="flex-1 bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-xs" 
-                                        placeholder="URL del escudo" 
-                                    />
-                                    <label className="shrink-0 bg-muted/20 hover:bg-muted/30 text-foreground px-4 py-3 rounded-lg cursor-pointer transition text-xs font-bold border border-muted/30">
-                                        Subir
-                                        <input 
-                                            type="file" 
-                                            accept="image/*" 
-                                            className="hidden" 
-                                            onChange={e => handleImageChange(e, teamForm, setTeamForm, 'logoUrl')} 
-                                        />
-                                    </label>
-                                </div>
-                                {teamForm.logoUrl && (
-                                    <div className="mt-2 flex items-center gap-2 border border-muted/20 p-2 rounded-lg bg-muted/5">
-                                        <div className="w-12 h-12 rounded border border-muted/30 overflow-hidden bg-white flex items-center justify-center">
-                                            <img src={teamForm.logoUrl} alt="Preview" className="w-full h-full object-contain" />
-                                        </div>
-                                        <button type="button" onClick={() => setTeamForm({ ...teamForm, logoUrl: '' })} className="text-[10px] text-red-500 font-bold hover:underline">Eliminar Logo</button>
-                                    </div>
-                                )}
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Logo del Equipo</label>
+                                <ImageUploader
+                                    value={teamForm.logoUrl}
+                                    onChange={url => setTeamForm({ ...teamForm, logoUrl: url })}
+                                    shape="square"
+                                    placeholder="🛡️"
+                                />
                             </div>
 
                             <button type="submit" disabled={saving} className={`w-full py-3 mt-4 font-bold rounded-xl transition shadow-lg ${saving ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-primary/20 cursor-pointer active:scale-95'}`}>
@@ -1537,33 +1632,13 @@ export default function AdminDashboard() {
                             </div>
 
                             <div>
-                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Foto del Jugador (URL o Subir)</label>
-                                <div className="flex gap-2">
-                                    <input 
-                                        type="text" 
-                                        value={playerForm.photoUrl} 
-                                        onChange={e => setPlayerForm({ ...playerForm, photoUrl: e.target.value })} 
-                                        className="flex-1 bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-xs" 
-                                        placeholder="URL de la foto" 
-                                    />
-                                    <label className="shrink-0 bg-muted/20 hover:bg-muted/30 text-foreground px-4 py-3 rounded-lg cursor-pointer transition text-xs font-bold border border-muted/30">
-                                        Subir
-                                        <input 
-                                            type="file" 
-                                            accept="image/*" 
-                                            className="hidden" 
-                                            onChange={e => handleImageChange(e, playerForm, setPlayerForm, 'photoUrl')} 
-                                        />
-                                    </label>
-                                </div>
-                                {playerForm.photoUrl && (
-                                    <div className="mt-2 flex items-center gap-2 border border-muted/20 p-2 rounded-lg bg-muted/5">
-                                        <div className="w-12 h-12 rounded border border-muted/30 overflow-hidden bg-white flex items-center justify-center">
-                                            <img src={playerForm.photoUrl} alt="Preview" className="w-full h-full object-contain" />
-                                        </div>
-                                        <button type="button" onClick={() => setPlayerForm({ ...playerForm, photoUrl: '' })} className="text-[10px] text-red-500 font-bold hover:underline">Eliminar Foto</button>
-                                    </div>
-                                )}
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Foto del Jugador</label>
+                                <ImageUploader
+                                    value={playerForm.photoUrl}
+                                    onChange={url => setPlayerForm({ ...playerForm, photoUrl: url })}
+                                    shape="circle"
+                                    placeholder="⚾"
+                                />
                             </div>
 
                             <button type="submit" disabled={saving} className={`w-full py-3 mt-4 font-bold rounded-xl transition shadow-lg ${saving ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-primary/20 cursor-pointer active:scale-95'}`}>
@@ -1624,33 +1699,13 @@ export default function AdminDashboard() {
                             </div>
 
                             <div>
-                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Foto del Jugador (URL o Subir)</label>
-                                <div className="flex gap-2">
-                                    <input 
-                                        type="text" 
-                                        value={playerForm.photoUrl} 
-                                        onChange={e => setPlayerForm({ ...playerForm, photoUrl: e.target.value })} 
-                                        className="flex-1 bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-xs" 
-                                        placeholder="URL de la foto" 
-                                    />
-                                    <label className="shrink-0 bg-muted/20 hover:bg-muted/30 text-foreground px-4 py-3 rounded-lg cursor-pointer transition text-xs font-bold border border-muted/30">
-                                        Subir
-                                        <input 
-                                            type="file" 
-                                            accept="image/*" 
-                                            className="hidden" 
-                                            onChange={e => handleImageChange(e, playerForm, setPlayerForm, 'photoUrl')} 
-                                        />
-                                    </label>
-                                </div>
-                                {playerForm.photoUrl && (
-                                    <div className="mt-2 flex items-center gap-2 border border-muted/20 p-2 rounded-lg bg-muted/5">
-                                        <div className="w-12 h-12 rounded border border-muted/30 overflow-hidden bg-white flex items-center justify-center">
-                                            <img src={playerForm.photoUrl} alt="Preview" className="w-full h-full object-contain" />
-                                        </div>
-                                        <button type="button" onClick={() => setPlayerForm({ ...playerForm, photoUrl: '' })} className="text-[10px] text-red-500 font-bold hover:underline">Eliminar Foto</button>
-                                    </div>
-                                )}
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Foto del Jugador</label>
+                                <ImageUploader
+                                    value={playerForm.photoUrl}
+                                    onChange={url => setPlayerForm({ ...playerForm, photoUrl: url })}
+                                    shape="circle"
+                                    placeholder="⚾"
+                                />
                             </div>
 
                             <button type="submit" disabled={saving} className={`w-full py-3 mt-4 font-bold rounded-xl transition shadow-lg ${saving ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-primary/20 cursor-pointer active:scale-95'}`}>
@@ -1722,15 +1777,53 @@ export default function AdminDashboard() {
             {/* MODAL NUEVA LIGA */}
             {showLeagueModal && (
                 <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[60] flex flex-col items-center justify-center p-4">
-                    <div className="bg-surface border border-muted/30 p-5 sm:p-8 rounded-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto shadow-2xl relative animate-fade-in-up">
+                    <div className="bg-surface border border-muted/30 p-5 sm:p-8 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl relative animate-fade-in-up">
                         <button onClick={() => setShowLeagueModal(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
-                        <h2 className="text-xl font-black text-foreground mb-4 uppercase tracking-tight">Registro de Liga</h2>
+                        <h2 className="text-xl font-black text-foreground mb-1 uppercase tracking-tight">Registrar Liga</h2>
+                        <p className="text-xs text-muted-foreground mb-6">La liga será visible en el directorio público de TourneyTru.</p>
                         <form onSubmit={handleCreateLeague} className="space-y-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div className="sm:col-span-2">
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Nombre completo *</label>
+                                    <input required type="text" value={leagueForm.name} onChange={e => setLeagueForm({...leagueForm, name: e.target.value})} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm" placeholder="Liga Municipal de Softbol de Ahome" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Siglas</label>
+                                    <input type="text" maxLength={20} value={leagueForm.shortName} onChange={e => setLeagueForm({...leagueForm, shortName: e.target.value})} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm" placeholder="LMSA" />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Ciudad</label>
+                                    <input type="text" value={leagueForm.city} onChange={e => setLeagueForm({...leagueForm, city: e.target.value})} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm" placeholder="Los Mochis" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Estado</label>
+                                    <input type="text" value={leagueForm.state} onChange={e => setLeagueForm({...leagueForm, state: e.target.value})} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm" placeholder="Sinaloa" />
+                                </div>
+                            </div>
                             <div>
-                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Nombre de la Liga</label>
-                                <input required type="text" value={leagueName} onChange={e => setLeagueName(e.target.value)} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Liga Municipal de Béisbol" />
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Deporte</label>
+                                <select value={leagueForm.sport} onChange={e => setLeagueForm({...leagueForm, sport: e.target.value})} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm">
+                                    <option value="softball">Sóftbol</option>
+                                    <option value="baseball">Béisbol</option>
+                                    <option value="both">Béisbol &amp; Sóftbol</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Descripción</label>
+                                <textarea rows={3} value={leagueForm.description} onChange={e => setLeagueForm({...leagueForm, description: e.target.value})} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm resize-none" placeholder="Describe brevemente la liga..." />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Logo de la Liga</label>
+                                <ImageUploader
+                                    value={leagueForm.logoUrl}
+                                    onChange={url => setLeagueForm({ ...leagueForm, logoUrl: url })}
+                                    shape="square"
+                                    placeholder="🏟️"
+                                />
                             </div>
                             <button type="submit" disabled={saving} className="w-full py-3 bg-primary hover:bg-primary-light text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all">
                                 {saving ? 'Creando...' : 'Crear Liga'}

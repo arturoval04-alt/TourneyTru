@@ -73,6 +73,7 @@ export interface GameState extends BaseState {
     clearEndGamePrompt: () => void;
     facebookStreamUrl: string | null;
     streamStatus: string;
+    pendingPlays: number; // jugadas en cola esperando envío
 
     // Conexión
     setGameId: (id: string) => void;
@@ -106,6 +107,62 @@ export interface GameState extends BaseState {
 }
 
 let gameSocket: Socket | null = null;
+
+// ─── Cola de jugadas offline ──────────────────────────────────────────────────
+interface QueuedPlay {
+    id: string;
+    playInfo: {
+        inning: number; half: string; outs_before_play: number; result: string;
+        rbi: number; runs_scored: number; outs_recorded: number;
+        batter_id: string | null; pitcher_id: string | null;
+    };
+}
+
+const QUEUE_KEY = (gameId: string) => `play_queue_${gameId}`;
+
+function getPlayQueue(gameId: string): QueuedPlay[] {
+    try { return JSON.parse(localStorage.getItem(QUEUE_KEY(gameId)) || '[]'); }
+    catch { return []; }
+}
+
+function addPlayToQueue(gameId: string, playInfo: QueuedPlay['playInfo']): string {
+    const queue = getPlayQueue(gameId);
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    queue.push({ id, playInfo });
+    localStorage.setItem(QUEUE_KEY(gameId), JSON.stringify(queue));
+    return id;
+}
+
+function removePlayFromQueue(gameId: string, id: string) {
+    const queue = getPlayQueue(gameId).filter(p => p.id !== id);
+    localStorage.setItem(QUEUE_KEY(gameId), JSON.stringify(queue));
+}
+
+async function flushPlayQueue(gameId: string, onProgress: (n: number) => void) {
+    const queue = getPlayQueue(gameId);
+    if (!queue.length) return;
+    for (const play of queue) {
+        try {
+            if (gameSocket?.connected) {
+                // Preferir socket cuando está disponible — más confiable que HTTP en reconexión
+                const timestamp = Date.now().toString();
+                gameSocket.emit('registerPlay', {
+                    gameId,
+                    token: getAccessToken(),
+                    playInfo: { ...play.playInfo, playbackId: timestamp },
+                    fullState: null,
+                });
+                await new Promise(resolve => setTimeout(resolve, 300)); // esperar que el backend procese
+            } else {
+                await api.post(`/games/${gameId}/plays`, play.playInfo);
+            }
+            removePlayFromQueue(gameId, play.id);
+            onProgress(getPlayQueue(gameId).length);
+        } catch {
+            break; // Sigue sin conexión, parar
+        }
+    }
+}
 
 const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsScored: number = 0, outsOffensive: number = 0, currentBatterIdOverride: string | null = null, inningOverride: number | null = null, halfOverride: string | null = null, outsBeforeOverride: number | null = null, silent: boolean = false) => {
     const stateSnapshot = get();
@@ -174,16 +231,30 @@ const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsSc
         // Pequeña espera para evitar colisiones si se llama en bucle rápido sin await real de socket
         await new Promise(resolve => setTimeout(resolve, 50));
     } else {
-        // Fallback HTTP si el socket no está conectado
+        // Socket no conectado — intentar HTTP, si falla encolar para reintento
+        const playPayload = {
+            inning: payloadInning, half: payloadHalf,
+            outs_before_play: payloadOutsBefore, result: resultStr,
+            rbi: runsScored, runs_scored: runsScored, outs_recorded: outsOffensive,
+            batter_id: activeBatterId, pitcher_id: activePitcherId,
+        };
+        const queueId = addPlayToQueue(stateSnapshot.gameId, playPayload);
+        useGameStore.setState({ pendingPlays: getPlayQueue(stateSnapshot.gameId).length });
         try {
-            await api.post(`/games/${stateSnapshot.gameId}/plays`, {
-                inning: payloadInning, half: payloadHalf,
-                outs_before_play: payloadOutsBefore, result: resultStr,
-                rbi: runsScored, runs_scored: runsScored, outs_recorded: outsOffensive,
-                batter_id: activeBatterId, pitcher_id: activePitcherId,
-            });
+            await api.post(`/games/${stateSnapshot.gameId}/plays`, playPayload);
+            removePlayFromQueue(stateSnapshot.gameId, queueId);
+            useGameStore.setState({ pendingPlays: getPlayQueue(stateSnapshot.gameId).length });
         } catch (e) {
-            console.error("Fallback HTTP play failed:", e);
+            console.warn('[Queue] Sin conexión — jugada guardada en cola, se enviará al reconectar.');
+            // Si el socket se reconectó entre tanto, flushar ahora mismo
+            if (gameSocket?.connected && stateSnapshot.gameId) {
+                const gid = stateSnapshot.gameId;
+                flushPlayQueue(gid, (remaining) => {
+                    useGameStore.setState({ pendingPlays: remaining });
+                }).then(() => {
+                    if (gameSocket?.connected) syncStateToBackend(get);
+                });
+            }
         }
     }
 };
@@ -252,6 +323,7 @@ export const useGameStore = create<GameState>()(
             shouldPromptEndGame: false,
             facebookStreamUrl: null,
             streamStatus: 'offline',
+            pendingPlays: 0,
 
             clearEndGamePrompt: () => set({ shouldPromptEndGame: false }),
 
@@ -415,18 +487,74 @@ export const useGameStore = create<GameState>()(
                 if (!gameId) return;
                 if (gameSocket) gameSocket.disconnect();
 
+                // Restaurar badge si hay jugadas en cola de sesión anterior
+                const existingQueue = getPlayQueue(gameId);
+                if (existingQueue.length > 0) {
+                    useGameStore.setState({ pendingPlays: existingQueue.length });
+                    console.log(`[Queue] Cola restaurada: ${existingQueue.length} jugada(s) pendiente(s).`);
+                }
+
                 const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
                 gameSocket = io(`${backendUrl}/live_games`, {
                     auth: { token: getAccessToken() },
                     transports: ['websocket'],
                 });
 
-                gameSocket.on('connect', () => {
+                gameSocket.on('connect', async () => {
                     console.log(`Socket connected: game-${gameId}`);
                     gameSocket!.emit('joinGame', gameId);
+                    const { gameId: gid } = get();
+                    if (!gid) return;
+                    // Vaciar cola de jugadas pendientes
+                    const pending = getPlayQueue(gid);
+                    if (pending.length > 0) {
+                        console.log(`[Queue] Reconectado — enviando ${pending.length} jugada(s) pendiente(s)...`);
+                        await flushPlayQueue(gid, (remaining) => {
+                            useGameStore.setState({ pendingPlays: remaining });
+                        });
+                    }
+                    // Solicitar estado completo al backend para asegurar sincronía tras reconexión
+                    gameSocket!.emit('requestFullSync', { gameId: gid });
+                    // Siempre sincronizar estado local al backend al reconectar.
+                    // El delay da tiempo al gameStateUpdate del backend a llegar primero;
+                    // luego nuestro syncState lo sobreescribe con el estado local (más nuevo).
+                    setTimeout(() => {
+                        if (gameSocket?.connected) syncStateToBackend(get);
+                    }, 500);
                 });
 
-                gameSocket.on('disconnect', () => console.log('Socket disconnected'));
+                gameSocket.on('disconnect', () => {
+                    console.log('Socket disconnected');
+                    useGameStore.setState({ pendingPlays: getPlayQueue(get().gameId || '').length });
+                    // Importar toast dinámicamente para evitar dependencia circular con módulos de servidor
+                    if (typeof window !== 'undefined') {
+                        import('sonner').then(({ toast }) => toast.warning('Conexión perdida. Reconectando...'));
+                    }
+                });
+
+                // Si el backend rechaza por token expirado, reconectar con token fresco
+                gameSocket.on('exception', (err: any) => {
+                    const msg = typeof err === 'string' ? err : err?.message || '';
+                    if (msg.toLowerCase().includes('unauthorized') || msg.toLowerCase().includes('auth')) {
+                        console.warn('[Socket] Token expirado — reconectando con token fresco...');
+                        if (gameSocket) {
+                            gameSocket.auth = { token: getAccessToken() };
+                            gameSocket.disconnect().connect();
+                        }
+                    }
+                });
+
+                // También vaciar cola cuando el navegador recupera conexión a internet
+                const handleOnline = async () => {
+                    const { gameId: gid } = get();
+                    if (!gid) return;
+                    if (getPlayQueue(gid).length === 0) return;
+                    console.log('[Queue] Conexión restaurada — vaciando cola...');
+                    await flushPlayQueue(gid, (remaining) => {
+                        useGameStore.setState({ pendingPlays: remaining });
+                    });
+                };
+                window.addEventListener('online', handleOnline);
 
                 // Fallback: si el backend no pudo guardar la jugada en DB, reintentamos vía HTTP
                 gameSocket.on('play_db_error', async (data: { playInfo: any }) => {
@@ -455,16 +583,40 @@ export const useGameStore = create<GameState>()(
                     set({ facebookStreamUrl: data.facebookStreamUrl, streamStatus: data.streamStatus });
                 });
 
+                // Respuesta al requestFullSync — reemplazar estado completo incondicionalmente
+                gameSocket.on('fullStateSync', (data: any) => {
+                    const fs = data?.fullState ?? data;
+                    if (!fs) return;
+                    console.log('[GameStore] fullStateSync received');
+                    set({
+                        inning: fs.inning ?? get().inning,
+                        half: fs.half ?? get().half,
+                        outs: fs.outs ?? get().outs,
+                        balls: fs.balls ?? get().balls,
+                        strikes: fs.strikes ?? get().strikes,
+                        homeScore: fs.homeScore ?? get().homeScore,
+                        awayScore: fs.awayScore ?? get().awayScore,
+                        bases: fs.bases ?? get().bases,
+                        currentBatter: fs.currentBatter ?? get().currentBatter,
+                        currentBatterId: fs.currentBatterId ?? get().currentBatterId,
+                        playLogs: fs.playLogs ?? get().playLogs,
+                        playbackId: fs.playbackId ? String(fs.playbackId) : get().playbackId,
+                    });
+                });
+
                 // Listen for game state updates from the backend (broadcast by the scorekeeper)
                 gameSocket.on('gameStateUpdate', (data: any) => {
                     const fs = data?.fullState;
                     if (!fs) return;
 
                     // Only update if the incoming state is newer than our local state
-                    const currentPlaybackId = get().playbackId || 0;
-                    const newPlaybackId = fs.playbackId || 0;
-                    
-                    if (newPlaybackId <= currentPlaybackId && currentPlaybackId !== 0) {
+                    const currentPlaybackId = Number(get().playbackId) || 0;
+                    const newPlaybackId = Number(fs.playbackId) || 0;
+                    const currentLogCount = get().playLogs.length;
+                    const newLogCount = (fs.playLogs ?? []).length;
+
+                    // Rechazar si es más viejo por playbackId O por conteo de jugadas
+                    if (currentPlaybackId !== 0 && newPlaybackId <= currentPlaybackId && newLogCount <= currentLogCount) {
                         console.log('[GameStore] Ignoring stale update:', fs.lastPlay?.result);
                         return;
                     }
@@ -481,8 +633,9 @@ export const useGameStore = create<GameState>()(
                         bases: fs.bases ?? get().bases,
                         currentBatter: fs.currentBatter ?? get().currentBatter,
                         currentBatterId: fs.currentBatterId ?? get().currentBatterId,
-                        playLogs: fs.playLogs ?? get().playLogs,
-                        playbackId: newPlaybackId,
+                        // Nunca reducir el historial — si el update tiene menos jugadas, conservar el local
+                        playLogs: (fs.playLogs && fs.playLogs.length >= currentLogCount) ? fs.playLogs : get().playLogs,
+                        playbackId: newPlaybackId > currentPlaybackId ? String(newPlaybackId) : get().playbackId,
                     });
                 });
             },
