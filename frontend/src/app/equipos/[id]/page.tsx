@@ -8,7 +8,7 @@ import { getUser } from '@/lib/auth';
 import api from "@/lib/api";
 import { useParams, useRouter } from "next/navigation";
 import {
-    Settings, Share2, ArrowLeft, Users, Trophy, Flag, MapPin, ExternalLink, Clock, Star, Activity, X, CheckCircle
+    Settings, Share2, ArrowLeft, Users, Trophy, Flag, MapPin, ExternalLink, Clock, Star, Activity, X, CheckCircle, UserPlus, Search
 } from "lucide-react";
 import PlayerHoverCard from "@/components/PlayerHoverCard";
 import ImageUploader from "@/components/ui/ImageUploader";
@@ -51,6 +51,19 @@ interface GameRecord {
     mvpBatter2?: { id: string; firstName: string; lastName: string; photoUrl?: string };
 }
 
+interface RosterEntry {
+    id: string;
+    playerId: string;
+    player: {
+        id: string; firstName: string; lastName: string;
+        number?: number; position?: string; photoUrl?: string;
+        bats?: string; throws?: string; isVerified: boolean;
+        teamId?: string;
+        team?: { id: string; name: string; shortName?: string };
+    };
+    joinedAt: string;
+}
+
 interface TeamData {
     id: string;
     name: string;
@@ -59,6 +72,7 @@ interface TeamData {
     managerName?: string;
     tournament?: { id: string; name: string; category?: string };
     players: PlayerItem[];
+    rosterEntries?: RosterEntry[];
     wins: number;
     losses: number;
     gamesPlayed: number;
@@ -81,8 +95,15 @@ export default function TeamProfilePage() {
 
     const router = useRouter();
 
-    const [userRole, setUserRole] = useState<string | null>(null);
+    const [canEdit, setCanEdit] = useState(false);
     const [showCopiedToast, setShowCopiedToast] = useState(false);
+
+    // Add Verified Player modal state
+    const [showAddVerifiedModal, setShowAddVerifiedModal] = useState(false);
+    const [verifiedSearch, setVerifiedSearch] = useState('');
+    const [verifiedResults, setVerifiedResults] = useState<any[]>([]);
+    const [searchingVerified, setSearchingVerified] = useState(false);
+    const [addingRoster, setAddingRoster] = useState<string | null>(null);
 
     // Profile Editing State (Team)
     const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -106,10 +127,22 @@ export default function TeamProfilePage() {
         photoUrl: ''
     });
 
+
     useEffect(() => {
+        if (!team) return;
         const user = getUser();
-        setUserRole(user?.role || 'general');
-    }, []);
+        if (!user) return;
+        if (user.role === 'admin') { setCanEdit(true); return; }
+        if ((user.role === 'organizer' || user.role === 'presi') && team.tournament?.id) {
+            api.get(`/torneos/${team.tournament.id}`)
+                .then(({ data: t }) => {
+                    if (t?.organizers?.some((o: any) => o.user?.id === user.id || o.userId === user.id)) {
+                        setCanEdit(true);
+                    }
+                })
+                .catch(() => {});
+        }
+    }, [team]);
 
     useEffect(() => {
         if (team) {
@@ -158,6 +191,36 @@ export default function TeamProfilePage() {
             console.error(error);
             alert('Error al actualizar jugador');
         }
+    };
+
+    const handleVerifiedSearch = async (q: string) => {
+        setVerifiedSearch(q);
+        if (q.trim().length < 2) { setVerifiedResults([]); return; }
+        setSearchingVerified(true);
+        try {
+            const { data } = await api.get(`/players/verified?q=${encodeURIComponent(q)}&excludeTeamId=${teamId}`);
+            setVerifiedResults(data);
+        } catch { setVerifiedResults([]); }
+        finally { setSearchingVerified(false); }
+    };
+
+    const handleAddToRoster = async (player: any) => {
+        if (!team?.tournament?.id) return;
+        setAddingRoster(player.id);
+        try {
+            await api.post('/roster', {
+                playerId: player.id,
+                teamId,
+                tournamentId: team.tournament.id,
+            });
+            setShowAddVerifiedModal(false);
+            setVerifiedSearch('');
+            setVerifiedResults([]);
+            window.location.reload();
+        } catch (err: any) {
+            const msg = err?.response?.data?.message || 'Error al agregar jugador';
+            alert(msg);
+        } finally { setAddingRoster(null); }
     };
 
     const handleUpdateProfile = async (e: React.FormEvent) => {
@@ -271,7 +334,7 @@ export default function TeamProfilePage() {
 
                         {/* Share button next to logo on mobile */}
                         <div className="absolute top-20 right-4 md:hidden flex gap-2 z-30">
-                            {userRole === 'admin' && (
+                            {canEdit && (
                                 <button onClick={() => setIsEditingProfile(true)} className="w-9 h-9 rounded-full border border-white/20 bg-white/10 flex items-center justify-center transition-colors shrink-0 text-white/70" title="Configuración">
                                     <Settings className="w-4 h-4" />
                                 </button>
@@ -298,7 +361,7 @@ export default function TeamProfilePage() {
 
                                 {/* Desktop-only share buttons */}
                                 <div className="hidden md:flex justify-end gap-3 shrink-0">
-                                    {userRole === 'admin' && (
+                                    {canEdit && (
                                         <button onClick={() => setIsEditingProfile(true)} className="w-10 h-10 rounded-full border border-white/20 bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors shrink-0 text-white/70 hover:text-white" title="Configuración">
                                             <Settings className="w-5 h-5" />
                                         </button>
@@ -639,40 +702,110 @@ export default function TeamProfilePage() {
 
                     {/* JUGADORES (ROSTER) TAB */}
                     {activeTab === 'jugadores' && (
-                        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 animate-fade-in-up">
-                            {team.players.length === 0 ? (
-                                <div className="col-span-full py-12 text-center bg-surface border border-muted/30 rounded-2xl">
+                        <div className="animate-fade-in-up space-y-6">
+                            {/* Header with Add button */}
+                            {canEdit && team.tournament?.id && (
+                                <div className="flex justify-end">
+                                    <button
+                                        onClick={() => { setShowAddVerifiedModal(true); setVerifiedSearch(''); setVerifiedResults([]); }}
+                                        className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-xl text-sm font-bold transition-colors"
+                                    >
+                                        <UserPlus className="w-4 h-4" />
+                                        Añadir Jugador Verificado
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Regular players */}
+                            {team.players.length === 0 && (!team.rosterEntries || team.rosterEntries.length === 0) ? (
+                                <div className="py-12 text-center bg-surface border border-muted/30 rounded-2xl">
                                     <p className="text-muted-foreground">No hay jugadores registrados.</p>
                                 </div>
-                            ) : team.players.map((p) => (
-                                <PlayerHoverCard
-                                    key={p.id}
-                                    playerId={p.id}
-                                    firstName={p.firstName}
-                                    lastName={p.lastName}
-                                    photoUrl={p.photoUrl}
-                                    position={p.position}
-                                    number={p.number}
-                                    teamName={team.name}
-                                >
-                                    <div className="bg-surface border border-muted/30 rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 group cursor-pointer flex flex-col items-center p-6 hover:-translate-y-1">
-                                        <div className="w-20 h-20 bg-muted/5 rounded-full mb-4 flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-primary/50 transition-colors shadow-inner">
-                                            {p.photoUrl ? (
-                                                <img src={p.photoUrl} alt={`${p.firstName} ${p.lastName}`} className="w-full h-full object-cover group-hover:scale-110 duration-300" />
-                                            ) : (
-                                                <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={96} height={96} className="opacity-90 group-hover:opacity-100 transition-opacity group-hover:scale-110 duration-300" />
-                                            )}
+                            ) : (
+                                <>
+                                    {team.players.length > 0 && (
+                                        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                                            {team.players.map((p) => (
+                                                <PlayerHoverCard
+                                                    key={p.id}
+                                                    playerId={p.id}
+                                                    firstName={p.firstName}
+                                                    lastName={p.lastName}
+                                                    photoUrl={p.photoUrl}
+                                                    position={p.position}
+                                                    number={p.number}
+                                                    teamName={team.name}
+                                                >
+                                                    <div className="bg-surface border border-muted/30 rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 group cursor-pointer flex flex-col items-center p-6 hover:-translate-y-1">
+                                                        <div className="w-20 h-20 bg-muted/5 rounded-full mb-4 flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-primary/50 transition-colors shadow-inner">
+                                                            {p.photoUrl ? (
+                                                                <img src={p.photoUrl} alt={`${p.firstName} ${p.lastName}`} className="w-full h-full object-cover group-hover:scale-110 duration-300" />
+                                                            ) : (
+                                                                <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={96} height={96} className="opacity-90 group-hover:opacity-100 transition-opacity group-hover:scale-110 duration-300" />
+                                                            )}
+                                                        </div>
+                                                        <h3 className="font-bold text-center group-hover:text-primary transition-colors text-sm">{p.firstName} {p.lastName}</h3>
+                                                        <div className="flex gap-2 items-center mt-2">
+                                                            {p.number && <span className="text-sm text-muted-foreground font-black text-center w-6">#{p.number}</span>}
+                                                            <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs font-bold rounded">
+                                                                {p.position || 'INF'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </PlayerHoverCard>
+                                            ))}
                                         </div>
-                                        <h3 className="font-bold text-center group-hover:text-primary transition-colors text-sm">{p.firstName} {p.lastName}</h3>
-                                        <div className="flex gap-2 items-center mt-2">
-                                            {p.number && <span className="text-sm text-muted-foreground font-black text-center w-6">#{p.number}</span>}
-                                            <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs font-bold rounded">
-                                                {p.position || 'INF'}
-                                            </span>
+                                    )}
+
+                                    {/* Roster entries (invited/verified players) */}
+                                    {team.rosterEntries && team.rosterEntries.length > 0 && (
+                                        <div>
+                                            <h3 className="text-[11px] font-black uppercase tracking-widest text-muted-foreground mb-3 pl-1 flex items-center gap-2">
+                                                <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                                                Jugadores Invitados
+                                            </h3>
+                                            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                                                {team.rosterEntries.map((entry) => {
+                                                    const p = entry.player;
+                                                    return (
+                                                        <PlayerHoverCard
+                                                            key={entry.id}
+                                                            playerId={p.id}
+                                                            firstName={p.firstName}
+                                                            lastName={p.lastName}
+                                                            photoUrl={p.photoUrl}
+                                                            position={p.position}
+                                                            number={p.number}
+                                                            teamName={p.team?.name || team.name}
+                                                        >
+                                                            <div className="bg-surface border border-emerald-500/20 rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:border-emerald-400/50 transition-all duration-300 group cursor-pointer flex flex-col items-center p-6 hover:-translate-y-1 relative">
+                                                                <span className="absolute top-2 right-2 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded-full">
+                                                                    Invitado
+                                                                </span>
+                                                                <div className="w-20 h-20 bg-muted/5 rounded-full mb-4 flex items-center justify-center overflow-hidden border-2 border-emerald-500/20 group-hover:border-emerald-400/50 transition-colors shadow-inner">
+                                                                    {p.photoUrl ? (
+                                                                        <img src={p.photoUrl} alt={`${p.firstName} ${p.lastName}`} className="w-full h-full object-cover group-hover:scale-110 duration-300" />
+                                                                    ) : (
+                                                                        <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={96} height={96} className="opacity-90 group-hover:opacity-100 transition-opacity group-hover:scale-110 duration-300" />
+                                                                    )}
+                                                                </div>
+                                                                <h3 className="font-bold text-center group-hover:text-emerald-400 transition-colors text-sm">{p.firstName} {p.lastName}</h3>
+                                                                <p className="text-[10px] text-muted-foreground mt-0.5 text-center">{p.team?.name}</p>
+                                                                <div className="flex gap-2 items-center mt-2">
+                                                                    {p.number && <span className="text-sm text-muted-foreground font-black text-center w-6">#{p.number}</span>}
+                                                                    <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 text-xs font-bold rounded">
+                                                                        {p.position || 'INF'}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </PlayerHoverCard>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
-                                    </div>
-                                </PlayerHoverCard>
-                            ))}
+                                    )}
+                                </>
+                            )}
                         </div>
                     )}
 
@@ -878,6 +1011,86 @@ export default function TeamProfilePage() {
                         </div>
                     )}
                 </div>
+                {/* MODAL AÑADIR JUGADOR VERIFICADO */}
+                {showAddVerifiedModal && (
+                    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in-up">
+                        <div className="bg-surface w-full max-w-lg rounded-3xl shadow-2xl border border-muted/30 overflow-hidden flex flex-col">
+                            <div className="p-6 border-b border-muted/20 flex justify-between items-center bg-muted/5 shrink-0">
+                                <div>
+                                    <h2 className="text-xl font-black text-foreground">Añadir Jugador Verificado</h2>
+                                    <p className="text-xs text-muted-foreground mt-0.5">Busca un jugador verificado para invitar a este equipo</p>
+                                </div>
+                                <button onClick={() => setShowAddVerifiedModal(false)} className="w-10 h-10 rounded-full bg-muted/10 hover:bg-muted/20 flex items-center justify-center text-muted-foreground transition-colors">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                            <div className="p-6 space-y-4 overflow-y-auto max-h-[70vh]">
+                                {/* Search input */}
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                    <input
+                                        autoFocus
+                                        type="text"
+                                        placeholder="Buscar por nombre..."
+                                        value={verifiedSearch}
+                                        onChange={e => handleVerifiedSearch(e.target.value)}
+                                        className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-xl pl-10 pr-4 py-3 outline-none focus:border-emerald-500/50 transition-colors"
+                                    />
+                                    {searchingVerified && (
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                                    )}
+                                </div>
+
+                                {/* Results */}
+                                {verifiedSearch.trim().length >= 2 && verifiedResults.length === 0 && !searchingVerified && (
+                                    <div className="text-center py-8 text-muted-foreground text-sm">
+                                        No se encontraron jugadores verificados.
+                                    </div>
+                                )}
+                                {verifiedResults.length > 0 && (
+                                    <div className="space-y-2">
+                                        {verifiedResults.map((p: any) => (
+                                            <div key={p.id} className="flex items-center gap-3 p-3 bg-background border border-muted/20 rounded-xl hover:border-emerald-500/30 transition-colors">
+                                                <div className="w-10 h-10 rounded-full bg-muted/10 overflow-hidden shrink-0 flex items-center justify-center font-black text-sm border border-muted/20">
+                                                    {p.photoUrl ? (
+                                                        <img src={p.photoUrl} alt="" className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        `${p.firstName[0]}${p.lastName[0]}`
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <p className="text-sm font-bold text-foreground truncate">{p.firstName} {p.lastName}</p>
+                                                        <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                                    </div>
+                                                    <p className="text-[11px] text-muted-foreground truncate">
+                                                        {p.position && <span className="font-bold">{p.position} · </span>}
+                                                        {p.team?.name || 'Sin equipo'}
+                                                        {p.team?.tournament && <span> · {p.team.tournament.name}</span>}
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleAddToRoster(p)}
+                                                    disabled={addingRoster === p.id}
+                                                    className="shrink-0 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
+                                                >
+                                                    {addingRoster === p.id ? '...' : 'Agregar'}
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {verifiedSearch.trim().length < 2 && (
+                                    <div className="text-center py-6 text-muted-foreground text-xs font-medium">
+                                        Escribe al menos 2 caracteres para buscar
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* MODAL EDITAR PERFIL EQUIPO */}
                 {isEditingProfile && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in-up">

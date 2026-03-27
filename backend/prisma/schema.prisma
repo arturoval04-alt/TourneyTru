@@ -33,6 +33,7 @@ model User {
   organizerRequestedAt    DateTime? @map("organizer_requested_at")
   // Scorekeeper: liga a la que pertenece
   scorekeeperLeagueId     String? @map("scorekeeper_league_id")
+  forcePasswordChange     Boolean @default(false) @map("force_password_change")
   createdAt                   DateTime              @default(now()) @map("created_at")
   updatedAt                   DateTime              @default(now()) @updatedAt @map("updated_at")
   leaguesAdmin         League[]              @relation("LeagueAdmin")

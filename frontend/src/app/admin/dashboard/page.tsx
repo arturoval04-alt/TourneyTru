@@ -38,6 +38,7 @@ export default function AdminDashboard() {
         category?: string;
         description?: string;
         logoUrl?: string;
+        rulesType?: string;
         league?: { name: string; id: string };
     }
 
@@ -86,6 +87,7 @@ export default function AdminDashboard() {
         scorekeeperLeagueId?: string | null;
         usedLeagues?: number;
         usedTournaments?: number;
+        assignedTournaments?: { id: string; name: string }[];
     }
 
     // -- State: Navigation --
@@ -194,7 +196,7 @@ export default function AdminDashboard() {
     const [editingPlayer, setEditingPlayer] = useState<any>(null);
 
     // -- Form: Create User --
-    const [userForm, setUserForm] = useState({ name: '', email: '', password: '', role: 'general', tournament_id: '' });
+    const [userForm, setUserForm] = useState({ name: '', email: '', password: '', role: 'general', tournament_id: '', tournament_ids: [] as string[] });
 
     // -- Form: Create / Edit League --
     const [showLeagueModal, setShowLeagueModal] = useState(false);
@@ -282,7 +284,12 @@ export default function AdminDashboard() {
             const leagueId = currentUser?.scorekeeperLeagueId ?? undefined;
             fetchGames(undefined, leagueId);
             fetchTournaments(undefined, leagueId);
-            // No necesita ligas (la pestaña está oculta para scorekeeper)
+        } else if (userRole === 'presi') {
+            // Presi: ve los torneos a los que fue asignado (revisado en el backend con su userId)
+            const adminId = currentUser?.id;
+            fetchGames(adminId);
+            fetchTournaments(adminId);
+            fetchMyScorekeepers();
         }
     }, [userRole]);
 
@@ -397,7 +404,7 @@ export default function AdminDashboard() {
                     leagueId: ''
                 });
                 fetchTournaments(
-                    userRole === 'organizer' ? currentUser?.id : undefined,
+                    (userRole === 'organizer' || userRole === 'presi') ? currentUser?.id : undefined,
                     userRole === 'scorekeeper' ? (currentUser?.scorekeeperLeagueId ?? undefined) : undefined,
                 );
                 router.push(`/torneos/${newTourn.id}`);
@@ -447,7 +454,7 @@ export default function AdminDashboard() {
                 leagueId: ''
             });
             fetchTournaments(
-                userRole === 'organizer' ? currentUser?.id : undefined,
+                (userRole === 'organizer' || userRole === 'presi') ? currentUser?.id : undefined,
                 userRole === 'scorekeeper' ? (currentUser?.scorekeeperLeagueId ?? undefined) : undefined,
             );
         } catch (err) {
@@ -464,7 +471,7 @@ export default function AdminDashboard() {
             location_city: tourn.locationCity || '',
             location_state: tourn.locationState || '',
             location_country: tourn.locationCountry || 'México',
-            sport: tourn.sport || (tourn.branch === 'Softbol' ? 'Softbol' : 'Béisbol'),
+            sport: tourn.rulesType === 'softball_7' ? 'Softbol' : 'Béisbol',
             branch: tourn.branch || 'Varonil',
             category: tourn.category || 'Libre',
             description: tourn.description || '',
@@ -579,21 +586,35 @@ export default function AdminDashboard() {
         setSaving(true);
 
         try {
-            // Organizer: crea scorekeeper via endpoint dedicado
-            if (userRole === 'organizer') {
-                const myLeague = leagues.find(l => l.adminId === currentUser?.id);
-                if (!myLeague) { alert('No tienes una liga activa.'); setSaving(false); return; }
+            // Organizer p Presi: crea personal via endpoint dedicado
+            if (userRole === 'organizer' || userRole === 'presi') {
+                const myLeague = leagues.find(l => l.adminId === currentUser?.id) || (userRole === 'presi' && currentUser?.scorekeeperLeagueId ? { id: currentUser.scorekeeperLeagueId } : null);
+                if (!myLeague) { alert('No tienes una liga activa vinculada.'); setSaving(false); return; }
                 const nameParts = userForm.name.trim().split(/\s+/);
-                await api.post('/users/scorekeeper', {
-                    email: userForm.email,
-                    password: userForm.password,
-                    firstName: nameParts[0] || '',
-                    lastName: nameParts.slice(1).join(' ') || ' ',
-                    leagueId: myLeague.id,
-                });
-                alert('Scorekeeper creado correctamente');
+                
+                if (userForm.role === 'presi' && userRole === 'organizer') {
+                    await api.post('/users/president', {
+                        email: userForm.email,
+                        password: userForm.password,
+                        firstName: nameParts[0] || '',
+                        lastName: nameParts.slice(1).join(' ') || ' ',
+                        leagueId: myLeague.id,
+                        tournamentIds: userForm.tournament_ids,
+                    });
+                    alert('Presidente de Liga creado correctamente');
+                } else {
+                    await api.post('/users/scorekeeper', {
+                        email: userForm.email,
+                        password: userForm.password,
+                        firstName: nameParts[0] || '',
+                        lastName: nameParts.slice(1).join(' ') || ' ',
+                        leagueId: myLeague.id,
+                    });
+                    alert('Scorekeeper creado correctamente');
+                }
+                
                 setShowUserModal(false);
-                setUserForm({ name: '', email: '', password: '', role: 'general', tournament_id: '' });
+                setUserForm({ name: '', email: '', password: '', role: 'general', tournament_id: '', tournament_ids: [] });
                 fetchMyScorekeepers();
                 return;
             }
@@ -612,7 +633,7 @@ export default function AdminDashboard() {
             });
             alert('Cuenta Registrada Satisfactoriamente');
             setShowUserModal(false);
-            setUserForm({ name: '', email: '', password: '', role: 'general', tournament_id: '' });
+            setUserForm({ name: '', email: '', password: '', role: 'general', tournament_id: '', tournament_ids: [] });
             fetchUsers();
         } catch (err: any) {
             console.error('[CreateUser Error]', err);
@@ -803,7 +824,7 @@ export default function AdminDashboard() {
             { id: 'equipos', label: 'Equipos', icon: '🛡️', roles: null },
             { id: 'jugadores', label: 'Jugadores', icon: '⚾', roles: null },
             { id: 'juegos', label: 'Juegos & Stats', icon: '📊', roles: null },
-            { id: 'usuarios', label: userRole === 'organizer' ? 'Mis Scorekeepers' : 'Control de Accesos', icon: '🔑', roles: ['admin', 'organizer'] },
+            { id: 'usuarios', label: (userRole === 'organizer' || userRole === 'presi') ? 'Mi Personal' : 'Control de Accesos', icon: '🔑', roles: ['admin', 'organizer', 'presi'] },
             { id: 'plan', label: 'Mi Plan', icon: '💎', roles: ['organizer'] },
         ];
         return (
@@ -1122,7 +1143,7 @@ export default function AdminDashboard() {
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
                                                         <button className="text-primary hover:underline font-bold text-xs mr-4" onClick={() => router.push(`/torneos/${t.id}`)}>Ver Perfil</button>
-                                                        {(userRole === 'admin' || userRole === 'organizer') && (
+                                                        {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (
                                                             <button className="text-muted-foreground hover:text-foreground font-bold text-xs" onClick={() => handleEditTourn(t)}>Editar</button>
                                                         )}
                                                     </td>
@@ -1150,8 +1171,8 @@ export default function AdminDashboard() {
                                             <option value="">Filtrar por Torneo...</option>
                                             {tournaments.map((t: TournamentData) => <option key={t.id} value={t.id}>{t.name} ({t.season})</option>)}
                                         </select>
-                                        {(userRole === 'admin' || userRole === 'organizer') && (() => {
-                                            const maxTeams = currentUser?.maxTeamsPerTournament ?? (userRole === 'admin' ? 999 : 0);
+                                        {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (() => {
+                                            const maxTeams = (userRole === 'admin' || userRole === 'presi') ? 999 : (currentUser?.maxTeamsPerTournament ?? 0);
                                             const atTeamQuota = userRole !== 'admin' && !!selectedTournament && teams.length >= maxTeams;
                                             return (
                                                 <button
@@ -1213,7 +1234,7 @@ export default function AdminDashboard() {
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
                                                         <button className="text-primary hover:underline font-bold text-xs mr-4" onClick={() => router.push(`/equipos/${team.id}`)}>Ver Perfil</button>
-                                                        {(userRole === 'admin' || userRole === 'organizer') && (
+                                                        {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (
                                                             <button className="text-muted-foreground hover:text-foreground font-bold text-xs">Editar</button>
                                                         )}
                                                     </td>
@@ -1250,8 +1271,8 @@ export default function AdminDashboard() {
                                             <option value="">2. Equipo...</option>
                                             {teams.map((t: TeamData) => <option key={t.id} value={t.id}>{t.name}</option>)}
                                         </select>
-                                        {(userRole === 'admin' || userRole === 'organizer') && (() => {
-                                            const maxPlayers = currentUser?.maxPlayersPerTeam ?? (userRole === 'admin' ? 999 : 25);
+                                        {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (() => {
+                                            const maxPlayers = (userRole === 'admin' || userRole === 'presi') ? 999 : (currentUser?.maxPlayersPerTeam ?? 25);
                                             const atPlayerQuota = userRole !== 'admin' && !!selectedTeam && players.length >= maxPlayers;
                                             return (
                                                 <button
@@ -1316,7 +1337,7 @@ export default function AdminDashboard() {
                                                         <Link href={`/torneos/${selectedTournament}/jugadores/${player.id}`} className="text-muted-foreground hover:text-foreground font-bold text-xs mr-4 transition-colors">
                                                             Ficha
                                                         </Link>
-                                                        {(userRole === 'admin' || userRole === 'organizer') && (
+                                                        {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (
                                                             <button
                                                                 onClick={() => handleEditPlayer(player)}
                                                                 className="text-blue-500/70 hover:text-blue-500 font-bold text-xs transition-colors"
@@ -1509,30 +1530,30 @@ export default function AdminDashboard() {
                         )}
 
                         {/* TAB: USUARIOS — CONTROL DE ACCESOS (admin) / MIS SCOREKEEPERS (organizer) */}
-                        {activeTab === 'usuarios' && userRole === 'organizer' && (
+                        {activeTab === 'usuarios' && (userRole === 'organizer' || userRole === 'presi') && (
                             <section className="animate-fade-in-up">
                                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3">
                                     <h2 className="text-xl font-black text-foreground flex items-center gap-2">
-                                        <span className="w-2 h-4 bg-primary rounded-full"></span> Mis Scorekeepers
+                                        <span className="w-2 h-4 bg-primary rounded-full"></span> Mi Personal
                                     </h2>
                                     <button
                                         onClick={() => setShowUserModal(true)}
                                         className="px-5 py-2 bg-primary hover:bg-primary-light text-white font-bold rounded-lg transition shadow-md hover:shadow-primary/40 text-sm flex items-center gap-2 shrink-0"
                                     >
-                                        + Nuevo Scorekeeper
+                                        + Nuevo Personal
                                     </button>
                                 </div>
 
                                 {myScorekeepers.length === 0 ? (
                                     <div className="bg-surface border border-muted/30 rounded-2xl p-12 text-center">
                                         <p className="text-4xl mb-3">🔑</p>
-                                        <p className="text-muted-foreground mb-2 font-bold">No tienes scorekeepers todavía.</p>
-                                        <p className="text-sm text-muted-foreground mb-6">Crea una cuenta de scorekeeper para que puedan llevar el marcador en tus torneos.</p>
+                                        <p className="text-muted-foreground mb-2 font-bold">No tienes personal agregado todavía.</p>
+                                        <p className="text-sm text-muted-foreground mb-6">Agrega presidentes de liga o scorekeepers para delegar responsabilidades.</p>
                                         <button
                                             onClick={() => setShowUserModal(true)}
                                             className="px-5 py-2 bg-primary hover:bg-primary-light text-white font-bold rounded-lg transition text-sm"
                                         >
-                                            + Crear Scorekeeper
+                                            + Agregar Personal
                                         </button>
                                     </div>
                                 ) : (
@@ -1542,9 +1563,20 @@ export default function AdminDashboard() {
                                                 <div>
                                                     <div className="flex items-center gap-2 mb-1">
                                                         <span className="font-black text-foreground">{u.firstName} {u.lastName}</span>
-                                                        <span className="bg-primary/10 text-primary px-2 py-0.5 rounded text-xs font-bold uppercase">ScoreKeeper</span>
+                                                        <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${u.role === 'presi' ? 'bg-amber-500/10 text-amber-500' : 'bg-primary/10 text-primary'}`}>
+                                                            {u.role === 'presi' ? 'Presidente' : 'ScoreKeeper'}
+                                                        </span>
                                                     </div>
-                                                    <div className="text-xs text-muted-foreground">{u.email}</div>
+                                                    <div className="text-xs text-muted-foreground">
+                                                        {u.email}
+                                                        {u.role === 'presi' && u.assignedTournaments && u.assignedTournaments.length > 0 && (
+                                                            <div className="mt-1 flex flex-wrap gap-1">
+                                                                {u.assignedTournaments.map((t: any) => (
+                                                                    <span key={t.id} className="text-[10px] border border-muted/30 px-1.5 py-0.5 rounded bg-muted/10">{t.name}</span>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <div className="w-2 h-2 rounded-full bg-green-500 shrink-0" title="Activo" />
                                             </div>
@@ -1766,6 +1798,24 @@ export default function AdminDashboard() {
                                                             >
                                                                 Editar
                                                             </button>
+                                                            {currentUser?.id !== u.id && (
+                                                                <button
+                                                                    onClick={async () => {
+                                                                        if (!window.confirm(`¿Seguro que deseas eliminar la cuenta de ${u.firstName} ${u.lastName}? Esta acción no se puede deshacer.`)) return;
+                                                                        try {
+                                                                            await api.delete(`/users/${u.id}`);
+                                                                            setUsers(prev => prev.filter(x => x.id !== u.id));
+                                                                        } catch (err) {
+                                                                            console.error(err);
+                                                                            alert('Error al eliminar la cuenta.');
+                                                                        }
+                                                                    }}
+                                                                    className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 font-bold text-xs rounded-lg transition border border-red-500/30"
+                                                                    title="Eliminar cuenta"
+                                                                >
+                                                                    🗑️
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     </div>
                                                     {/* Quota info (only for organizer/admin) */}
@@ -1929,20 +1979,22 @@ export default function AdminDashboard() {
                             Editar Torneo
                         </h2>
                         <form onSubmit={handleUpdateTournament} className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">Liga Perteneciente</label>
-                                <select 
-                                    required 
-                                    value={tournForm.leagueId} 
-                                    onChange={e => setTournForm({ ...tournForm, leagueId: e.target.value })} 
-                                    className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition"
-                                >
-                                    <option value="">-- Seleccionar Liga --</option>
-                                    {leagues.map(l => (
-                                        <option key={l.id} value={l.id}>{l.name}</option>
-                                    ))}
-                                </select>
-                            </div>
+                            {(userRole === 'admin' || userRole === 'organizer') && (
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">Liga Perteneciente</label>
+                                    <select 
+                                        required 
+                                        value={tournForm.leagueId} 
+                                        onChange={e => setTournForm({ ...tournForm, leagueId: e.target.value })} 
+                                        className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition"
+                                    >
+                                        <option value="">-- Seleccionar Liga --</option>
+                                        {leagues.map(l => (
+                                            <option key={l.id} value={l.id}>{l.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
                             <div>
                                 <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Nombre del Torneo</label>
                                 <input required type="text" value={tournForm.name} onChange={e => setTournForm({ ...tournForm, name: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Liga de Verano MTY 2026" />
@@ -2227,11 +2279,11 @@ export default function AdminDashboard() {
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
                         <h2 className="text-2xl font-black text-foreground mb-2 uppercase tracking-tight pb-4 border-b border-muted/20">
-                            {userRole === 'organizer' ? 'Nuevo Scorekeeper' : 'Alta de Credencial'}
+                            {userRole === 'organizer' ? 'Nuevo Personal' : 'Alta de Credencial'}
                         </h2>
                         {userRole === 'organizer' && (
                             <p className="text-xs text-muted-foreground mb-4">
-                                El scorekeeper podrá llevar el marcador en cualquier torneo de tu liga.
+                                Un Scorekeeper podrá llevar marcadores de juegos, mientras que un Presidente de Liga administra torneos específicos.
                             </p>
                         )}
                         <form onSubmit={handleCreateUser} className="space-y-4">
@@ -2260,9 +2312,18 @@ export default function AdminDashboard() {
                                         </select>
                                     </div>
                                 )}
+                                {userRole === 'organizer' && (
+                                    <div className="flex-1">
+                                        <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Tipo de Personal</label>
+                                        <select value={userForm.role} onChange={e => setUserForm({ ...userForm, role: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition">
+                                            <option value="scorekeeper">ScoreKeeper (Anotador)</option>
+                                            <option value="presi">Presidente (Administrador)</option>
+                                        </select>
+                                    </div>
+                                )}
                             </div>
 
-                            {userRole === 'admin' && userForm.role === 'scorekeeper' && (
+                            {(userRole === 'admin' && userForm.role === 'scorekeeper') && (
                                 <div className="animate-fade-in-up mt-2 p-4 bg-primary/5 border border-primary/20 rounded-xl">
                                     <label className="block text-[10px] font-black text-primary mb-2 uppercase text-center w-full">ASIGNAR A TORNEO ESPECÍFICO</label>
                                     <select
@@ -2278,8 +2339,33 @@ export default function AdminDashboard() {
                                 </div>
                             )}
 
+                            {userForm.role === 'presi' && (
+                                <div className="animate-fade-in-up mt-2 p-4 bg-primary/5 border border-primary/20 rounded-xl">
+                                    <label className="block text-[10px] font-black text-primary mb-2 uppercase text-center w-full">VINCULAR A TORNEOS (PRESIDENTE)</label>
+                                    <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                                        {tournaments.map((t: TournamentData) => (
+                                            <label key={t.id} className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={userForm.tournament_ids.includes(t.id)}
+                                                    onChange={(e) => {
+                                                        const newVal = e.target.checked 
+                                                            ? [...userForm.tournament_ids, t.id]
+                                                            : userForm.tournament_ids.filter(id => id !== t.id);
+                                                        setUserForm({...userForm, tournament_ids: newVal});
+                                                    }}
+                                                    className="rounded border-muted/40 text-primary focus:ring-primary bg-background/50 outline-none"
+                                                />
+                                                {t.name} ({t.season})
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground mt-3 text-center">Selecciona los torneos que este Presidente podrá administrar.</p>
+                                </div>
+                            )}
+
                             <button type="submit" disabled={saving} className={`w-full py-3 mt-4 font-bold rounded-xl transition shadow-lg ${saving ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-primary/20 cursor-pointer active:scale-95'}`}>
-                                {saving ? 'Creando...' : userRole === 'organizer' ? 'Crear Scorekeeper' : 'Generar Credencial'}
+                                {saving ? 'Cargando...' : userRole === 'organizer' ? 'Agregar Personal' : 'Generar Credencial'}
                             </button>
                         </form>
                     </div>

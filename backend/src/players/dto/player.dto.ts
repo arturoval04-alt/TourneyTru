@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt, IsUUID, IsIn, MaxLength, Min, Max } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsUUID, IsIn, IsBoolean, MaxLength, Min, Max } from 'class-validator';
 
 export class CreatePlayerDto {
     @IsString()
@@ -73,4 +73,8 @@ export class UpdatePlayerDto {
     @IsOptional()
     @IsUUID()
     teamId?: string;
+
+    @IsOptional()
+    @IsBoolean()
+    isVerified?: boolean;
 }

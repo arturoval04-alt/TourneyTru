@@ -70,6 +70,13 @@ export class AuthController {
         return this.authService.resetPassword(dto.token, dto.newPassword);
     }
 
+    @Post('force-change-password')
+    @UseGuards(JwtAuthGuard)
+    @HttpCode(HttpStatus.OK)
+    forceChangePassword(@Request() req: any, @Body() dto: { newPassword: string }) {
+        return this.authService.forceChangePassword(req.user.id, dto.newPassword);
+    }
+
     @Get('me')
     @UseGuards(JwtAuthGuard)
     @HttpCode(HttpStatus.OK)

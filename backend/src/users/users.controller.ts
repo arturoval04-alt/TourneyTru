@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Post, Body, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Patch, Post, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -16,11 +16,12 @@ export class UsersController {
         return this.usersService.findAll();
     }
 
-    // Organizer: obtener los scorekeepers vinculados a sus ligas
+    // Organizer y Presi: obtener el personal vinculado a sus ligas
     @Get('my-scorekeepers')
-    @Roles('organizer', 'admin')
+    @Roles('organizer', 'admin', 'presi')
     async myScorekeepers(@Request() req: any) {
-        return this.usersService.findScorekeepersByOrganizer(req.user.id);
+        // Un presi también puede ver a los scorekeepers de su liga (u otros presis)
+        return this.usersService.findStaffByOrganizer(req.user.id);
     }
 
     // Admin: cambiar rol y cuotas de un usuario
@@ -41,9 +42,9 @@ export class UsersController {
         return this.usersService.updateAccess(id, dto);
     }
 
-    // Organizador: crear un scorekeeper vinculado a su liga
+    // Organizador y Presi: crear un scorekeeper vinculado a su liga
     @Post('scorekeeper')
-    @Roles('organizer', 'admin')
+    @Roles('organizer', 'admin', 'presi')
     async createScorekeeper(
         @Body() dto: {
             email: string;
@@ -56,6 +57,22 @@ export class UsersController {
         return this.usersService.createScorekeeper(dto);
     }
 
+    // Organizador: crear un Presi vinculado a su liga y torneos específicos
+    @Post('president')
+    @Roles('organizer', 'admin')
+    async createPresident(
+        @Body() dto: {
+            email: string;
+            password: string;
+            firstName: string;
+            lastName: string;
+            leagueId: string;
+            tournamentIds: string[];
+        },
+    ) {
+        return this.usersService.createPresident(dto);
+    }
+
     // Cualquier usuario autenticado puede actualizar su propio perfil
     @Patch('profile')
     async updateProfile(
@@ -63,5 +80,15 @@ export class UsersController {
         @Body() updateDto: { phone?: string; profilePicture?: string },
     ) {
         return this.usersService.updateProfile(req.user.id, updateDto);
+    }
+
+    // Admin: eliminar una cuenta de usuario
+    @Delete(':id')
+    @Roles('admin')
+    async deleteUser(@Param('id') id: string, @Request() req: any) {
+        if (req.user.id === id) {
+            throw new Error('No puedes eliminar tu propia cuenta.');
+        }
+        return this.usersService.deleteUser(id);
     }
 }

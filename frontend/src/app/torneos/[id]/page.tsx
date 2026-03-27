@@ -96,6 +96,7 @@ export default function TournamentProfilePage() {
     const [isAddingTeam, setIsAddingTeam] = useState(false);
 
     const [userRole, setUserRole] = useState<string | null>(null);
+    const [canEdit, setCanEdit] = useState(false);
 
     const [teamForm, setTeamForm] = useState({
         name: '',
@@ -306,8 +307,17 @@ export default function TournamentProfilePage() {
 
     useEffect(() => {
         const user = getUser();
-        setUserRole(user?.role || 'general');
-    }, []);
+        const role = user?.role || 'general';
+        setUserRole(role);
+        if (!user || !tournament) return;
+        if (role === 'admin') { setCanEdit(true); return; }
+        if (role === 'organizer' && tournament.organizers?.some((o: any) => o.user?.id === user.id || o.userId === user.id)) {
+            setCanEdit(true);
+        }
+        if (role === 'presi' && tournament.organizers?.some((o: any) => o.user?.id === user.id || o.userId === user.id)) {
+            setCanEdit(true);
+        }
+    }, [tournament]);
 
     const tabs = [
         { id: "informacion", label: "Información" },
@@ -369,7 +379,7 @@ export default function TournamentProfilePage() {
 
                             {/* Mobile action buttons */}
                             <div className="absolute top-16 right-4 md:hidden flex gap-2 z-30">
-                                {userRole === 'admin' && (
+                                {canEdit && (
                                     <button onClick={() => setIsEditingProfile(true)} className="w-9 h-9 rounded-full border border-white/20 bg-white/10 flex items-center justify-center text-white/70" title="Configuración">
                                         <Settings className="w-4 h-4" />
                                     </button>
@@ -403,7 +413,7 @@ export default function TournamentProfilePage() {
 
                                     {/* Desktop action buttons */}
                                     <div className="hidden md:flex gap-3 shrink-0">
-                                        {userRole === 'admin' && (
+                                        {canEdit && (
                                             <button onClick={() => setIsEditingProfile(true)} className="w-10 h-10 rounded-full border border-white/20 bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/70 hover:text-white transition-colors" title="Configuración">
                                                 <Settings className="w-5 h-5" />
                                             </button>
@@ -434,7 +444,7 @@ export default function TournamentProfilePage() {
                             </div>
 
                             {/* Quick Actions Dropdown */}
-                            {(userRole === 'admin' || userRole === 'scorekeeper') && (
+                            {(canEdit || userRole === 'scorekeeper') && (
                                 <div className="relative ml-4 shrink-0 py-2">
                                     <button
                                         onClick={() => setIsActionsOpen(!isActionsOpen)}
@@ -450,7 +460,7 @@ export default function TournamentProfilePage() {
                                                 <Calendar className="w-4 h-4 text-primary" />
                                                 Crear Nuevo Partido
                                             </button>
-                                            {userRole === 'admin' && (
+                                            {canEdit && (
                                                 <>
                                                     <button onClick={() => { setIsAddingTeam(true); setIsActionsOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition-all text-xs font-bold">
                                                         <Users className="w-4 h-4 text-primary" />
@@ -491,7 +501,7 @@ export default function TournamentProfilePage() {
                                     <section className="bg-surface border border-muted/30 rounded-2xl p-6 shadow-sm">
                                         <div className="flex justify-between items-center mb-4">
                                             <h3 className="text-lg font-bold text-foreground">Descripción</h3>
-                                            {userRole === 'admin' && (
+                                            {canEdit && (
                                                 <button onClick={() => setIsEditingProfile(true)} className="text-[10px] font-bold text-primary hover:underline">Editar</button>
                                             )}
                                         </div>
@@ -548,7 +558,7 @@ export default function TournamentProfilePage() {
                                                                 </p>
                                                             </div>
                                                         </div>
-                                                        {userRole === 'admin' && (
+                                                        {canEdit && (
                                                             <button
                                                                 onClick={() => setLineupGameId(game.id)}
                                                                 className="flex-shrink-0 text-[10px] font-bold px-2.5 py-1.5 rounded-lg bg-blue-900/40 border border-blue-700 text-blue-300 hover:bg-blue-800/60 transition-colors whitespace-nowrap"
@@ -643,7 +653,7 @@ export default function TournamentProfilePage() {
                                     <section className="bg-surface border border-muted/30 rounded-2xl p-6 shadow-sm">
                                         <div className="flex justify-between items-center mb-6">
                                             <h3 className="text-lg font-bold text-foreground">Organizadores</h3>
-                                            {userRole === 'admin' && (
+                                            {canEdit && (
                                                 <button
                                                     onClick={async () => {
                                                         const email = window.prompt('Correo del nuevo organizador:');
@@ -678,7 +688,7 @@ export default function TournamentProfilePage() {
                                                             <p className="text-xs text-muted-foreground">{org.user.email}</p>
                                                         </div>
                                                     </div>
-                                                    {userRole === 'admin' && (
+                                                    {canEdit && (
                                                         <button onClick={() => handleRemoveOrganizer(org.id)} className="opacity-0 group-hover/org:opacity-100 p-2 text-muted-foreground hover:text-red-500 transition-all">
                                                             <X className="w-4 h-4" />
                                                         </button>
@@ -691,7 +701,7 @@ export default function TournamentProfilePage() {
                                     <section className="bg-surface border border-muted/30 rounded-2xl p-6 shadow-sm">
                                         <div className="flex justify-between items-center mb-6">
                                             <h3 className="text-lg font-bold text-foreground">Campos</h3>
-                                            {userRole === 'admin' && (
+                                            {canEdit && (
                                                 <button onClick={() => setIsAddingField(true)} className="text-[10px] font-bold text-primary hover:underline">+ Añadir</button>
                                             )}
                                         </div>
@@ -716,7 +726,7 @@ export default function TournamentProfilePage() {
                                                             )}
                                                         </div>
                                                     </div>
-                                                    {userRole === 'admin' && (
+                                                    {canEdit && (
                                                         <button onClick={() => handleRemoveField(field.id)} className="opacity-0 group-hover/field:opacity-100 p-2 text-muted-foreground hover:text-red-500 transition-all">
                                                             <X className="w-4 h-4" />
                                                         </button>

@@ -37,10 +37,15 @@ export class TournamentsService {
 
     async findAll(adminId?: string, leagueId?: string) {
         const where: any = {};
-        if (adminId) where.league = { adminId };
         if (leagueId) where.leagueId = leagueId;
+        if (adminId) {
+            where.OR = [
+                { league: { adminId } },
+                { organizers: { some: { userId: adminId } } }
+            ];
+        }
         return this.prisma.tournament.findMany({
-            where: (adminId || leagueId) ? where : undefined,
+            where: Object.keys(where).length > 0 ? where : undefined,
             include: {
                 league: true,
                 _count: { select: { teams: true, games: true } },

@@ -589,6 +589,17 @@ export class GamesService {
 
         const initTeamBoxscore = (team: any, lineups: any[]): any => {
             const teamLineup = lineups.filter(l => l.teamId === team.id);
+
+            // Determine Flex Batting Order
+            const startingDH = teamLineup.find(l => l.isStarter && this.normalizePosition(l.position) === 'DH');
+            let flexBattingOrder: number | null = null;
+            if (startingDH && startingDH.dhForPosition) {
+                const flexStarter = teamLineup.find(l => l.isStarter && this.normalizePosition(l.position) === this.normalizeDefensivePosition(startingDH.dhForPosition));
+                if (flexStarter) {
+                    flexBattingOrder = flexStarter.battingOrder;
+                }
+            }
+
             return {
                 teamId: team.id,
                 teamName: team.name,
@@ -597,23 +608,39 @@ export class GamesService {
                 totalErrors: 0,
                 runsByInning: {},
                 lastBatterByInning: {}, // Track who was the last to have a main play in each inning
-                lineup: teamLineup.map(l => ({
-                    playerId: l.player.id,
-                    firstName: l.player.firstName,
-                    lastName: l.player.lastName,
-                    position: l.position,
-                    battingOrder: l.battingOrder,
-                    atBats: 0,
-                    runs: 0,
-                    hits: 0,
-                    rbi: 0,
-                    bb: 0,
-                    so: 0,
-                    pitchingIPOuts: 0,
-                    pitchingSO: 0,
-                    pitchingBB: 0,
-                    plays: {}
-                }))
+                lineup: teamLineup.map(l => {
+                    let entryInning: number | undefined = undefined;
+                    if (!l.isStarter) {
+                        const lTime = new Date(l.createdAt).getTime();
+                        const nextPlay = game.plays.find((p: any) => new Date(p.timestamp || p.createdAt).getTime() >= lTime);
+                        if (nextPlay) {
+                            entryInning = nextPlay.inning;
+                        } else {
+                            entryInning = game.currentInning || 1;
+                        }
+                    }
+
+                    return {
+                        playerId: l.player.id,
+                        firstName: l.player.firstName,
+                        lastName: l.player.lastName,
+                        position: l.position,
+                        battingOrder: l.battingOrder,
+                        isStarter: l.isStarter,
+                        isFlex: flexBattingOrder !== null && l.battingOrder === flexBattingOrder,
+                        entryInning,
+                        atBats: 0,
+                        runs: 0,
+                        hits: 0,
+                        rbi: 0,
+                        bb: 0,
+                        so: 0,
+                        pitchingIPOuts: 0,
+                        pitchingSO: 0,
+                        pitchingBB: 0,
+                        plays: {}
+                    };
+                })
             };
         };
 

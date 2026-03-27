@@ -115,6 +115,7 @@ export class AuthService {
                 profilePicture: user.profilePicture,
                 role: user.role.name,
                 scorekeeperLeagueId: (user as any).scorekeeperLeagueId ?? null,
+                forcePasswordChange: (user as any).forcePasswordChange ?? false,
                 maxLeagues: (user as any).maxLeagues ?? 0,
                 maxTournamentsPerLeague: (user as any).maxTournamentsPerLeague ?? 0,
                 maxTeamsPerTournament: (user as any).maxTeamsPerTournament ?? 0,
@@ -191,6 +192,18 @@ export class AuthService {
             },
         });
 
+        return { message: 'Contraseña actualizada correctamente.' };
+    }
+
+    async forceChangePassword(userId: string, newPassword: string): Promise<{ message: string }> {
+        const passwordHash = await bcrypt.hash(newPassword, 12);
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: {
+                passwordHash,
+                forcePasswordChange: false,
+            },
+        });
         return { message: 'Contraseña actualizada correctamente.' };
     }
 

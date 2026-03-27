@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
@@ -75,12 +76,17 @@ export default function LoginPage() {
                 maxTeamsPerTournament: data.user.maxTeamsPerTournament ?? 0,
                 maxPlayersPerTeam: data.user.maxPlayersPerTeam ?? 25,
                 planLabel: data.user.planLabel ?? 'public',
+                forcePasswordChange: data.user.forcePasswordChange ?? false,
             }, {
                 accessToken: data.accessToken,
                 refreshToken: data.refreshToken,
             });
-            const dashboardRoles = ['admin', 'organizer', 'scorekeeper'];
-            router.push(dashboardRoles.includes(data.user.role) ? "/admin/dashboard" : "/");
+            const dashboardRoles = ['admin', 'organizer', 'scorekeeper', 'presi'];
+            if (data.user.forcePasswordChange) {
+                router.push("/change-password");
+            } else {
+                router.push(dashboardRoles.includes(data.user.role) ? "/admin/dashboard" : "/");
+            }
         } catch (err: any) {
             const msg = err?.response?.data?.message;
             setError(msg === "Invalid credentials" || msg === "Unauthorized"
@@ -121,12 +127,8 @@ export default function LoginPage() {
                 transition={{ duration: 0.5 }}>
 
                 {/* Brand */}
-                <div className="flex items-center justify-center gap-3 mb-8">
-                    <div className="w-11 h-11 rounded-xl flex items-center justify-center border border-white/15"
-                         style={{ background: 'rgba(70,132,219,0.25)' }}>
-                        <span className="font-black text-white text-lg"
-                              style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>TT</span>
-                    </div>
+                <div className="flex flex-col items-center justify-center gap-3 mb-8">
+                    <Image src="/logo-tt.png" alt="TourneyTru Logo" width={80} height={80} className="object-contain" priority />
                     <span className="text-white/50 text-xs font-bold tracking-[0.3em] uppercase">TourneyTru</span>
                 </div>
 

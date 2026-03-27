@@ -11,6 +11,24 @@ async function main() {
         create: { name: 'admin' }
     });
 
+    await prisma.role.upsert({
+        where: { name: 'organizer' },
+        update: {},
+        create: { name: 'organizer' }
+    });
+
+    await prisma.role.upsert({
+        where: { name: 'presi' },
+        update: {},
+        create: { name: 'presi' }
+    });
+
+    await prisma.role.upsert({
+        where: { name: 'scorekeeper' },
+        update: {},
+        create: { name: 'scorekeeper' }
+    });
+
     const admin = await prisma.user.upsert({
         where: { email: 'admin_seeder@basemanager.test' },
         update: {},

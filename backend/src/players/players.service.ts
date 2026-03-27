@@ -73,8 +73,44 @@ export class PlayersService {
         });
     }
 
+    async searchVerified(query?: string, excludeTeamId?: string) {
+        const where: any = { isVerified: true };
+        if (query && query.trim().length >= 2) {
+            const q = query.trim();
+            where.OR = [
+                { firstName: { contains: q } },
+                { lastName: { contains: q } },
+            ];
+        }
+        if (excludeTeamId) {
+            where.teamId = { not: excludeTeamId };
+        }
+        return this.prisma.player.findMany({
+            where,
+            select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                number: true,
+                position: true,
+                photoUrl: true,
+                isVerified: true,
+                team: {
+                    select: {
+                        id: true,
+                        name: true,
+                        shortName: true,
+                        tournament: { select: { id: true, name: true, season: true } },
+                    },
+                },
+            },
+            orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+            take: 30,
+        });
+    }
+
     async findOne(id: string) {
-        const player = await this.prisma.player.findUnique({
+        const player = await (this.prisma.player.findUnique as any)({
             where: { id },
             include: {
                 team: {
@@ -128,6 +164,13 @@ export class PlayersService {
                         homeTeam: { select: { name: true } },
                         awayTeam: { select: { name: true } },
                     },
+                },
+                rosterEntries: {
+                    include: {
+                        team: { select: { id: true, name: true, shortName: true, logoUrl: true } },
+                        tournament: { select: { id: true, name: true, season: true, logoUrl: true } },
+                    },
+                    orderBy: { joinedAt: 'desc' },
                 },
             },
         });

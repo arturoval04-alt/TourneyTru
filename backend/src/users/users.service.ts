@@ -167,6 +167,7 @@ export class UsersService {
                 lastName: dto.lastName.trim(),
                 roleId: role.id,
                 scorekeeperLeagueId: dto.leagueId,
+                forcePasswordChange: true,
             },
             include: { role: true },
         });
@@ -243,8 +244,8 @@ export class UsersService {
         }
     }
 
-    // Organizer: obtener scorekeepers vinculados a sus ligas
-    async findScorekeepersByOrganizer(organizerId: string) {
+    // Organizer: obtener personal vinculado a sus ligas
+    async findStaffByOrganizer(organizerId: string) {
         const leagues = await this.prisma.league.findMany({
             where: { adminId: organizerId },
             select: { id: true },
@@ -253,8 +254,11 @@ export class UsersService {
         if (leagueIds.length === 0) return [];
 
         const users = await (this.prisma.user as any).findMany({
-            where: { scorekeeperLeagueId: { in: leagueIds } },
-            include: { role: true },
+            where: { 
+                scorekeeperLeagueId: { in: leagueIds },
+                role: { name: { in: ['scorekeeper', 'presi'] } } 
+            },
+            include: { role: true, tournamentOrganizers: { include: { tournament: { select: { name: true } } } } },
         });
         return users.map((u: any) => ({
             id: u.id,
@@ -268,7 +272,64 @@ export class UsersService {
             maxTournamentsPerLeague: u.maxTournamentsPerLeague ?? 0,
             maxTeamsPerTournament: u.maxTeamsPerTournament ?? 0,
             maxPlayersPerTeam: u.maxPlayersPerTeam ?? 25,
+            assignedTournaments: u.tournamentOrganizers?.map((t: any) => ({
+                id: t.tournamentId,
+                name: t.tournament.name,
+            })) || [],
         }));
+    }
+
+    // Admin/Organizer: crear cuenta de Presi vinculada a una liga y torneos específicos
+    async createPresident(dto: {
+        email: string;
+        password: string;
+        firstName: string;
+        lastName: string;
+        leagueId: string;
+        tournamentIds: string[];
+    }) {
+        const existing = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } });
+        if (existing) throw new ForbiddenException('Ya existe una cuenta con ese correo');
+
+        const league = await this.prisma.league.findUnique({ where: { id: dto.leagueId } });
+        if (!league) throw new NotFoundException('Liga no encontrada');
+
+        let role = await this.prisma.role.findUnique({ where: { name: 'presi' } });
+        if (!role) role = await this.prisma.role.create({ data: { name: 'presi' } });
+
+        const passwordHash = await bcrypt.hash(dto.password, 12);
+
+        const user = await (this.prisma.user.create as any)({
+            data: {
+                email: dto.email.toLowerCase(),
+                passwordHash,
+                firstName: dto.firstName.trim(),
+                lastName: dto.lastName.trim(),
+                roleId: role.id,
+                scorekeeperLeagueId: dto.leagueId,
+                forcePasswordChange: true,
+            },
+            include: { role: true },
+        });
+
+        // Loop over tournamentIds and add them to TournamentOrganizer
+        if (dto.tournamentIds && dto.tournamentIds.length > 0) {
+            for (const tourneyId of dto.tournamentIds) {
+                await this.prisma.tournamentOrganizer.create({
+                    data: {
+                        userId: user.id,
+                        tournamentId: tourneyId
+                    }
+                }).catch(() => {});
+            }
+        }
+
+        return {
+            id: user.id,
+            email: user.email,
+            role: user.role.name,
+            scorekeeperLeagueId: user.scorekeeperLeagueId,
+        };
     }
 
     // Verificar cuota antes de crear un recurso
@@ -301,5 +362,17 @@ export class UsersService {
                 });
             }
         }
+    }
+
+    // Eliminar una cuenta de usuario (admin only)
+    async deleteUser(userId: string) {
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
+        if (!user) throw new NotFoundException('Usuario no encontrado');
+
+        // Delete related TournamentOrganizer records first
+        await this.prisma.tournamentOrganizer.deleteMany({ where: { userId } });
+
+        await this.prisma.user.delete({ where: { id: userId } });
+        return { message: 'Cuenta eliminada correctamente.' };
     }
 }

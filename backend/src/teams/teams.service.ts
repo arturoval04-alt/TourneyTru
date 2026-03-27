@@ -68,7 +68,7 @@ export class TeamsService {
     }
 
     async findOne(id: string) {
-        const team = await this.prisma.team.findUnique({
+        const team = await (this.prisma.team.findUnique as any)({
             where: { id },
             include: {
                 tournament: true,
@@ -77,6 +77,21 @@ export class TeamsService {
                         playsAsBatter: true,
                         playsAsPitcher: true,
                     }
+                },
+                rosterEntries: {
+                    where: { isActive: true },
+                    include: {
+                        player: {
+                            select: {
+                                id: true, firstName: true, lastName: true,
+                                number: true, position: true, photoUrl: true,
+                                bats: true, throws: true, isVerified: true,
+                                teamId: true,
+                                team: { select: { id: true, name: true, shortName: true } },
+                            },
+                        },
+                    },
+                    orderBy: { joinedAt: 'asc' },
                 },
                 gamesAsHome: {
                     include: { homeTeam: true, awayTeam: true, winningPitcher: true, mvpBatter1: true, mvpBatter2: true },

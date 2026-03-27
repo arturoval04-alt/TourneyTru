@@ -6,7 +6,7 @@ import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import PlayerAvatar from "@/components/PlayerAvatar";
 import api from "@/lib/api";
-import { ArrowLeft, Trophy, Users, Calendar, Clock, MapPin, ChevronRight, Settings, X } from "lucide-react";
+import { ArrowLeft, Trophy, Users, Calendar, Clock, ChevronRight, Settings, X, CheckCircle } from "lucide-react";
 import ImageUploader from "@/components/ui/ImageUploader";
 import { getUser } from "@/lib/auth";
 
@@ -42,6 +42,17 @@ interface GameEntry {
     isStarter: boolean;
 }
 
+interface RosterHistoryEntry {
+    id: string;
+    teamId: string;
+    tournamentId: string;
+    isActive: boolean;
+    joinedAt: string;
+    leftAt?: string | null;
+    team: { id: string; name: string; shortName?: string; logoUrl?: string };
+    tournament: { id: string; name: string; season: string; logoUrl?: string };
+}
+
 interface PlayerData {
     id: string;
     firstName: string;
@@ -51,12 +62,14 @@ interface PlayerData {
     bats: string | null;
     throws: string | null;
     photoUrl: string | null;
+    isVerified: boolean;
     team: {
         id: string; name: string; shortName?: string; logoUrl?: string;
         tournament: Tournament | null;
     };
     playerStats: PlayerStat[];
     lineupEntries: GameEntry[];
+    rosterEntries?: RosterHistoryEntry[];
 }
 
 // ─── Stat helpers ──────────────────────────────────────────────────────────────
@@ -173,6 +186,9 @@ export default function PlayerProfilePage() {
     const [canEdit, setCanEdit] = useState(false);
     const [isEditingPlayer, setIsEditingPlayer] = useState(false);
     const [playerForm, setPlayerForm] = useState({ firstName: '', lastName: '', number: '', position: '', bats: 'R', throws: 'R', photoUrl: '' });
+    const [statsTournamentFilter, setStatsTournamentFilter] = useState<string | null>(null);
+    const [gamesTournamentFilter, setGamesTournamentFilter] = useState<string | null>(null);
+    const [statsType, setStatsType] = useState<'bateo' | 'pitcheo'>('bateo');
 
     useEffect(() => {
         const fetchData = async () => {
@@ -193,7 +209,9 @@ export default function PlayerProfilePage() {
                 if (p?.team?.tournament?.id) {
                     const { data: t } = await api.get(`/torneos/${p.team.tournament.id}`).catch(() => ({ data: null }));
                     if (t?.organizers?.some((o: any) => o.user?.id === user.id || o.userId === user.id)) {
-                        setCanEdit(true);
+                        if (user.role === 'organizer' || user.role === 'presi') {
+                            setCanEdit(true);
+                        }
                     }
                 }
             } catch (err) {
@@ -326,6 +344,47 @@ export default function PlayerProfilePage() {
         .filter((e, i, arr) => arr.findIndex(x => x.game.id === e.game.id) === i)
         .sort((a, b) => new Date(b.game.scheduledDate).getTime() - new Date(a.game.scheduledDate).getTime());
 
+    // Unique tournaments for filters
+    const gameTournaments = Array.from(
+        new Map(player.lineupEntries.filter(e => e.game.tournament).map(e => [e.game.tournament!.id, e.game.tournament!])).values()
+    );
+    const statTournaments = Array.from(
+        new Map(player.playerStats.filter(s => s.tournament).map(s => [s.tournament!.id, s.tournament!])).values()
+    );
+
+    // Stats when a specific tournament is selected — use playerStats (not computedStats)
+    const filteredStatsTotals = statsTournamentFilter
+        ? aggregateStats(player.playerStats.filter(s => s.tournamentId === statsTournamentFilter))
+        : null;
+
+    const fAB = filteredStatsTotals?.atBats ?? displayAB;
+    const fH = filteredStatsTotals?.hits ?? displayH;
+    const fHR = filteredStatsTotals?.hr ?? displayHR;
+    const fRBI = filteredStatsTotals?.rbi ?? displayRBI;
+    const fSO = filteredStatsTotals?.so ?? displaySO;
+    const fBB = filteredStatsTotals?.bb ?? displayBB;
+    const fR = filteredStatsTotals?.runs ?? displayR;
+    const f2B = filteredStatsTotals?.h2 ?? display2B;
+    const f3B = filteredStatsTotals?.h3 ?? display3B;
+    const fAvg = filteredStatsTotals ? avg(filteredStatsTotals.hits, filteredStatsTotals.atBats) : displayAvg;
+    const fHBP = filteredStatsTotals?.hbp ?? totals.hbp;
+    const fSAC = filteredStatsTotals?.sac ?? totals.sac;
+
+    const fWins = filteredStatsTotals?.wins ?? displayWins;
+    const fLosses = filteredStatsTotals?.losses ?? displayLosses;
+    const fIPOuts = filteredStatsTotals?.ipOuts ?? displayIPOuts;
+    const fERAllowed = filteredStatsTotals?.erAllowed ?? displayERAllowed;
+    const fHAllowed = filteredStatsTotals?.hAllowed ?? displayHAllowed;
+    const fBBAllowed = filteredStatsTotals?.bbAllowed ?? displayBBAllowed;
+    const fSOPitching = filteredStatsTotals?.soPitching ?? displaySOPitching;
+    const fHasPitching = fIPOuts > 0 || fWins > 0 || fLosses > 0;
+    const fERA = era(fERAllowed, fIPOuts);
+
+    // Filtered games
+    const filteredGames = gamesTournamentFilter
+        ? games.filter(e => e.game.tournament?.id === gamesTournamentFilter)
+        : games;
+
     const tabs: { id: Tab; label: string }[] = [
         { id: "estadisticas", label: "Estadísticas" },
         { id: "juegos", label: "Juegos Jugados" },
@@ -349,13 +408,30 @@ export default function PlayerProfilePage() {
                         Volver
                     </button>
                     {canEdit && (
-                        <button
-                            onClick={() => setIsEditingPlayer(true)}
-                            className="flex items-center gap-1.5 text-white/50 hover:text-white transition-colors text-sm font-medium bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg border border-white/10"
-                        >
-                            <Settings className="w-4 h-4" />
-                            Editar Jugador
-                        </button>
+                        <div className="flex items-center gap-2">
+                            {!player.isVerified && (
+                                <button
+                                    onClick={async () => {
+                                        if (!window.confirm(`¿Verificar a ${player.firstName} ${player.lastName}?\n\nEl jugador verificado podrá participar en otros torneos y tendrá una insignia en su perfil.`)) return;
+                                        try {
+                                            await api.patch(`/players/${player.id}`, { isVerified: true });
+                                            window.location.reload();
+                                        } catch { alert('Error al verificar jugador'); }
+                                    }}
+                                    className="flex items-center gap-1.5 text-emerald-400 hover:text-white transition-colors text-sm font-medium bg-emerald-500/10 hover:bg-emerald-500/30 px-3 py-1.5 rounded-lg border border-emerald-500/30"
+                                >
+                                    <CheckCircle className="w-4 h-4" />
+                                    Verificar
+                                </button>
+                            )}
+                            <button
+                                onClick={() => setIsEditingPlayer(true)}
+                                className="flex items-center gap-1.5 text-white/50 hover:text-white transition-colors text-sm font-medium bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg border border-white/10"
+                            >
+                                <Settings className="w-4 h-4" />
+                                Editar
+                            </button>
+                        </div>
                     )}
                 </div>
 
@@ -375,8 +451,14 @@ export default function PlayerProfilePage() {
                                 {player.position}
                             </span>
                         )}
-                        <h1 className="text-3xl sm:text-5xl font-black text-white uppercase tracking-tight leading-none mb-2">
+                        <h1 className="text-3xl sm:text-5xl font-black text-white uppercase tracking-tight leading-none mb-2 flex items-center gap-3 flex-wrap">
                             {player.firstName} {player.lastName}
+                            {player.isVerified && (
+                                <span className="inline-flex items-center gap-1 text-sm font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-full normal-case tracking-normal">
+                                    <CheckCircle className="w-4 h-4" />
+                                    Verificado
+                                </span>
+                            )}
                         </h1>
                         <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 text-white/60 text-sm font-medium mb-5">
                             <Link
@@ -442,50 +524,55 @@ export default function PlayerProfilePage() {
             {/* ── Tab Content ───────────────────────────────────────────────── */}
             <main className="max-w-4xl mx-auto px-4 py-8">
 
-                {/* ESTADÍSTICAS (Combined Batting + Pitching) */}
+                {/* ESTADÍSTICAS (Batting + Pitching con filtro por torneo) */}
                 {activeTab === "estadisticas" && (
-                    <div className="space-y-6 animate-fade-in-up">
-                        {/* Batting card */}
-                        <div className="bg-surface border border-muted/20 rounded-2xl p-6 shadow-sm">
-                            <SectionTitle>Bateo</SectionTitle>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-                                {[
-                                    { label: "AVG", value: displayAvg, color: "text-primary" },
-                                    { label: "OBP", value: obp(displayH, displayBB, totals.hbp, displayAB), color: "text-primary" },
-                                    { label: "SLG", value: slg(displayH, display2B, display3B, displayHR, displayAB), color: "text-primary" },
-                                    { label: "OPS", value: opsCalc(displayH, display2B, display3B, displayHR, displayBB, totals.hbp, displayAB), color: "text-primary" },
-                                ].map(s => (
-                                    <div key={s.label} className="bg-background rounded-xl p-4 text-center border border-muted/10">
-                                        <p className={`text-2xl font-black font-mono ${s.color}`}>{s.value}</p>
-                                        <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mt-1">{s.label}</p>
-                                    </div>
-                                ))}
-                            </div>
-                            <div>
-                                <StatRow label="Turnos al Bate (AB)" value={displayAB} />
-                                <StatRow label="Hits (H)" value={displayH} />
-                                <StatRow label="Dobles (2B)" value={display2B} />
-                                <StatRow label="Triples (3B)" value={display3B} />
-                                <StatRow label="Jonrones (HR)" value={displayHR} highlight="text-primary" />
-                                <StatRow label="Carreras Impulsadas (RBI)" value={displayRBI} />
-                                <StatRow label="Carreras Anotadas (R)" value={displayR} />
-                                <StatRow label="Bases por Bolas (BB)" value={displayBB} />
-                                <StatRow label="Ponches (K)" value={displaySO} />
-                                <StatRow label="Golpeado por Lanzador (HBP)" value={totals.hbp} />
-                                <StatRow label="Sacrificio (SAC)" value={totals.sac} />
-                            </div>
+                    <div className="space-y-5 animate-fade-in-up">
+                        {/* Selector Bateo/Pitcheo */}
+                        <div className="flex gap-2 p-1 bg-surface border border-muted/30 rounded-xl w-fit mx-auto shadow-sm">
+                            <button
+                                onClick={() => setStatsType('bateo')}
+                                className={`px-6 py-2 rounded-lg text-sm font-black transition-all ${statsType === 'bateo' ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:text-foreground hover:bg-muted/10'}`}
+                            >
+                                BATEO
+                            </button>
+                            <button
+                                onClick={() => setStatsType('pitcheo')}
+                                className={`px-6 py-2 rounded-lg text-sm font-black transition-all ${statsType === 'pitcheo' ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:text-foreground hover:bg-muted/10'}`}
+                            >
+                                PITCHEO
+                            </button>
                         </div>
 
-                        {/* Pitching card (only if has pitching stats) */}
-                        {hasPitching && (
-                            <div className="bg-surface border border-muted/20 rounded-2xl p-6 shadow-sm">
-                                <SectionTitle>Pitcheo</SectionTitle>
+                        {/* Filtro torneo */}
+                        {statTournaments.length > 1 && (
+                            <div className="flex flex-wrap gap-2 justify-center pb-2">
+                                <button
+                                    onClick={() => setStatsTournamentFilter(null)}
+                                    className={`px-4 py-1.5 rounded-full text-xs font-black border transition-colors ${!statsTournamentFilter ? 'bg-primary text-white border-primary' : 'border-muted/30 text-muted-foreground hover:text-foreground hover:border-primary/40'}`}
+                                >
+                                    Total
+                                </button>
+                                {statTournaments.map(t => (
+                                    <button
+                                        key={t.id}
+                                        onClick={() => setStatsTournamentFilter(t.id)}
+                                        className={`px-4 py-1.5 rounded-full text-xs font-black border transition-colors ${statsTournamentFilter === t.id ? 'bg-primary text-white border-primary' : 'border-muted/30 text-muted-foreground hover:text-foreground hover:border-primary/40'}`}
+                                    >
+                                        {t.name}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Batting card */}
+                        {statsType === 'bateo' && (
+                            <div className="bg-surface border border-muted/20 rounded-2xl p-6 shadow-sm animate-fade-in-up">
                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
                                     {[
-                                        { label: "ERA", value: era(displayERAllowed, displayIPOuts), color: "text-primary" },
-                                        { label: "WHIP", value: whip(displayBBAllowed, displayHAllowed, displayIPOuts), color: "text-primary" },
-                                        { label: "W-L", value: `${displayWins}-${displayLosses}`, color: "text-foreground" },
-                                        { label: "IP", value: ipDisplay(displayIPOuts), color: "text-foreground" },
+                                        { label: "AVG", value: fAvg, color: "text-primary" },
+                                        { label: "OBP", value: obp(fH, fBB, fHBP, fAB), color: "text-primary" },
+                                        { label: "SLG", value: slg(fH, f2B, f3B, fHR, fAB), color: "text-primary" },
+                                        { label: "OPS", value: opsCalc(fH, f2B, f3B, fHR, fBB, fHBP, fAB), color: "text-primary" },
                                     ].map(s => (
                                         <div key={s.label} className="bg-background rounded-xl p-4 text-center border border-muted/10">
                                             <p className={`text-2xl font-black font-mono ${s.color}`}>{s.value}</p>
@@ -493,29 +580,85 @@ export default function PlayerProfilePage() {
                                         </div>
                                     ))}
                                 </div>
-                                <StatRow label="Victorias (W)" value={displayWins} highlight="text-emerald-500" />
-                                <StatRow label="Derrotas (L)" value={displayLosses} />
-                                <StatRow label="Entradas Lanzadas (IP)" value={ipDisplay(displayIPOuts)} />
-                                <StatRow label="Hits Permitidos (H)" value={displayHAllowed} />
-                                <StatRow label="Carreras Limpias (ER)" value={displayERAllowed} />
-                                <StatRow label="Bases por Bolas Dadas (BB)" value={displayBBAllowed} />
-                                <StatRow label="Ponches (K)" value={displaySOPitching} highlight="text-primary" />
+                                <div>
+                                    <StatRow label="Turnos al Bate (AB)" value={fAB} />
+                                    <StatRow label="Hits (H)" value={fH} />
+                                    <StatRow label="Dobles (2B)" value={f2B} />
+                                    <StatRow label="Triples (3B)" value={f3B} />
+                                    <StatRow label="Jonrones (HR)" value={fHR} highlight="text-primary" />
+                                    <StatRow label="Carreras Impulsadas (RBI)" value={fRBI} />
+                                    <StatRow label="Carreras Anotadas (R)" value={fR} />
+                                    <StatRow label="Bases por Bolas (BB)" value={fBB} />
+                                    <StatRow label="Ponches (K)" value={fSO} />
+                                    <StatRow label="Golpeado por Lanzador (HBP)" value={fHBP} />
+                                    <StatRow label="Sacrificio (SAC)" value={fSAC} />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Pitching card */}
+                        {statsType === 'pitcheo' && (
+                            <div className="bg-surface border border-muted/20 rounded-2xl p-6 shadow-sm animate-fade-in-up">
+                                {!fHasPitching && (
+                                    <p className="text-xs text-muted-foreground mb-4">Sin registros de pitcheo{statsTournamentFilter ? ' en este torneo' : ''}.</p>
+                                )}
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                                    {[
+                                        { label: "ERA", value: fERA, color: "text-primary" },
+                                        { label: "WHIP", value: whip(fBBAllowed, fHAllowed, fIPOuts), color: "text-primary" },
+                                        { label: "W-L", value: `${fWins}-${fLosses}`, color: "text-foreground" },
+                                        { label: "IP", value: ipDisplay(fIPOuts), color: "text-foreground" },
+                                    ].map(s => (
+                                        <div key={s.label} className="bg-background rounded-xl p-4 text-center border border-muted/10">
+                                            <p className={`text-2xl font-black font-mono ${s.color}`}>{s.value}</p>
+                                            <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mt-1">{s.label}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                                <StatRow label="Victorias (W)" value={fWins} highlight="text-emerald-500" />
+                                <StatRow label="Derrotas (L)" value={fLosses} />
+                                <StatRow label="Entradas Lanzadas (IP)" value={ipDisplay(fIPOuts)} />
+                                <StatRow label="Hits Permitidos (H)" value={fHAllowed} />
+                                <StatRow label="Carreras Limpias (ER)" value={fERAllowed} />
+                                <StatRow label="Bases por Bolas Dadas (BB)" value={fBBAllowed} />
+                                <StatRow label="Ponches (K)" value={fSOPitching} highlight="text-primary" />
                             </div>
                         )}
                     </div>
                 )}
 
-                {/* JUEGOS JUGADOS — Team-profile style cards */}
+                {/* JUEGOS JUGADOS con filtro por torneo */}
                 {activeTab === "juegos" && (
-                    <div className="animate-fade-in-up">
-                        <SectionTitle>Historial de Juegos ({games.length})</SectionTitle>
-                        {games.length === 0 ? (
+                    <div className="animate-fade-in-up space-y-4">
+                        {/* Filtro torneo */}
+                        {gameTournaments.length > 1 && (
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    onClick={() => setGamesTournamentFilter(null)}
+                                    className={`px-4 py-1.5 rounded-full text-xs font-black border transition-colors ${!gamesTournamentFilter ? 'bg-primary text-white border-primary' : 'border-muted/30 text-muted-foreground hover:text-foreground hover:border-primary/40'}`}
+                                >
+                                    Total ({games.length})
+                                </button>
+                                {gameTournaments.map(t => (
+                                    <button
+                                        key={t.id}
+                                        onClick={() => setGamesTournamentFilter(t.id)}
+                                        className={`px-4 py-1.5 rounded-full text-xs font-black border transition-colors ${gamesTournamentFilter === t.id ? 'bg-primary text-white border-primary' : 'border-muted/30 text-muted-foreground hover:text-foreground hover:border-primary/40'}`}
+                                    >
+                                        {t.name} ({games.filter(e => e.game.tournament?.id === t.id).length})
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        <SectionTitle>Historial de Juegos ({filteredGames.length})</SectionTitle>
+                        {filteredGames.length === 0 ? (
                             <div className="bg-surface border border-muted/20 rounded-2xl p-10 text-center">
-                                <p className="text-muted-foreground">No hay juegos registrados.</p>
+                                <p className="text-muted-foreground">No hay juegos registrados{gamesTournamentFilter ? ' en este torneo' : ''}.</p>
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                {games.map(entry => {
+                                {filteredGames.map(entry => {
                                     const g = entry.game;
                                     const isHome = g.homeTeamId === player.team.id;
                                     const myScore = isHome ? g.homeScore : g.awayScore;
@@ -543,15 +686,15 @@ export default function PlayerProfilePage() {
                                                     <Clock className="w-3.5 h-3.5" />
                                                     {new Date(g.scheduledDate).toLocaleDateString('es-MX', { month: 'short', day: 'numeric' })} &bull; {new Date(g.scheduledDate).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
                                                 </div>
-                                                <div className="text-[10px] font-bold opacity-50 capitalize flex items-center gap-1">
-                                                    <MapPin className="w-3 h-3" />
-                                                    Sede Local
-                                                </div>
+                                                {g.tournament && (
+                                                    <div className="text-[10px] font-bold opacity-60 truncate max-w-[120px]">
+                                                        {g.tournament.name}
+                                                    </div>
+                                                )}
                                             </div>
 
                                             {/* Score & Teams */}
                                             <div className="p-4 flex items-center justify-between">
-                                                {/* Away Team */}
                                                 <div className="flex flex-col items-center gap-1.5 flex-1 w-20">
                                                     <div className="w-12 h-12 bg-surface rounded-full shadow-md flex items-center justify-center border-2 border-muted/20 overflow-hidden font-black text-lg shrink-0">
                                                         {g.awayTeam.shortName || g.awayTeam.name?.substring(0, 2)}
@@ -559,7 +702,6 @@ export default function PlayerProfilePage() {
                                                     <span className="text-[10px] font-black text-center leading-tight line-clamp-2">{g.awayTeam.name}</span>
                                                 </div>
 
-                                                {/* Score */}
                                                 <div className="flex flex-col items-center justify-center px-3">
                                                     {g.status === 'in_progress' && (
                                                         <span className="text-[10px] font-black tracking-widest uppercase text-red-500 animate-pulse mb-1 flex items-center gap-1">
@@ -578,7 +720,6 @@ export default function PlayerProfilePage() {
                                                     )}
                                                 </div>
 
-                                                {/* Home Team */}
                                                 <div className="flex flex-col items-center gap-1.5 flex-1 w-20">
                                                     <div className="w-12 h-12 bg-surface rounded-full shadow-md flex items-center justify-center border-2 border-muted/20 overflow-hidden font-black text-lg shrink-0">
                                                         {g.homeTeam.shortName || g.homeTeam.name?.substring(0, 2)}
@@ -587,7 +728,7 @@ export default function PlayerProfilePage() {
                                                 </div>
                                             </div>
 
-                                            {/* Bottom Stats Bar — Player's game performance */}
+                                            {/* Bottom Stats Bar */}
                                             <div className="flex border-t border-black/10 dark:border-white/10">
                                                 <div className="flex-1 p-3 flex items-center gap-2 flex-wrap">
                                                     <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">POS</span>
@@ -634,92 +775,150 @@ export default function PlayerProfilePage() {
 
                 {/* EQUIPOS */}
                 {activeTab === "equipos" && (
-                    <div className="animate-fade-in-up">
-                        <SectionTitle>Equipos en los que juega</SectionTitle>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {/* Current team card */}
-                            <Link href={`/equipos/${player.team.id}`} className="bg-surface border border-muted/20 rounded-2xl p-5 shadow-sm hover:border-primary/40 hover:-translate-y-1 transition-all group">
-                                <div className="flex items-center gap-4 mb-3">
-                                    <div className="w-14 h-14 bg-surface rounded-full shadow-md flex items-center justify-center border-2 border-muted/20 overflow-hidden font-black text-lg shrink-0 group-hover:border-primary/50 transition-colors">
-                                        {player.team.logoUrl ? (
-                                            <img src={player.team.logoUrl} alt={player.team.name} className="w-full h-full object-cover" />
-                                        ) : (
-                                            player.team.shortName || player.team.name?.substring(0, 2)
-                                        )}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <h4 className="font-black text-base text-foreground leading-tight group-hover:text-primary transition-colors truncate">
-                                            {player.team.name}
-                                        </h4>
-                                        {player.team.tournament && (
-                                            <p className="text-[11px] text-muted-foreground font-medium mt-0.5 flex items-center gap-1">
-                                                <Trophy className="w-3 h-3" /> {player.team.tournament.name}
-                                            </p>
-                                        )}
-                                    </div>
-                                    <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
-                                </div>
-                                <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                                    <span className="bg-primary/20 text-primary px-2 py-0.5 rounded">{player.position || 'UTIL'}</span>
-                                    {player.number != null && <span>#{player.number}</span>}
-                                </div>
-                            </Link>
-                        </div>
-                    </div>
-                )}
-
-                {/* TORNEOS — Card style like tournament search page */}
-                {activeTab === "torneos" && (
-                    <div className="animate-fade-in-up">
-                        <SectionTitle>Torneos</SectionTitle>
-                        {!player.team.tournament ? (
-                            <div className="bg-surface border border-muted/20 rounded-2xl p-10 text-center">
-                                <p className="text-muted-foreground">No hay torneos registrados.</p>
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {/* Tournament card — matching the search page design */}
-                                <Link href={`/torneos/${player.team.tournament.id}`} className="block group">
-                                    <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-md hover:shadow-xl hover:-translate-y-2 hover:border-primary/50 transition-all duration-300 h-full flex flex-col">
-                                        {/* Cover */}
-                                        <div className="relative h-40 w-full bg-gradient-to-br from-slate-800 to-slate-900 overflow-hidden">
-                                            <div className="absolute inset-0 bg-black/10 group-hover:bg-black/0 transition-colors" />
-                                            <div className="absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border backdrop-blur-md shadow-sm z-20 bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
-                                                Activo
-                                            </div>
-                                            <div className="w-full h-full flex items-center justify-center opacity-20 group-hover:scale-110 transition-transform duration-700">
-                                                <Trophy className="w-16 h-16 text-white" />
-                                            </div>
+                    <div className="animate-fade-in-up space-y-6">
+                        {/* Current team */}
+                        <div>
+                            <SectionTitle>Equipo Actual</SectionTitle>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <Link href={`/equipos/${player.team.id}`} className="bg-surface border border-muted/20 rounded-2xl p-5 shadow-sm hover:border-primary/40 hover:-translate-y-1 transition-all group">
+                                    <div className="flex items-center gap-4 mb-3">
+                                        <div className="w-14 h-14 bg-surface rounded-full shadow-md flex items-center justify-center border-2 border-muted/20 overflow-hidden font-black text-lg shrink-0 group-hover:border-primary/50 transition-colors">
+                                            {player.team.logoUrl ? (
+                                                <img src={player.team.logoUrl} alt={player.team.name} className="w-full h-full object-cover" />
+                                            ) : (
+                                                player.team.shortName || player.team.name?.substring(0, 2)
+                                            )}
                                         </div>
-
-                                        {/* Content */}
-                                        <div className="p-5 flex flex-col flex-1">
-                                            <h3 className="font-black text-lg text-foreground mb-3 leading-tight group-hover:text-primary transition-colors line-clamp-2">
-                                                {player.team.tournament.name}
-                                            </h3>
-                                            <div className="space-y-2 mb-4 flex-1">
-                                                <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
-                                                    <Calendar className="w-3.5 h-3.5 text-muted-foreground/70 shrink-0" />
-                                                    <span>{player.team.tournament.season}</span>
-                                                </div>
-                                                <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
-                                                    <Users className="w-3.5 h-3.5 text-muted-foreground/70 shrink-0" />
-                                                    <span>{player.team.name}</span>
-                                                </div>
-                                            </div>
-                                            <div className="border-t border-muted/20 pt-3 mt-auto flex items-center justify-between">
-                                                <div className="text-xs text-muted-foreground font-medium">
-                                                    {cs?.gp ?? games.length} juegos
-                                                </div>
-                                                <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                                            </div>
+                                        <div className="flex-1 min-w-0">
+                                            <h4 className="font-black text-base text-foreground leading-tight group-hover:text-primary transition-colors truncate">
+                                                {player.team.name}
+                                            </h4>
+                                            {player.team.tournament && (
+                                                <p className="text-[11px] text-muted-foreground font-medium mt-0.5 flex items-center gap-1">
+                                                    <Trophy className="w-3 h-3" /> {player.team.tournament.name}
+                                                </p>
+                                            )}
                                         </div>
+                                        <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+                                    </div>
+                                    <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                                        <span className="bg-primary/20 text-primary px-2 py-0.5 rounded">{player.position || 'UTIL'}</span>
+                                        {player.number != null && <span>#{player.number}</span>}
                                     </div>
                                 </Link>
+                            </div>
+                        </div>
+
+                        {/* Roster history */}
+                        {player.rosterEntries && player.rosterEntries.length > 0 && (
+                            <div>
+                                <SectionTitle>Historial de Equipos (Invitado)</SectionTitle>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {player.rosterEntries.map(entry => (
+                                        <Link key={entry.id} href={`/equipos/${entry.teamId}`} className={`bg-surface border rounded-2xl p-5 shadow-sm hover:-translate-y-1 transition-all group ${entry.isActive ? 'border-emerald-500/30 hover:border-emerald-400/50' : 'border-muted/20 hover:border-primary/40'}`}>
+                                            <div className="flex items-center gap-4 mb-3">
+                                                <div className="w-14 h-14 bg-surface rounded-full shadow-md flex items-center justify-center border-2 border-muted/20 overflow-hidden font-black text-lg shrink-0 group-hover:border-primary/50 transition-colors">
+                                                    {entry.team.logoUrl ? (
+                                                        <img src={entry.team.logoUrl} alt={entry.team.name} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        entry.team.shortName || entry.team.name?.substring(0, 2)
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <h4 className="font-black text-base text-foreground leading-tight group-hover:text-primary transition-colors truncate">
+                                                            {entry.team.name}
+                                                        </h4>
+                                                        {entry.isActive && (
+                                                            <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded-full shrink-0">Activo</span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-[11px] text-muted-foreground font-medium mt-0.5 flex items-center gap-1">
+                                                        <Trophy className="w-3 h-3" /> {entry.tournament.name}
+                                                    </p>
+                                                </div>
+                                                <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+                                            </div>
+                                            <div className="text-[10px] font-bold text-muted-foreground">
+                                                Desde {new Date(entry.joinedAt).toLocaleDateString('es-MX', { month: 'short', year: 'numeric' })}
+                                                {entry.leftAt && ` · Hasta ${new Date(entry.leftAt).toLocaleDateString('es-MX', { month: 'short', year: 'numeric' })}`}
+                                            </div>
+                                        </Link>
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </div>
                 )}
+
+                {/* TORNEOS — Card style like tournament search page */}
+                {activeTab === "torneos" && (() => {
+                    // Collect all unique tournaments: primary + from roster entries
+                    const allTournaments: Array<{ id: string; name: string; season: string; teamName: string; teamId: string; isPrimary: boolean }> = [];
+                    if (player.team.tournament) {
+                        allTournaments.push({ ...player.team.tournament, teamName: player.team.name, teamId: player.team.id, isPrimary: true });
+                    }
+                    player.rosterEntries?.forEach(entry => {
+                        if (!allTournaments.find(t => t.id === entry.tournament.id)) {
+                            allTournaments.push({ ...entry.tournament, teamName: entry.team.name, teamId: entry.teamId, isPrimary: false });
+                        }
+                    });
+
+                    return (
+                        <div className="animate-fade-in-up">
+                            <SectionTitle>Torneos ({allTournaments.length})</SectionTitle>
+                            {allTournaments.length === 0 ? (
+                                <div className="bg-surface border border-muted/20 rounded-2xl p-10 text-center">
+                                    <p className="text-muted-foreground">No hay torneos registrados.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {allTournaments.map(t => (
+                                        <Link key={t.id} href={`/torneos/${t.id}`} className="block group">
+                                            <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-md hover:shadow-xl hover:-translate-y-2 hover:border-primary/50 transition-all duration-300 h-full flex flex-col">
+                                                <div className="relative h-40 w-full bg-gradient-to-br from-slate-800 to-slate-900 overflow-hidden">
+                                                    <div className="absolute inset-0 bg-black/10 group-hover:bg-black/0 transition-colors" />
+                                                    <div className="absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border backdrop-blur-md shadow-sm z-20 bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
+                                                        Activo
+                                                    </div>
+                                                    {!t.isPrimary && (
+                                                        <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border backdrop-blur-md z-20 bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+                                                            Invitado
+                                                        </div>
+                                                    )}
+                                                    <div className="w-full h-full flex items-center justify-center opacity-20 group-hover:scale-110 transition-transform duration-700">
+                                                        <Trophy className="w-16 h-16 text-white" />
+                                                    </div>
+                                                </div>
+                                                <div className="p-5 flex flex-col flex-1">
+                                                    <h3 className="font-black text-lg text-foreground mb-3 leading-tight group-hover:text-primary transition-colors line-clamp-2">
+                                                        {t.name}
+                                                    </h3>
+                                                    <div className="space-y-2 mb-4 flex-1">
+                                                        <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+                                                            <Calendar className="w-3.5 h-3.5 text-muted-foreground/70 shrink-0" />
+                                                            <span>{t.season}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+                                                            <Users className="w-3.5 h-3.5 text-muted-foreground/70 shrink-0" />
+                                                            <span>{t.teamName}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="border-t border-muted/20 pt-3 mt-auto flex items-center justify-between">
+                                                        <div className="text-xs text-muted-foreground font-medium">
+                                                            {t.isPrimary ? `${cs?.gp ?? games.length} juegos` : 'Invitado'}
+                                                        </div>
+                                                        <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </Link>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })()}
             </main>
 
             {/* ── Modal Editar Jugador ──────────────────────────────────────── */}

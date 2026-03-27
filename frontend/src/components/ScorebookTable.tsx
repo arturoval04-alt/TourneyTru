@@ -56,41 +56,64 @@ export const ScorebookTable: React.FC<ScorebookTableProps> = ({ teamBoxscore, ba
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                    {teamBoxscore.lineup.map((batter, index) => {
-                        // Obtener la base actual de este corredor para el live tracking
-                        const runnerCurrentBase = getCurrentBaseForPlayer(batter.playerId, baseIds);
+                    {Object.entries(
+                        teamBoxscore.lineup.reduce((acc, batter) => {
+                            if (!acc[batter.battingOrder]) acc[batter.battingOrder] = [];
+                            acc[batter.battingOrder].push(batter);
+                            return acc;
+                        }, {} as Record<number, typeof teamBoxscore.lineup>)
+                    ).map(([boString, group]) => {
+                        const battingOrder = parseInt(boString);
+                        
+                        // Si todo el grupo de este orden al bat es "Flex" y nunca tomó turnos OFENSIVOS reales, se oculta
+                        const isFlexGroup = group.every(p => p.isFlex) && 
+                            group.every(p => p.atBats === 0 && p.bb === 0 && p.runs === 0 && Object.keys(p.plays).length === 0);
+                        
+                        if (isFlexGroup) return null;
 
-                        return (
-                            <tr key={`${batter.playerId}-${index}`} className="hover:bg-gray-50">
-                                <td className="px-3 py-2 whitespace-nowrap font-medium text-gray-800 border-r border-gray-100">
-                                    {index + 1}. {batter.firstName} {batter.lastName}
-                                </td>
-                                <td className="px-2 py-2 whitespace-nowrap text-center text-gray-500 border-r border-gray-100 font-mono">
-                                    {batter.position}
-                                </td>
-
-                                {/* Render Inning Cells using our SVG component */}
-                                {inningsArray.map(inning => {
-                                    const playsForInning = batter.plays[inning] || [];
-                                    // Solo pasar currentBase en el inning activo para no alterar innings pasados
-                                    const isCurrentInning = currentInning != null ? inning === currentInning : false;
-                                    const cellCurrentBase = isCurrentInning ? runnerCurrentBase : null;
-                                    return (
-                                        <td key={`cell-${batter.playerId}-inn-${inning}`} className="p-0 border-r border-gray-100">
-                                            <ScorebookCell plays={playsForInning} currentBase={cellCurrentBase} />
-                                        </td>
-                                    );
-                                })}
-
-                                {/* Totals */}
-                                <td className="px-2 py-2 whitespace-nowrap text-center font-semibold border-l border-gray-300 bg-gray-50">{batter.atBats}</td>
-                                <td className="px-2 py-2 whitespace-nowrap text-center text-gray-700 bg-gray-50">{batter.runs}</td>
-                                <td className="px-2 py-2 whitespace-nowrap text-center text-gray-700 bg-gray-50">{batter.hits}</td>
-                                <td className="px-2 py-2 whitespace-nowrap text-center text-gray-700 bg-gray-50">{batter.rbi}</td>
-                                <td className="px-2 py-2 whitespace-nowrap text-center text-gray-500 bg-gray-50">{batter.bb}</td>
-                                <td className="px-2 py-2 whitespace-nowrap text-center text-gray-500 bg-gray-50">{batter.so}</td>
-                            </tr>
-                        );
+                        return group.map((batter, idx) => {
+                            // Obtener la base actual de este corredor para el live tracking
+                            const runnerCurrentBase = getCurrentBaseForPlayer(batter.playerId, baseIds);
+    
+                            return (
+                                <tr key={`${batter.playerId}-${idx}`} className="hover:bg-gray-50">
+                                    <td className="px-3 py-2 whitespace-nowrap font-medium text-gray-800 border-r border-gray-100">
+                                        {batter.isStarter ? (
+                                            `${battingOrder}. ${batter.firstName} ${batter.lastName}`
+                                        ) : (
+                                            <div className="pl-4 text-[11px] leading-tight">
+                                                <span className="text-gray-400 font-semibold">(Entró en la {batter.entryInning || '-'})</span><br/>
+                                                <span className="text-gray-600">{batter.firstName} {batter.lastName}</span>
+                                            </div>
+                                        )}
+                                    </td>
+                                    <td className="px-2 py-2 whitespace-nowrap text-center text-gray-500 border-r border-gray-100 font-mono">
+                                        {batter.position}
+                                    </td>
+    
+                                    {/* Render Inning Cells using our SVG component */}
+                                    {inningsArray.map(inning => {
+                                        const playsForInning = batter.plays[inning] || [];
+                                        // Solo pasar currentBase en el inning activo para no alterar innings pasados
+                                        const isCurrentInning = currentInning != null ? inning === currentInning : false;
+                                        const cellCurrentBase = isCurrentInning ? runnerCurrentBase : null;
+                                        return (
+                                            <td key={`cell-${batter.playerId}-inn-${inning}`} className="p-0 border-r border-gray-100">
+                                                <ScorebookCell plays={playsForInning} currentBase={cellCurrentBase} />
+                                            </td>
+                                        );
+                                    })}
+    
+                                    {/* Totals */}
+                                    <td className="px-2 py-2 whitespace-nowrap text-center font-semibold border-l border-gray-300 bg-gray-50">{batter.atBats}</td>
+                                    <td className="px-2 py-2 whitespace-nowrap text-center text-gray-700 bg-gray-50">{batter.runs}</td>
+                                    <td className="px-2 py-2 whitespace-nowrap text-center text-gray-700 bg-gray-50">{batter.hits}</td>
+                                    <td className="px-2 py-2 whitespace-nowrap text-center text-gray-700 bg-gray-50">{batter.rbi}</td>
+                                    <td className="px-2 py-2 whitespace-nowrap text-center text-gray-500 bg-gray-50">{batter.bb}</td>
+                                    <td className="px-2 py-2 whitespace-nowrap text-center text-gray-500 bg-gray-50">{batter.so}</td>
+                                </tr>
+                            );
+                        });
                     })}
                 </tbody>
             </table>

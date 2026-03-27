@@ -461,10 +461,8 @@ export default function LobbyPage() {
 
             {/* Brand */}
             <div className="md:col-span-1">
-              <div className="flex items-center gap-1 mb-6">
-                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center border border-primary/20 shadow-sm relative overflow-hidden">
-                  <span className="font-black text-primary text-sm relative z-10">TT</span>
-                </div>
+              <div className="flex items-center gap-3 mb-6">
+                <Image src="/logo-tt.png" alt="TourneyTru Logo" width={32} height={32} className="object-contain" />
                 <span className="font-black text-2xl tracking-tight text-white">TourneyTru</span>
               </div>
               <p className="text-zinc-500 text-sm leading-relaxed max-w-[250px]">

@@ -14,6 +14,7 @@ export interface AuthUser {
     maxTeamsPerTournament?: number | null;
     maxPlayersPerTeam?: number | null;
     planLabel?: string | null;
+    forcePasswordChange?: boolean;
 }
 
 export interface AuthTokens {

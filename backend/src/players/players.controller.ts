@@ -18,6 +18,14 @@ export class PlayersController {
         return this.playersService.search(q ?? '');
     }
 
+    @Get('verified')
+    searchVerified(
+        @Query('q') q?: string,
+        @Query('excludeTeamId') excludeTeamId?: string,
+    ) {
+        return this.playersService.searchVerified(q, excludeTeamId);
+    }
+
     @Get()
     findAll(@Query('teamId') teamId?: string) {
         return this.playersService.findAll({ teamId });

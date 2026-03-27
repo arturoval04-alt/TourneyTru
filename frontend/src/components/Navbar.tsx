@@ -43,8 +43,8 @@ export default function Navbar() {
         <header className="border-b border-muted/50 bg-surface/80 backdrop-blur-md sticky top-0 z-50 transition-colors duration-300 shadow-sm relative">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
                 <Link href="/" className="flex items-center gap-2 group cursor-pointer">
-                    <div className="relative w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center transform group-hover:scale-105 transition-transform">
-                        <Image src="/logo.svg" alt="TourneyTru Logo" width={32} height={32} className="object-contain" priority />
+                    <div className="relative flex items-center justify-center transform group-hover:scale-105 transition-transform">
+                        <Image src="/logo-tt.png" alt="TourneyTru Logo" width={36} height={36} className="object-contain" priority />
                     </div>
                     <h1 className="text-xl font-black tracking-tight flex items-center text-foreground italic">
                         TourneyTru
@@ -81,7 +81,7 @@ export default function Navbar() {
                                         <p className="text-sm font-black text-foreground">{user.role}</p>
                                     </div>
                                     <div className="p-1">
-                                        {(user.role === 'admin' || user.role === 'organizer' || user.role === 'scorekeeper') && (
+                                        {(user.role === 'admin' || user.role === 'organizer' || user.role === 'scorekeeper' || user.role === 'presi') && (
                                             <Link href="/admin/dashboard" onClick={() => setIsMenuOpen(false)} className="block px-4 py-2 text-sm text-foreground hover:bg-muted/10 font-medium transition-colors rounded-lg">
                                                 Dashboard
                                             </Link>

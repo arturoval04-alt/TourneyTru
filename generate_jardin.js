@@ -28,10 +28,10 @@ const teamId = crypto.randomUUID();
 const tournamentId = '576cda8b-0213-4277-a606-ea32bc7ad4da';
 const positions = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'DH', 'EH'];
 
-let sql = '-- Script para agregar Jardín de Sofía al torneo Pollo Fierro\\n\\n';
-sql += \`INSERT INTO [dbo].[teams] ([id], [name], [short_name], [tournament_id], [created_at], [updated_at]) VALUES ('\${teamId}', 'Jardín de Sofía', 'JS', '\${tournamentId}', GETUTCDATE(), GETUTCDATE());\\n\\n\`;
+let sql = '-- Script para agregar Jardín de Sofía al torneo Pollo Fierro\n\n';
+sql += `INSERT INTO [dbo].[teams] ([id], [name], [short_name], [tournament_id], [created_at], [updated_at]) VALUES ('${teamId}', 'Jardín de Sofía', 'JS', '${tournamentId}', GETUTCDATE(), GETUTCDATE());\n\n`;
 
-sql += 'INSERT INTO [dbo].[players] ([id], [first_name], [last_name], [number], [position], [team_id], [created_at]) VALUES\\n';
+sql += 'INSERT INTO [dbo].[players] ([id], [first_name], [last_name], [number], [position], [team_id], [created_at]) VALUES\n';
 
 const values = names.map(n => {
   const parts = n.split(' ');
@@ -39,7 +39,7 @@ const values = names.map(n => {
   const last = parts.slice(2).join(' ').replace(/'/g, "''");
   const num = Math.floor(Math.random() * 99) + 1;
   const pos = positions[Math.floor(Math.random() * positions.length)];
-  return \`('\${crypto.randomUUID()}', '\${first}', '\${last || '-'}', \${num}, '\${pos}', '\${teamId}', GETUTCDATE())\`;
+  return `('${crypto.randomUUID()}', '${first}', '${last || '-'}', ${num}, '${pos}', '${teamId}', GETUTCDATE())`;
 });
 
 sql += values.join(',\\n') + ';\\n';

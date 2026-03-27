@@ -15,6 +15,7 @@ import { LiveModule } from './live/live.module';
 import { UsersModule } from './users/users.module';
 import { StatsModule } from './stats/stats.module';
 import { VisionModule } from './vision/vision.module';
+import { RosterModule } from './roster/roster.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { VisionModule } from './vision/vision.module';
     UsersModule,
     StatsModule,
     VisionModule,
+    RosterModule,
   ],
   controllers: [AppController],
   providers: [
