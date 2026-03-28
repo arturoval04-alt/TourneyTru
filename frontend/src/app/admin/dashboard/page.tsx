@@ -481,7 +481,8 @@ export default function AdminDashboard() {
             category: tourn.category || 'Libre',
             description: tourn.description || '',
             logoUrl: tourn.logoUrl || '',
-            leagueId: tourn.league?.id || ''
+            leagueId: tourn.league?.id || '',
+            isPrivate: (tourn as any).isPrivate ?? false,
         });
         setShowEditTournModal(true);
     };
