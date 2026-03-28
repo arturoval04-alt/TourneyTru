@@ -91,10 +91,19 @@ export class LeaguesService {
 
     async update(id: string, updateData: UpdateLeagueDto) {
         await this.findOne(id);
-        return this.prisma.league.update({
+        const { isPrivate, ...rest } = updateData as any;
+
+        const result = await this.prisma.league.update({
             where: { id },
-            data: updateData as any,
+            data: rest as any,
         });
+
+        // isPrivate not in Prisma client type (not regenerated) — update via raw SQL
+        if (isPrivate !== undefined) {
+            await this.prisma.$executeRaw`UPDATE leagues SET is_private = ${isPrivate ? 1 : 0} WHERE id = ${id}`;
+        }
+
+        return result;
     }
 
     async remove(id: string) {

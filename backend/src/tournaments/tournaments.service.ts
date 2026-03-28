@@ -132,15 +132,23 @@ export class TournamentsService {
     }
 
     async update(id: string, updateData: UpdateTournamentDto) {
-        await this.findOne(id); // Valida existencia
-        const { startDate, ...rest } = updateData as any;
-        return this.prisma.tournament.update({
+        await this.findOne(id);
+        const { startDate, isPrivate, ...rest } = updateData as any;
+
+        const result = await this.prisma.tournament.update({
             where: { id },
             data: {
                 ...rest,
                 ...(startDate ? { startDate: new Date(startDate) } : {}),
             } as any,
         });
+
+        // isPrivate not in Prisma client type (not regenerated) — update via raw SQL
+        if (isPrivate !== undefined) {
+            await this.prisma.$executeRaw`UPDATE tournaments SET is_private = ${isPrivate ? 1 : 0} WHERE id = ${id}`;
+        }
+
+        return result;
     }
 
     async remove(id: string) {
