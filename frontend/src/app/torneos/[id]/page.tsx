@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { getUser } from '@/lib/auth';
 import api from "@/lib/api";
-import { ArrowLeft, MapPin, Calendar, Users, Target, Clock, Settings, Radio, X, CheckCircle2, CheckCircle, ChevronRight, Trophy, Lock, Globe } from "lucide-react";
+import { ArrowLeft, MapPin, Calendar, Users, Target, Clock, Settings, Radio, X, CheckCircle2, CheckCircle, ChevronRight, Trophy, Lock } from "lucide-react";
 import CreateGameWizard from "@/components/game/CreateGameWizard";
 import ImageUploader from "@/components/ui/ImageUploader";
 
