@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { getUser } from '@/lib/auth';
 import api from "@/lib/api";
-import { ArrowLeft, MapPin, Calendar, Users, Target, Clock, Settings, Radio, X, CheckCircle2, CheckCircle, ChevronRight, Trophy } from "lucide-react";
+import { ArrowLeft, MapPin, Calendar, Users, Target, Clock, Settings, Radio, X, CheckCircle2, CheckCircle, ChevronRight, Trophy, Lock, Globe } from "lucide-react";
 import CreateGameWizard from "@/components/game/CreateGameWizard";
 import ImageUploader from "@/components/ui/ImageUploader";
 
@@ -26,6 +26,7 @@ export default function TournamentProfilePage() {
         leagueId?: string;
         status?: string;
         startDate?: string;
+        isPrivate?: boolean;
         league?: { name: string };
         teams: { id: string; name: string; shortName?: string; logoUrl?: string; managerName?: string; _count?: { players: number } }[];
         games: { id: string; homeTeam: { id: string; name: string; shortName?: string; logoUrl?: string; wins?: number; losses?: number }; awayTeam: { id: string; name: string; shortName?: string; logoUrl?: string; wins?: number; losses?: number }; homeScore: number; awayScore: number; currentInning: number; half: string; status: string; scheduledDate: string; field?: string; round?: string; winningPitcher?: { id: string; firstName: string; lastName: string; photoUrl?: string } | null; mvpBatter1?: { id: string; firstName: string; lastName: string; photoUrl?: string } | null; mvpBatter2?: { id: string; firstName: string; lastName: string; photoUrl?: string } | null }[];
@@ -35,6 +36,7 @@ export default function TournamentProfilePage() {
     }
     const [tournament, setTournament] = useState<TournamentData | null>(null);
     const [loadingTournament, setLoadingTournament] = useState(true);
+    const [accessDenied, setAccessDenied] = useState(false);
 
     useEffect(() => {
         const fetchTournament = async () => {
@@ -42,7 +44,8 @@ export default function TournamentProfilePage() {
                 const { data } = await api.get(`/torneos/${tournamentId}`);
                 setTournament(data);
                 setLoadingTournament(false);
-            } catch (err) {
+            } catch (err: any) {
+                if (err?.response?.status === 403) setAccessDenied(true);
                 console.error("Error fetching tournament:", err);
                 setLoadingTournament(false);
             }
@@ -115,7 +118,8 @@ export default function TournamentProfilePage() {
         rulesType: '',
         category: '',
         logoUrl: '',
-        startDate: ''
+        startDate: '',
+        isPrivate: false,
     });
 
     useEffect(() => {
@@ -127,7 +131,8 @@ export default function TournamentProfilePage() {
                 rulesType: tournament.rulesType || '',
                 category: tournament.category || '',
                 logoUrl: tournament.logoUrl || '',
-                startDate: tournament.startDate ? tournament.startDate.substring(0, 10) : ''
+                startDate: tournament.startDate ? tournament.startDate.substring(0, 10) : '',
+                isPrivate: tournament.isPrivate ?? false,
             });
         }
     }, [tournament]);
@@ -165,6 +170,7 @@ export default function TournamentProfilePage() {
                 category: profileForm.category,
                 logoUrl: profileForm.logoUrl,
                 startDate: profileForm.startDate || undefined,
+                isPrivate: profileForm.isPrivate,
             });
 
             alert('Perfil del Torneo Actualizado');
@@ -327,6 +333,22 @@ export default function TournamentProfilePage() {
         { id: "estadisticas", label: "Estadísticas" },
     ] as const;
 
+    if (accessDenied) {
+        return (
+            <div className="min-h-screen bg-background text-foreground">
+                <Navbar />
+                <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
+                    <div className="w-16 h-16 rounded-full bg-muted/10 flex items-center justify-center mx-auto mb-4">
+                        <Lock className="w-8 h-8 text-muted-foreground" />
+                    </div>
+                    <h2 className="text-2xl font-black mb-2">Torneo Privado</h2>
+                    <p className="text-muted-foreground text-sm mb-6">Este torneo es privado. Solo los organizadores pueden acceder.</p>
+                    <Link href="/torneos" className="text-primary hover:underline text-sm font-bold">Volver a torneos</Link>
+                </main>
+            </div>
+        );
+    }
+
     return (
         <div className="min-h-screen bg-background text-foreground font-sans transition-colors duration-300 pb-24">
             {/* Copied Toast Notification */}
@@ -359,6 +381,11 @@ export default function TournamentProfilePage() {
                             )}
                             <h1 className="text-xl md:text-3xl font-black uppercase tracking-[0.15em] text-white drop-shadow-md leading-tight">
                                 {tournament?.league?.name || tournament?.name}
+                                {tournament?.isPrivate && (
+                                    <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500/20 text-amber-400 text-xs font-bold rounded-full border border-amber-500/30 normal-case tracking-normal align-middle">
+                                        <Lock className="w-3 h-3" /> Privado
+                                    </span>
+                                )}
                             </h1>
                             {tournament?.league?.name && tournament?.name !== tournament?.league?.name && (
                                 <p className="text-white/50 text-xs font-bold mt-1.5 italic tracking-wider">{tournament?.name}</p>
@@ -1333,6 +1360,20 @@ export default function TournamentProfilePage() {
                             <div>
                                 <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Descripción</label>
                                 <textarea rows={4} value={profileForm.description} onChange={e => setProfileForm({ ...profileForm, description: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium resize-none" placeholder="Escribe los detalles del torneo..."></textarea>
+                            </div>
+                            {/* Toggle privacidad */}
+                            <div className="flex items-center justify-between p-4 bg-muted/5 border border-muted/20 rounded-xl">
+                                <div>
+                                    <p className="text-sm font-bold text-foreground flex items-center gap-1.5"><Lock className="w-3.5 h-3.5" /> Torneo Privado</p>
+                                    <p className="text-xs text-muted-foreground mt-0.5">Solo los organizadores podrán ver este torneo</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setProfileForm(f => ({ ...f, isPrivate: !f.isPrivate }))}
+                                    className={`relative w-11 h-6 rounded-full transition-colors ${profileForm.isPrivate ? 'bg-amber-500' : 'bg-muted/30'}`}
+                                >
+                                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${profileForm.isPrivate ? 'translate-x-5' : 'translate-x-0'}`} />
+                                </button>
                             </div>
                             <div className="flex justify-end pt-4 gap-3 border-t border-muted/10 mt-6">
                                 <button type="button" onClick={() => setIsEditingProfile(false)} className="px-6 py-2.5 rounded-xl font-bold text-muted-foreground hover:bg-muted/10 transition-colors text-sm">Cancelar</button>

@@ -2,12 +2,13 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLeagueDto, UpdateLeagueDto } from './dto/league.dto';
 
+type Requestor = { userId?: string; role?: string };
+
 @Injectable()
 export class LeaguesService {
     constructor(private prisma: PrismaService) { }
 
     async create(data: CreateLeagueDto) {
-        // Verificar cuota de ligas del usuario (skip para admin: maxLeagues >= 999)
         if (data.adminId) {
             const user = await this.prisma.user.findUnique({ where: { id: data.adminId } }) as any;
             if (user && user.maxLeagues < 999) {
@@ -26,9 +27,27 @@ export class LeaguesService {
         return this.prisma.league.create({ data });
     }
 
-    async findAll(adminId?: string) {
+    async findAll(adminId?: string, requestor?: Requestor) {
+        const isSystemAdmin = requestor?.role === 'admin';
+        const where: any = {};
+
+        if (adminId) {
+            // Dashboard: show all the user's own leagues, no privacy filter needed
+            where.adminId = adminId;
+        } else if (!isSystemAdmin) {
+            // Public listing: show only public leagues, or private ones the user owns
+            if (requestor?.userId) {
+                where.OR = [
+                    { isPrivate: false },
+                    { adminId: requestor.userId },
+                ];
+            } else {
+                where.isPrivate = false;
+            }
+        }
+
         return this.prisma.league.findMany({
-            where: adminId ? { adminId } : undefined,
+            where: Object.keys(where).length > 0 ? where : undefined,
             include: {
                 admin: { select: { id: true, firstName: true, lastName: true } },
                 _count: { select: { tournaments: true, umpires: true } },
@@ -37,7 +56,7 @@ export class LeaguesService {
         });
     }
 
-    async findOne(id: string) {
+    async findOne(id: string, requestor?: Requestor) {
         const league = await this.prisma.league.findUnique({
             where: { id },
             include: {
@@ -51,25 +70,37 @@ export class LeaguesService {
                 umpires: { select: { id: true, firstName: true, lastName: true } },
                 _count: { select: { tournaments: true, umpires: true } },
             },
-        });
+        }) as any;
 
         if (!league) {
             throw new NotFoundException(`League with id ${id} not found`);
+        }
+
+        // Privacy check
+        if (league.isPrivate) {
+            const isSystemAdmin = requestor?.role === 'admin';
+            const isOwner = requestor?.userId === league.adminId;
+            if (!isSystemAdmin && !isOwner) {
+                throw new ForbiddenException({
+                    code: 'PRIVATE',
+                    message: 'Esta liga es privada.',
+                });
+            }
         }
 
         return league;
     }
 
     async update(id: string, updateData: UpdateLeagueDto) {
-        await this.findOne(id); // Valida que existe
+        await this.findOne(id);
         return this.prisma.league.update({
             where: { id },
-            data: updateData,
+            data: updateData as any,
         });
     }
 
     async remove(id: string) {
-        await this.findOne(id); // Valida
+        await this.findOne(id);
         return this.prisma.league.delete({
             where: { id },
         });

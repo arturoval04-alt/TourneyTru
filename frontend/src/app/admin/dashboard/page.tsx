@@ -184,7 +184,8 @@ export default function AdminDashboard() {
         category: 'Libre',
         description: '',
         logoUrl: '',
-        leagueId: ''
+        leagueId: '',
+        isPrivate: false,
     });
 
     // -- Form: Create Team --
@@ -205,6 +206,7 @@ export default function AdminDashboard() {
     const [leagueForm, setLeagueForm] = useState({
         name: '', shortName: '', city: '', state: '',
         sport: 'softball', description: '', logoUrl: '',
+        isPrivate: false,
     });
 
     // --- API Fetchers ---
@@ -386,6 +388,7 @@ export default function AdminDashboard() {
                 locationCountry: tournForm.location_country,
                 description: tournForm.description,
                 logoUrl: tournForm.logoUrl,
+                isPrivate: tournForm.isPrivate,
             });
             if (newTourn) {
                 alert('Torneo Creado Satisfactoriamente');
@@ -401,7 +404,8 @@ export default function AdminDashboard() {
                     category: 'Libre',
                     description: '',
                     logoUrl: '',
-                    leagueId: ''
+                    leagueId: '',
+                    isPrivate: false,
                 });
                 fetchTournaments(
                     (userRole === 'organizer' || userRole === 'presi') ? currentUser?.id : undefined,
@@ -715,9 +719,10 @@ export default function AdminDashboard() {
                 description: leagueForm.description || undefined,
                 logoUrl: leagueForm.logoUrl || undefined,
                 adminId: currentUser.id,
+                isPrivate: leagueForm.isPrivate,
             });
             alert('Liga Creada');
-            setLeagueForm({ name: '', shortName: '', city: '', state: '', sport: 'softball', description: '', logoUrl: '' });
+            setLeagueForm({ name: '', shortName: '', city: '', state: '', sport: 'softball', description: '', logoUrl: '', isPrivate: false });
             setShowLeagueModal(false);
             fetchLeagues(userRole === 'organizer' ? currentUser?.id : undefined);
         } catch (err: any) {
@@ -741,6 +746,7 @@ export default function AdminDashboard() {
             sport: league.sport || 'softball',
             description: league.description || '',
             logoUrl: league.logoUrl || '',
+            isPrivate: (league as any).isPrivate ?? false,
         });
         setLeagueDropdownOpen(null);
         setShowLeagueModal(true);
@@ -759,11 +765,12 @@ export default function AdminDashboard() {
                 sport: leagueForm.sport || undefined,
                 description: leagueForm.description || undefined,
                 logoUrl: leagueForm.logoUrl || undefined,
+                isPrivate: leagueForm.isPrivate,
             });
             alert('Liga Actualizada');
             setEditingLeague(null);
             setShowLeagueModal(false);
-            setLeagueForm({ name: '', shortName: '', city: '', state: '', sport: 'softball', description: '', logoUrl: '' });
+            setLeagueForm({ name: '', shortName: '', city: '', state: '', sport: 'softball', description: '', logoUrl: '', isPrivate: false });
             fetchLeagues(userRole === 'organizer' ? currentUser?.id : undefined);
         } catch (err) {
             console.error(err);
@@ -1960,6 +1967,21 @@ export default function AdminDashboard() {
                                 />
                             </div>
 
+                            {/* Toggle privacidad */}
+                            <div className="flex items-center justify-between p-3 bg-muted/5 border border-muted/20 rounded-xl">
+                                <div>
+                                    <p className="text-xs font-bold text-foreground">Torneo Privado</p>
+                                    <p className="text-[10px] text-muted-foreground mt-0.5">Solo los organizadores podrán verlo</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setTournForm(f => ({ ...f, isPrivate: !f.isPrivate }))}
+                                    className={`relative w-10 h-5 rounded-full transition-colors ${tournForm.isPrivate ? 'bg-amber-500' : 'bg-muted/30'}`}
+                                >
+                                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${tournForm.isPrivate ? 'translate-x-5' : 'translate-x-0'}`} />
+                                </button>
+                            </div>
+
                             <button type="submit" disabled={saving} className={`w-full py-3 mt-4 font-bold rounded-xl transition shadow-lg ${saving ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-primary/20 cursor-pointer active:scale-95'}`}>
                                 {saving ? 'Verificando...' : 'Crear Torneo Base'}
                             </button>
@@ -2458,7 +2480,7 @@ export default function AdminDashboard() {
             {showLeagueModal && (
                 <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[60] flex flex-col items-center justify-center p-4">
                     <div className="bg-surface border border-muted/30 p-5 sm:p-8 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl relative animate-fade-in-up">
-                        <button onClick={() => { setShowLeagueModal(false); setEditingLeague(null); setLeagueForm({ name: '', shortName: '', city: '', state: '', sport: 'softball', description: '', logoUrl: '' }); }} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
+                        <button onClick={() => { setShowLeagueModal(false); setEditingLeague(null); setLeagueForm({ name: '', shortName: '', city: '', state: '', sport: 'softball', description: '', logoUrl: '', isPrivate: false }); }} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
                         <h2 className="text-xl font-black text-foreground mb-1 uppercase tracking-tight">{editingLeague ? 'Editar Liga' : 'Registrar Liga'}</h2>
@@ -2505,6 +2527,21 @@ export default function AdminDashboard() {
                                     placeholder="🏟️"
                                 />
                             </div>
+                            {/* Toggle privacidad */}
+                            <div className="flex items-center justify-between p-3 bg-muted/5 border border-muted/20 rounded-xl">
+                                <div>
+                                    <p className="text-xs font-bold text-foreground">Liga Privada</p>
+                                    <p className="text-[10px] text-muted-foreground mt-0.5">Solo el administrador podrá verla</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setLeagueForm(f => ({ ...f, isPrivate: !f.isPrivate }))}
+                                    className={`relative w-10 h-5 rounded-full transition-colors ${leagueForm.isPrivate ? 'bg-amber-500' : 'bg-muted/30'}`}
+                                >
+                                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${leagueForm.isPrivate ? 'translate-x-5' : 'translate-x-0'}`} />
+                                </button>
+                            </div>
+
                             <button type="submit" disabled={saving} className="w-full py-3 bg-primary hover:bg-primary-light text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all">
                                 {saving ? (editingLeague ? 'Guardando...' : 'Creando...') : (editingLeague ? 'Guardar Cambios' : 'Crear Liga')}
                             </button>

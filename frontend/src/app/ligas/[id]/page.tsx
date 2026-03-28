@@ -5,8 +5,9 @@ import Link from "next/link";
 import Image from "next/image";
 import Navbar from "@/components/Navbar";
 import { useParams } from "next/navigation";
-import { ArrowLeft, MapPin, Calendar, Trophy, Users, Globe, Facebook } from "lucide-react";
+import { ArrowLeft, MapPin, Calendar, Trophy, Users, Globe, Facebook, Lock } from "lucide-react";
 import api from "@/lib/api";
+import { getUser } from "@/lib/auth";
 
 interface Tournament {
     id: string;
@@ -40,6 +41,7 @@ interface LeagueData {
     websiteUrl?: string;
     facebookUrl?: string;
     isVerified: boolean;
+    isPrivate: boolean;
     admin: { id: string; firstName: string; lastName: string; email: string };
     tournaments: Tournament[];
     umpires: Umpire[];
@@ -65,13 +67,33 @@ export default function LeaguePage() {
     const [league, setLeague] = useState<LeagueData | null>(null);
     const [loading, setLoading] = useState(true);
     const [tab, setTab] = useState<Tab>("torneos");
+    const [accessDenied, setAccessDenied] = useState(false);
+    const [canEdit, setCanEdit] = useState(false);
 
     useEffect(() => {
         api.get(`/leagues/${id}`)
-            .then(({ data }) => setLeague(data))
-            .catch(console.error)
+            .then(({ data }) => {
+                setLeague(data);
+                const user = getUser();
+                if (user) {
+                    if (user.role === 'admin' || user.id === data.admin?.id) setCanEdit(true);
+                }
+            })
+            .catch((err: any) => {
+                if (err?.response?.status === 403) setAccessDenied(true);
+            })
             .finally(() => setLoading(false));
     }, [id]);
+
+    const handleTogglePrivacy = async () => {
+        if (!league) return;
+        try {
+            await api.patch(`/leagues/${id}`, { isPrivate: !league.isPrivate });
+            setLeague({ ...league, isPrivate: !league.isPrivate });
+        } catch (err) {
+            console.error(err);
+        }
+    };
 
     if (loading) {
         return (
@@ -83,6 +105,22 @@ export default function LeaguePage() {
                         <div className="h-48 bg-surface rounded-2xl" />
                         <div className="h-64 bg-surface rounded-2xl" />
                     </div>
+                </main>
+            </div>
+        );
+    }
+
+    if (accessDenied) {
+        return (
+            <div className="min-h-screen bg-background text-foreground">
+                <Navbar />
+                <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
+                    <div className="w-16 h-16 rounded-full bg-muted/10 flex items-center justify-center mx-auto mb-4">
+                        <Lock size={28} className="text-muted-foreground" />
+                    </div>
+                    <h2 className="text-2xl font-black mb-2">Liga Privada</h2>
+                    <p className="text-muted-foreground text-sm mb-6">Esta liga es privada. Solo el administrador puede acceder.</p>
+                    <Link href="/ligas" className="text-primary hover:underline text-sm font-bold">Volver a ligas</Link>
                 </main>
             </div>
         );
@@ -145,12 +183,24 @@ export default function LeaguePage() {
                             <div className="flex flex-wrap items-center gap-2 mb-1">
                                 <h1 className="text-2xl sm:text-3xl font-black">{league.name}</h1>
                                 {league.isVerified && (
-                                    <span
-                                        className="px-2 py-0.5 bg-primary/10 text-primary text-xs font-bold rounded-full"
-                                        title="Liga verificada por TourneyTru"
-                                    >
+                                    <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs font-bold rounded-full" title="Liga verificada por TourneyTru">
                                         ✓ Verificada
                                     </span>
+                                )}
+                                {league.isPrivate && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500/10 text-amber-400 text-xs font-bold rounded-full border border-amber-500/20">
+                                        <Lock size={10} /> Privada
+                                    </span>
+                                )}
+                                {canEdit && (
+                                    <button
+                                        onClick={handleTogglePrivacy}
+                                        className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-full border transition-colors cursor-pointer ${league.isPrivate ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20' : 'bg-muted/10 text-muted-foreground border-muted/30 hover:bg-muted/20'}`}
+                                        title={league.isPrivate ? 'Hacer pública esta liga' : 'Hacer privada esta liga'}
+                                    >
+                                        <Lock size={10} />
+                                        {league.isPrivate ? 'Hacer pública' : 'Hacer privada'}
+                                    </button>
                                 )}
                             </div>
 

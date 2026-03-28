@@ -1,7 +1,8 @@
-import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { TournamentsService } from './tournaments.service';
 import { CreateTournamentDto, UpdateTournamentDto } from './dto/tournament.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 
 @Controller('api/torneos')
 export class TournamentsController {
@@ -14,13 +15,21 @@ export class TournamentsController {
     }
 
     @Get()
-    findAll(@Query('adminId') adminId?: string, @Query('leagueId') leagueId?: string) {
-        return this.tournamentsService.findAll(adminId, leagueId);
+    @UseGuards(OptionalJwtAuthGuard)
+    findAll(
+        @Query('adminId') adminId?: string,
+        @Query('leagueId') leagueId?: string,
+        @Req() req?: any,
+    ) {
+        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
+        return this.tournamentsService.findAll(adminId, leagueId, requestor);
     }
 
     @Get(':id')
-    findOne(@Param('id') id: string) {
-        return this.tournamentsService.findOne(id);
+    @UseGuards(OptionalJwtAuthGuard)
+    findOne(@Param('id') id: string, @Req() req?: any) {
+        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
+        return this.tournamentsService.findOne(id, requestor);
     }
 
     @Patch(':id')
@@ -36,8 +45,10 @@ export class TournamentsController {
     }
 
     @Get(':id/teams')
-    getTeams(@Param('id') id: string) {
-        return this.tournamentsService.getTeams(id);
+    @UseGuards(OptionalJwtAuthGuard)
+    getTeams(@Param('id') id: string, @Req() req?: any) {
+        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
+        return this.tournamentsService.getTeams(id, requestor);
     }
 
     @Post(':id/organizers')
@@ -90,7 +101,9 @@ export class TournamentsController {
     }
 
     @Get(':id/standings')
-    getStandings(@Param('id') id: string) {
-        return this.tournamentsService.getStandings(id);
+    @UseGuards(OptionalJwtAuthGuard)
+    getStandings(@Param('id') id: string, @Req() req?: any) {
+        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
+        return this.tournamentsService.getStandings(id, requestor);
     }
 }

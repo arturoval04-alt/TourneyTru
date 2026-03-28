@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsUUID, IsDateString, MaxLength, IsIn } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsDateString, MaxLength, IsIn, IsBoolean } from 'class-validator';
 
 export class CreateTournamentDto {
     @IsString()
@@ -102,4 +102,8 @@ export class UpdateTournamentDto {
     @IsOptional()
     @IsIn(['upcoming', 'active', 'finished', 'cancelled'])
     status?: string;
+
+    @IsOptional()
+    @IsBoolean()
+    isPrivate?: boolean;
 }

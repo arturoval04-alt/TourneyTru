@@ -104,4 +104,8 @@ export class UpdateLeagueDto {
     @IsOptional()
     @IsBoolean()
     isVerified?: boolean;
+
+    @IsOptional()
+    @IsBoolean()
+    isPrivate?: boolean;
 }

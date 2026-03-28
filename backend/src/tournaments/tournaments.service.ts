@@ -2,6 +2,8 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTournamentDto, UpdateTournamentDto } from './dto/tournament.dto';
 
+type Requestor = { userId?: string; role?: string };
+
 @Injectable()
 export class TournamentsService {
     constructor(private prisma: PrismaService) { }
@@ -35,28 +37,52 @@ export class TournamentsService {
         return tournament;
     }
 
-    async findAll(adminId?: string, leagueId?: string) {
+    async findAll(adminId?: string, leagueId?: string, requestor?: Requestor) {
+        const isSystemAdmin = requestor?.role === 'admin';
         const where: any = {};
         if (leagueId) where.leagueId = leagueId;
+
         if (adminId) {
+            // Dashboard: show all tournaments the user is admin/organizer of — no privacy filter
             where.OR = [
                 { league: { adminId } },
                 { organizers: { some: { userId: adminId } } }
             ];
+        } else if (!isSystemAdmin) {
+            // Public listing: hide private tournaments and tournaments in private leagues
+            if (requestor?.userId) {
+                where.AND = [
+                    {
+                        OR: [
+                            { isPrivate: false },
+                            { league: { adminId: requestor.userId } },
+                            { organizers: { some: { userId: requestor.userId } } },
+                        ]
+                    },
+                    {
+                        OR: [
+                            { league: { isPrivate: false } },
+                            { league: { adminId: requestor.userId } },
+                        ]
+                    }
+                ];
+            } else {
+                where.isPrivate = false;
+                where.league = { isPrivate: false };
+            }
         }
+
         return this.prisma.tournament.findMany({
             where: Object.keys(where).length > 0 ? where : undefined,
             include: {
                 league: true,
                 _count: { select: { teams: true, games: true } },
-                games: {
-                    select: { status: true },
-                },
+                games: { select: { status: true } },
             },
         });
     }
 
-    async findOne(id: string) {
+    async findOne(id: string, requestor?: Requestor) {
         const tournament = await this.prisma.tournament.findUnique({
             where: { id },
             include: {
@@ -78,19 +104,32 @@ export class TournamentsService {
                     orderBy: { scheduledDate: 'asc' },
                 },
                 fields: true,
-                organizers: {
-                    include: {
-                        user: true
-                    }
-                },
-                news: {
-                    orderBy: { createdAt: 'desc' }
-                }
+                organizers: { include: { user: true } },
+                news: { orderBy: { createdAt: 'desc' } }
             },
-        });
+        }) as any;
 
         if (!tournament) {
             throw new NotFoundException(`Tournament with id ${id} not found`);
+        }
+
+        const isSystemAdmin = requestor?.role === 'admin';
+
+        // League privacy: only league admin or system admin can access
+        if (tournament.league?.isPrivate && !isSystemAdmin) {
+            const isLeagueAdmin = requestor?.userId === tournament.league.adminId;
+            if (!isLeagueAdmin) {
+                throw new ForbiddenException({ code: 'PRIVATE', message: 'Esta liga es privada.' });
+            }
+        }
+
+        // Tournament privacy: league admin, organizer, or system admin
+        if (tournament.isPrivate && !isSystemAdmin) {
+            const isLeagueAdmin = requestor?.userId === tournament.league?.adminId;
+            const isOrganizer = tournament.organizers?.some((o: any) => o.userId === requestor?.userId);
+            if (!isLeagueAdmin && !isOrganizer) {
+                throw new ForbiddenException({ code: 'PRIVATE', message: 'Este torneo es privado.' });
+            }
         }
 
         return tournament;
@@ -115,8 +154,8 @@ export class TournamentsService {
         });
     }
 
-    async getTeams(id: string) {
-        await this.findOne(id); // Para asegurar que existe
+    async getTeams(id: string, requestor?: Requestor) {
+        await this.findOne(id, requestor);
         return this.prisma.team.findMany({
             where: { tournamentId: id },
             include: { _count: { select: { players: true } } },
@@ -199,8 +238,8 @@ export class TournamentsService {
         });
     }
 
-    async getStandings(id: string) {
-        const tournament = await this.findOne(id);
+    async getStandings(id: string, requestor?: Requestor) {
+        const tournament = await this.findOne(id, requestor);
 
         const finishedGames = await this.prisma.game.findMany({
             where: { tournamentId: id, status: 'finished' },

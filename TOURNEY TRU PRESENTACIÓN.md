@@ -73,6 +73,12 @@ Al terminar el torneo, cada jugador tiene su hoja de estadísticas completa: tur
 - Notificaciones en pantalla (toasts) para errores de conexión y validación
 - Página de error global y página 404 personalizadas
 - Modo oscuro en toda la interfaz
+- **Sistema de planes y cuotas**: cada usuario tiene límites configurables (ligas, torneos, equipos, jugadores); el backend lanza `QUOTA_EXCEEDED` y la UI deshabilita los botones de creación al alcanzar el límite
+- **Tab "Mi Plan"** en el panel de administración: muestra uso actual vs. límite del plan con barras de progreso y etiqueta de plan (demo, standard, pro, custom, etc.)
+- **Verificación de jugadores**: los organizadores/admins pueden marcar jugadores como "Verificado" con un solo clic; el badge aparece en el perfil del jugador
+- **Participación multi-torneo (RosterEntry)**: un jugador verificado puede ser añadido como invitado a un equipo de otro torneo; su perfil muestra el historial de equipos con badge "Invitado"
+- **Múltiples organizadores por torneo**: un torneo puede tener varios organizadores; el creador queda añadido automáticamente al crear el torneo; los organizadores pueden editar el torneo igual que el administrador
+- **Escáner de alineación por IA**: captura de foto de la planilla de alineación con visión artificial (Google Gemini 2.5 Flash) — disponible en el panel del juego
 
 ## Funcionalidades en desarrollo
 
@@ -123,12 +129,13 @@ El backend es una API REST + WebSocket construida con NestJS organizada en módu
 src/
 ├── auth/           ← Login, registro, reset de contraseña, guards JWT
 ├── games/          ← CRUD de juegos, lógica de alineaciones y jugadas
-├── tournaments/    ← CRUD de torneos
+├── tournaments/    ← CRUD de torneos y organizadores
 ├── teams/          ← Equipos dentro de torneos
-├── players/        ← Jugadores y sus perfiles
+├── players/        ← Jugadores, verificación y búsqueda de verificados
+├── roster/         ← Participación multi-torneo (RosterEntry)
 ├── leagues/        ← Ligas que contienen torneos
 ├── umpires/        ← Árbitros y asignaciones
-├── users/          ← Usuarios de la plataforma
+├── users/          ← Usuarios de la plataforma, planes y cuotas
 ├── stats/          ← Agregación y consulta de estadísticas
 ├── live/           ← Gateway WebSocket (Socket.IO)
 ├── vision/         ← Módulo de visión artificial (escáner de alineación)
@@ -173,20 +180,23 @@ Namespace: `/live_games`
 ## Base de datos — Modelos principales (Prisma)
 
 ```
-User          ← Usuarios de la plataforma con roles
-League        ← Contenedor de torneos
-Tournament    ← Un torneo específico
-Team          ← Equipo dentro de un torneo
-Player        ← Jugador individual
-Game          ← Partido (home vs away)
-Lineup        ← Bateador en la alineación de un juego
-LineupChange  ← Sustitución o cambio durante el juego
-Play          ← Jugada individual registrada
-PlayerStat    ← Estadísticas acumuladas por jugador
-GameUmpire    ← Asignación de árbitro a un juego
-Field         ← Campo/estadio dentro de un torneo
+User                 ← Usuarios con roles, plan y cuotas configurables
+League               ← Contenedor de torneos
+Tournament           ← Un torneo específico
+TournamentOrganizer  ← Usuarios co-administradores del torneo (múltiples)
 TournamentNews       ← Noticias del torneo
-TournamentOrganizer  ← Usuario asignado como organizador
+Field                ← Campo/estadio dentro de un torneo
+Team                 ← Equipo dentro de un torneo
+Player               ← Jugador individual con verificación (isVerified)
+RosterEntry          ← Participación de un jugador verificado en otro equipo/torneo
+Game                 ← Partido (home vs away)
+Lineup               ← Bateador en la alineación de un juego
+LineupChange         ← Sustitución o cambio durante el juego
+Play                 ← Jugada individual registrada
+PlayerStat           ← Estadísticas acumuladas por jugador y torneo
+GameUmpire           ← Asignación de árbitro a un juego
+Plan                 ← Plantillas de plan (demo, standard, pro...)
+Subscription         ← Suscripción de una liga a un plan
 ```
 
 ### Índices de performance
@@ -195,6 +205,22 @@ Los modelos críticos tienen índices compuestos para evitar full table scans:
 - `Play`: por `(gameId, inning)`, `batterId`, `pitcherId`
 - `PlayerStat`: por `(playerId, tournamentId)`, `(teamId, tournamentId)`
 - `Lineup`: por `(gameId, teamId)`
+
+### Campos importantes de `User`
+- `planLabel` — etiqueta del plan: `public`, `demo`, `standard`, `pro`, `admin`, `custom`
+- `maxLeagues`, `maxTournamentsPerLeague`, `maxTeamsPerTournament`, `maxPlayersPerTeam` — cuotas configurables individualmente por usuario
+- `forcePasswordChange` — fuerza cambio de contraseña en el próximo login
+- `scorekeeperLeagueId` — liga asignada al scorekeeper
+
+### Campos importantes de `Player`
+- `isVerified` — indica si el jugador está verificado y puede participar en rosters de otros equipos
+- `verifiedAt`, `verificationMethod` — auditoría de la verificación
+
+### Campos del modelo `RosterEntry`
+- `playerId`, `teamId`, `tournamentId` — relaciones únicas (constraint compuesto)
+- `number`, `position` — número y posición del jugador en ese equipo/torneo
+- `isActive` — soft delete: `false` significa que ya no participa
+- `joinedAt`, `leftAt` — auditoría de la participación
 
 ### Campos importantes de `Game`
 - `homeScore`, `awayScore` — marcador
@@ -219,16 +245,45 @@ src/app/
 ├── page.tsx                  ← Home/lobby con juegos recientes
 ├── error.tsx                 ← Error boundary global (pantalla de error amigable)
 ├── not-found.tsx             ← Página 404 personalizada
+├── planes/                   ← Página pública de planes y precios
 ├── (auth)/                   ← Login, registro, reset de contraseña
 ├── (score)/                  ← Interfaz de anotación (scorekeeper)
-├── game/[id]/                ← Panel de control del marcador
 ├── gamecast/[id]/            ← Vista pública del juego (sin login)
-├── torneos/[id]/             ← Detalle de torneo
-├── equipos/                  ← Lista y detalle de equipos
-├── jugadores/                ← Lista y perfiles de jugadores
+├── torneos/[id]/             ← Detalle de torneo con organizadores múltiples
+├── equipos/[id]/             ← Perfil de equipo + roster de jugadores invitados
+├── jugadores/[id]/           ← Perfil de jugador con verificación e historial multi-torneo
 ├── ligas/                    ← Lista y detalle de ligas
-└── admin/dashboard/          ← Panel de administración
+└── admin/dashboard/          ← Panel de administración (8 tabs)
 ```
+
+### Panel de administración: `admin/dashboard/page.tsx`
+El dashboard tiene **8 tabs** según el rol del usuario:
+
+| Tab | Roles | Descripción |
+|---|---|---|
+| Perfil | Todos | Editar datos personales |
+| Ligas | Admin, Organizer | Crear y gestionar ligas (con cuota) |
+| Torneos | Admin, Organizer | Gestionar torneos por liga (con cuota) |
+| Equipos | Admin, Organizer | Gestionar equipos por torneo (con cuota) |
+| Jugadores | Admin, Organizer | Dar de alta jugadores por equipo (con cuota) |
+| Juegos | Admin, Organizer, Scorekeeper | Programar y gestionar partidos |
+| Usuarios | Admin | Gestión de accesos, roles y planes |
+| Mi Plan | Organizer | Ver uso actual vs. límites del plan contratado |
+
+**Cuotas por plan** (configurables individualmente en el modelo `User`):
+
+| Plan | Ligas | Torneos/Liga | Equipos/Torneo | Jugadores/Equipo |
+|---|---|---|---|---|
+| demo | 1 | 1 | 6 | 25 |
+| standard | 1 | 3 | 10 | 30 |
+| pro | 1 | 10 | 50 | 50 |
+| custom | según usuario | según usuario | según usuario | según usuario |
+| admin | sin límite | sin límite | sin límite | sin límite |
+
+### Perfiles de torneo, equipo y jugador
+- **`torneos/[id]/`**: Los organizadores (no sólo el admin) pueden editar el torneo. El creador se añade automáticamente como organizador al crearlo. El acceso se controla con `canEdit` (estado calculado al cargar los datos, no hardcoded por rol).
+- **`equipos/[id]/`**: Tab JUGADORES muestra el roster regular + una sección "Jugadores Invitados" para los jugadores con `RosterEntry`. Los canEdit pueden añadir jugadores verificados de otros equipos.
+- **`jugadores/[id]/`**: Badge "✓ Verificado" en el nombre. Estadísticas de bateo y pitcheo con filtro por torneo. Historial de juegos con filtro por torneo. Tab de historial de participación en otros equipos.
 
 ### Estado global: `store/gameStore.ts` (~1030 líneas)
 El store de Zustand mantiene **todo el estado de un juego activo**:
@@ -345,7 +400,8 @@ Guardar el JWT en `localStorage` lo expone a cualquier script en la página (XSS
 3. **App móvil** para scorekeepers en campo
 4. **Notificaciones push** para espectadores suscritos a un juego
 5. **Exportación de estadísticas** a PDF/Excel
-6. **Escáner de alineación por IA** — completar integración del módulo `vision/`
+6. **Escáner de alineación por IA** — completar integración del módulo `vision/` (ya funcional con Gemini 2.5 Flash, falta UI definitiva)
+7. **Transferencia permanente de jugadores** — actualmente el `RosterEntry` siempre es temporal (Invitado); se podría añadir un flujo para cambiar el `teamId` permanente del jugador
 
 ---
 
@@ -356,4 +412,4 @@ Para reporte de bugs o sugerencias, contactar directamente.
 
 ---
 
-*Documento actualizado el 26 de marzo de 2026.*
+*Documento actualizado el 27 de marzo de 2026.*

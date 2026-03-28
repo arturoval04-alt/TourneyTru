@@ -1,7 +1,8 @@
-import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { LeaguesService } from './leagues.service';
 import { CreateLeagueDto, UpdateLeagueDto } from './dto/league.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 
 @Controller('api/leagues')
 export class LeaguesController {
@@ -14,13 +15,17 @@ export class LeaguesController {
     }
 
     @Get()
-    findAll(@Query('adminId') adminId?: string) {
-        return this.leaguesService.findAll(adminId);
+    @UseGuards(OptionalJwtAuthGuard)
+    findAll(@Query('adminId') adminId?: string, @Req() req?: any) {
+        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
+        return this.leaguesService.findAll(adminId, requestor);
     }
 
     @Get(':id')
-    findOne(@Param('id') id: string) {
-        return this.leaguesService.findOne(id);
+    @UseGuards(OptionalJwtAuthGuard)
+    findOne(@Param('id') id: string, @Req() req?: any) {
+        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
+        return this.leaguesService.findOne(id, requestor);
     }
 
     @Patch(':id')
@@ -34,10 +39,12 @@ export class LeaguesController {
     remove(@Param('id') id: string) {
         return this.leaguesService.remove(id);
     }
-    
+
     @Get(':id/torneos')
-    async getTournaments(@Param('id') id: string) {
-        const league = await this.leaguesService.findOne(id);
+    @UseGuards(OptionalJwtAuthGuard)
+    async getTournaments(@Param('id') id: string, @Req() req?: any) {
+        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
+        const league = await this.leaguesService.findOne(id, requestor);
         return league.tournaments;
     }
 }
