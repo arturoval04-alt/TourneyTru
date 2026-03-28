@@ -32,27 +32,25 @@ export class LeaguesService {
         const where: any = {};
 
         if (adminId) {
-            // Dashboard: show all the user's own leagues, no privacy filter needed
             where.adminId = adminId;
-        } else if (!isSystemAdmin) {
-            // Public listing: show only public leagues, or private ones the user owns
-            if (requestor?.userId) {
-                where.OR = [
-                    { isPrivate: false },
-                    { adminId: requestor.userId },
-                ];
-            } else {
-                where.isPrivate = false;
-            }
         }
 
-        return this.prisma.league.findMany({
+        const results = await this.prisma.league.findMany({
             where: Object.keys(where).length > 0 ? where : undefined,
             include: {
                 admin: { select: { id: true, firstName: true, lastName: true } },
                 _count: { select: { tournaments: true, umpires: true } },
             },
             orderBy: { name: 'asc' },
+        }) as any[];
+
+        // If scoped to a user's own leagues or system admin — no privacy filter
+        if (adminId || isSystemAdmin) return results;
+
+        // Public listing: filter private leagues in-memory (Prisma client not regenerated)
+        return results.filter((l: any) => {
+            if (!(l.isPrivate ?? false)) return true;
+            return requestor?.userId === l.adminId;
         });
     }
 

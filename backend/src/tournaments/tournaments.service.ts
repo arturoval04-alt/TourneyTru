@@ -48,37 +48,33 @@ export class TournamentsService {
                 { league: { adminId } },
                 { organizers: { some: { userId: adminId } } }
             ];
-        } else if (!isSystemAdmin) {
-            // Public listing: hide private tournaments and tournaments in private leagues
-            if (requestor?.userId) {
-                where.AND = [
-                    {
-                        OR: [
-                            { isPrivate: false },
-                            { league: { adminId: requestor.userId } },
-                            { organizers: { some: { userId: requestor.userId } } },
-                        ]
-                    },
-                    {
-                        OR: [
-                            { league: { isPrivate: false } },
-                            { league: { adminId: requestor.userId } },
-                        ]
-                    }
-                ];
-            } else {
-                where.isPrivate = false;
-                where.league = { isPrivate: false };
-            }
         }
 
-        return this.prisma.tournament.findMany({
+        // Fetch all matching tournaments, then filter by privacy in-memory
+        // (Prisma client not regenerated — isPrivate unknown to type system)
+        const results = await this.prisma.tournament.findMany({
             where: Object.keys(where).length > 0 ? where : undefined,
             include: {
                 league: true,
                 _count: { select: { teams: true, games: true } },
                 games: { select: { status: true } },
             },
+        }) as any[];
+
+        // If admin filter was provided, skip privacy filtering (user sees their own)
+        if (adminId || isSystemAdmin) return results;
+
+        // Public / authenticated-but-not-owner: filter private items
+        return results.filter((t: any) => {
+            const leaguePrivate = t.league?.isPrivate ?? false;
+            const tournPrivate = t.isPrivate ?? false;
+            if (requestor?.userId) {
+                const isLeagueAdmin = t.league?.adminId === requestor.userId;
+                if (leaguePrivate && !isLeagueAdmin) return false;
+                if (tournPrivate && !isLeagueAdmin) return false;
+                return true;
+            }
+            return !leaguePrivate && !tournPrivate;
         });
     }
 

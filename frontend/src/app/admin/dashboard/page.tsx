@@ -455,7 +455,8 @@ export default function AdminDashboard() {
                 category: 'Libre',
                 description: '',
                 logoUrl: '',
-                leagueId: ''
+                leagueId: '',
+                isPrivate: false,
             });
             fetchTournaments(
                 (userRole === 'organizer' || userRole === 'presi') ? currentUser?.id : undefined,
