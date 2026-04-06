@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 
 type Status = "loading" | "success" | "error";
 
-export default function VerifyEmailPage() {
+function VerifyEmailContent() {
     const searchParams = useSearchParams();
     const token = searchParams.get("token");
     const [status, setStatus] = useState<Status>("loading");
@@ -95,5 +95,13 @@ export default function VerifyEmailPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function VerifyEmailPage() {
+    return (
+        <Suspense>
+            <VerifyEmailContent />
+        </Suspense>
     );
 }
