@@ -2,14 +2,11 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import api from "@/lib/api";
-import { saveSession } from "@/lib/auth";
 
 type Intent = "viewer" | "organizer";
 
 export default function RegisterPage() {
-    const router = useRouter();
     const [intent, setIntent] = useState<Intent>("viewer");
     const [formData, setFormData] = useState({
         nombre: "",
@@ -21,13 +18,16 @@ export default function RegisterPage() {
     });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const [registeredEmail, setRegisteredEmail] = useState("");
+    const [resendLoading, setResendLoading] = useState(false);
+    const [resendMessage, setResendMessage] = useState("");
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
         setError("");
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         setError("");
 
@@ -43,7 +43,7 @@ export default function RegisterPage() {
 
         setLoading(true);
         try {
-            const { data } = await api.post('/auth/register', {
+            await api.post('/auth/register', {
                 email: formData.correo.trim().toLowerCase(),
                 password: formData.password,
                 firstName: formData.nombre.trim(),
@@ -54,23 +54,10 @@ export default function RegisterPage() {
                 } : {}),
             });
 
-            saveSession({
-                id: data.user.id,
-                email: data.user.email,
-                firstName: data.user.firstName,
-                lastName: data.user.lastName,
-                role: data.user.role,
-                phone: data.user.phone ?? null,
-                profilePicture: data.user.profilePicture ?? null,
-            }, {
-                accessToken: data.accessToken,
-                refreshToken: data.refreshToken,
-            });
-
-            router.push("/");
-        } catch (err: any) {
-            const msg = err?.response?.data?.message;
-            if (msg?.includes('already')) {
+            setRegisteredEmail(formData.correo.trim().toLowerCase());
+        } catch (err: unknown) {
+            const msg = (err as any)?.response?.data?.message;
+            if (msg?.includes('correo') || msg?.includes('already')) {
                 setError("Ya existe una cuenta con ese correo.");
             } else {
                 setError(msg || "Error de conexión con el servidor.");
@@ -80,6 +67,65 @@ export default function RegisterPage() {
         }
     };
 
+    const handleResend = async () => {
+        setResendLoading(true);
+        setResendMessage("");
+        try {
+            await api.post('/auth/resend-verification', { email: registeredEmail });
+            setResendMessage("Correo reenviado. Revisa tu bandeja de entrada.");
+        } catch {
+            setResendMessage("No se pudo reenviar. Intenta de nuevo en un momento.");
+        } finally {
+            setResendLoading(false);
+        }
+    };
+
+    // — Pantalla de éxito: revisa tu correo —
+    if (registeredEmail) {
+        return (
+            <div className="min-h-screen bg-background text-foreground flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
+                <div className="sm:mx-auto sm:w-full sm:max-w-md">
+                    <div className="bg-surface py-10 px-8 shadow-xl sm:rounded-2xl border border-muted/30 text-center">
+                        <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-6">
+                            <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                        </div>
+                        <h2 className="text-2xl font-black text-foreground mb-2">Revisa tu correo</h2>
+                        <p className="text-sm text-muted-foreground mb-1 leading-relaxed">
+                            Te enviamos un enlace de verificación a:
+                        </p>
+                        <p className="text-sm font-semibold text-primary mb-6">{registeredEmail}</p>
+                        <p className="text-xs text-muted-foreground mb-8 leading-relaxed">
+                            Haz clic en el enlace del correo para activar tu cuenta.
+                            El enlace expira en <strong className="text-foreground">24 horas</strong>.
+                        </p>
+
+                        {resendMessage && (
+                            <p className="text-xs text-primary mb-4">{resendMessage}</p>
+                        )}
+
+                        <button
+                            onClick={handleResend}
+                            disabled={resendLoading}
+                            className="w-full py-2.5 px-4 border border-muted/30 rounded-xl text-sm font-semibold text-muted-foreground hover:text-foreground hover:border-muted/60 transition-all disabled:opacity-50 disabled:cursor-not-allowed mb-4"
+                        >
+                            {resendLoading ? "Reenviando..." : "Reenviar correo"}
+                        </button>
+
+                        <Link
+                            href="/login"
+                            className="block w-full py-2.5 px-4 bg-primary rounded-xl text-sm font-bold text-white text-center hover:bg-primary-light transition-all"
+                        >
+                            Ir al inicio de sesión
+                        </Link>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // — Formulario de registro —
     return (
         <div className="min-h-screen bg-background text-foreground flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
             <div className="sm:mx-auto sm:w-full sm:max-w-md">
@@ -200,13 +246,12 @@ export default function RegisterPage() {
                             />
                         </div>
 
-                        {/* Mensaje de solicitud de organizador */}
                         {intent === "organizer" && (
                             <div className="p-4 rounded-xl border border-primary/20 bg-primary/5">
                                 <p className="text-xs font-bold text-primary mb-1">Solicitud de acceso como organizador</p>
                                 <p className="text-xs text-muted-foreground leading-relaxed">
                                     Tu cuenta se creará como visitante. Para activar el acceso de organizador, manda un correo a{" "}
-                                    <span className="text-primary font-semibold">valdezarturoval@gmail.com</span>{" "}
+                                    <span className="text-primary font-semibold">admin@tourneytru.com</span>{" "}
                                     con tu nombre y correo registrado. Recibirás respuesta en máximo 2 días hábiles.
                                 </p>
                             </div>

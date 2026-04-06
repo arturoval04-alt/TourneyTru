@@ -51,6 +51,9 @@ export default function LoginPage() {
     const [error, setError]               = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [showPlans, setShowPlans]       = useState(false);
+    const [unverifiedEmail, setUnverifiedEmail] = useState("");
+    const [resendLoading, setResendLoading]     = useState(false);
+    const [resendMessage, setResendMessage]     = useState("");
     const router = useRouter();
 
     const handleLogin = async (e: React.FormEvent) => {
@@ -89,11 +92,29 @@ export default function LoginPage() {
             }
         } catch (err: any) {
             const msg = err?.response?.data?.message;
-            setError(msg === "Invalid credentials" || msg === "Unauthorized"
-                ? "Credenciales incorrectas."
-                : "Error de conexión con el servidor.");
+            if (msg === "EMAIL_NOT_VERIFIED") {
+                setUnverifiedEmail(email.trim().toLowerCase());
+                setError("EMAIL_NOT_VERIFIED");
+            } else if (msg === "Invalid credentials" || msg === "Unauthorized" || msg === "Credenciales incorrectas") {
+                setError("Correo o contraseña incorrectos.");
+            } else {
+                setError("Error de conexión con el servidor.");
+            }
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleResend = async () => {
+        setResendLoading(true);
+        setResendMessage("");
+        try {
+            await api.post('/auth/resend-verification', { email: unverifiedEmail });
+            setResendMessage("Correo reenviado. Revisa tu bandeja de entrada.");
+        } catch {
+            setResendMessage("No se pudo reenviar. Intenta de nuevo en un momento.");
+        } finally {
+            setResendLoading(false);
         }
     };
 
@@ -149,7 +170,30 @@ export default function LoginPage() {
                      style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(16px)' }}>
 
                     <AnimatePresence>
-                        {error && (
+                        {error === "EMAIL_NOT_VERIFIED" ? (
+                            <motion.div
+                                initial={{ opacity: 0, y: -6, height: 0 }}
+                                animate={{ opacity: 1, y: 0, height: 'auto' }}
+                                exit={{ opacity: 0, y: -6, height: 0 }}
+                                className="mb-5 p-4 rounded-xl border border-yellow-500/20 bg-yellow-500/8 overflow-hidden">
+                                <p className="text-yellow-400 text-sm font-semibold mb-1">Correo sin verificar</p>
+                                <p className="text-yellow-400/80 text-xs mb-3 leading-relaxed">
+                                    Revisa tu bandeja de entrada y haz clic en el enlace de verificación que te enviamos.
+                                </p>
+                                {resendMessage ? (
+                                    <p className="text-xs text-yellow-300">{resendMessage}</p>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={handleResend}
+                                        disabled={resendLoading}
+                                        className="text-xs font-semibold text-yellow-400 hover:text-yellow-300 underline disabled:opacity-50 transition-colors"
+                                    >
+                                        {resendLoading ? "Reenviando..." : "Reenviar correo de verificación"}
+                                    </button>
+                                )}
+                            </motion.div>
+                        ) : error ? (
                             <motion.div
                                 initial={{ opacity: 0, y: -6, height: 0 }}
                                 animate={{ opacity: 1, y: 0, height: 'auto' }}
@@ -160,7 +204,7 @@ export default function LoginPage() {
                                 </svg>
                                 {error}
                             </motion.div>
-                        )}
+                        ) : null}
                     </AnimatePresence>
 
                     <form onSubmit={handleLogin} className="space-y-4">

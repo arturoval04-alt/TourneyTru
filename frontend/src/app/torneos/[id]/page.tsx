@@ -23,6 +23,7 @@ export default function TournamentProfilePage() {
         location_city?: string;
         location_state?: string;
         logoUrl?: string;
+        scheduleBgUrl?: string;
         leagueId?: string;
         status?: string;
         startDate?: string;
@@ -266,6 +267,16 @@ export default function TournamentProfilePage() {
     const [editRoundValue, setEditRoundValue] = useState('');
     const [exportingJornada, setExportingJornada] = useState(false);
     const calendarExportRef = useRef<HTMLDivElement>(null);
+
+    const handleUpdateScheduleBg = async (url: string) => {
+        try {
+            await api.patch(`/torneos/${params.id}`, { scheduleBgUrl: url });
+            setTournament(prev => prev ? { ...prev, scheduleBgUrl: url } : null);
+        } catch (err) {
+            console.error(err);
+            alert('Error al actualizar el fondo');
+        }
+    };
 
     const handleUpdateGameRound = async (gameId: string, round: string) => {
         try {
@@ -742,14 +753,29 @@ export default function TournamentProfilePage() {
                                                 {/* ── Header ── */}
                                                 <div className="flex items-center justify-between gap-3">
                                                     <h3 className="text-lg font-bold text-foreground">Calendario</h3>
-                                                    <button
-                                                        onClick={handleExportJornada}
-                                                        disabled={exportingJornada || !activeRound}
-                                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border border-muted/30 text-muted-foreground hover:text-foreground hover:border-primary/50 transition-all disabled:opacity-40"
-                                                    >
-                                                        <Download className="w-3.5 h-3.5" />
-                                                        {exportingJornada ? 'Exportando...' : 'Exportar Jornada'}
-                                                    </button>
+                                                    <div className="flex items-center gap-4">
+                                                        {canEdit && (
+                                                            <div className="flex flex-col items-end gap-1">
+                                                                <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Fondo del Póster</span>
+                                                                <div className="scale-75 origin-right">
+                                                                    <ImageUploader
+                                                                        value={tournament?.scheduleBgUrl || ''}
+                                                                        onChange={handleUpdateScheduleBg}
+                                                                        size="sm"
+                                                                        placeholder="🏔️"
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        <button
+                                                            onClick={handleExportJornada}
+                                                            disabled={exportingJornada || !activeRound}
+                                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border border-muted/30 text-muted-foreground hover:text-foreground hover:border-primary/50 transition-all disabled:opacity-40"
+                                                        >
+                                                            <Download className="w-3.5 h-3.5" />
+                                                            {exportingJornada ? 'Exportando...' : 'Exportar Jornada'}
+                                                        </button>
+                                                    </div>
                                                 </div>
 
                                                 {/* ── Jornada Tabs ── */}
@@ -844,67 +870,106 @@ export default function TournamentProfilePage() {
                                                     ref={calendarExportRef}
                                                     style={{
                                                         position: 'fixed', top: '-9999px', left: '-9999px',
-                                                        width: '540px',
-                                                        backgroundImage: 'url(/schedule-bg.jpg)',
+                                                        width: '1080px',
+                                                        minHeight: '1920px',
+                                                        backgroundColor: '#09090b',
+                                                        backgroundImage: tournament?.scheduleBgUrl ? `url(${tournament.scheduleBgUrl})` : 'none',
                                                         backgroundSize: 'cover',
                                                         backgroundPosition: 'center',
-                                                        borderRadius: '20px',
                                                         overflow: 'hidden',
                                                         fontFamily: 'system-ui, sans-serif',
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        alignItems: 'center',
+                                                        boxSizing: 'border-box'
                                                     }}
                                                     aria-hidden
                                                 >
-                                                    {/* Dark overlay for readability */}
-                                                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(160deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.75) 100%)' }} />
-                                                    {/* Content */}
-                                                    <div style={{ position: 'relative', padding: '36px 32px 28px' }}>
-                                                        {/* Header row */}
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '8px' }}>
-                                                            {tournament?.logoUrl && (
-                                                                <img src={tournament.logoUrl} alt="Logo" style={{ width: '52px', height: '52px', borderRadius: '10px', objectFit: 'contain', background: 'white', padding: '3px', flexShrink: 0 }} />
-                                                            )}
-                                                            <div>
-                                                                <p style={{ fontSize: '9px', fontWeight: 900, letterSpacing: '0.3em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)', margin: 0 }}>{tournament?.name}</p>
-                                                                <h2 style={{ fontSize: '28px', fontWeight: 900, color: '#ffffff', margin: 0, letterSpacing: '-0.5px', textTransform: 'uppercase', lineHeight: 1.1 }}>{activeRound}</h2>
+                                                    {/* Dark overlay for readability if custom bg is used */}
+                                                    {tournament?.scheduleBgUrl && (
+                                                        <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 0 }} />
+                                                    )}
+
+                                                    {/* Background Stripes Decorations (Only if no custom bg) */}
+                                                    {!tournament?.scheduleBgUrl && (
+                                                        <>
+                                                            <div style={{ position: 'absolute', top: '-150px', left: '-150px', width: '600px', height: '300px', background: 'repeating-linear-gradient(90deg, #f59e0b, #f59e0b 50px, #09090b 50px, #09090b 100px)', transform: 'rotate(-45deg)', zIndex: 0 }} />
+                                                            <div style={{ position: 'absolute', top: '-150px', right: '-150px', width: '600px', height: '300px', background: 'repeating-linear-gradient(90deg, #f59e0b, #f59e0b 50px, #09090b 50px, #09090b 100px)', transform: 'rotate(45deg)', zIndex: 0 }} />
+                                                            <div style={{ position: 'absolute', bottom: '-150px', left: '-150px', width: '600px', height: '300px', background: 'repeating-linear-gradient(90deg, #f59e0b, #f59e0b 50px, #09090b 50px, #09090b 100px)', transform: 'rotate(45deg)', zIndex: 0 }} />
+                                                            <div style={{ position: 'absolute', bottom: '-150px', right: '-150px', width: '600px', height: '300px', background: 'repeating-linear-gradient(90deg, #f59e0b, #f59e0b 50px, #09090b 50px, #09090b 100px)', transform: 'rotate(-45deg)', zIndex: 0 }} />
+                                                        </>
+                                                    )}
+
+                                                    {/* Main Content container */}
+                                                    <div style={{ position: 'relative', zIndex: 10, width: '100%', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '140px 80px 80px' }}>
+                                                        
+                                                        {/* Logo */}
+                                                        {tournament?.logoUrl ? (
+                                                            <div style={{ width: '120px', height: '120px', backgroundColor: 'white', borderRadius: '15px', padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '15px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+                                                                <img src={tournament.logoUrl} alt="Logo" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
                                                             </div>
-                                                        </div>
-                                                        {/* Gold accent line */}
-                                                        <div style={{ height: '3px', background: 'linear-gradient(90deg, #f59e0b, transparent)', borderRadius: '2px', marginBottom: '20px', width: '160px' }} />
-                                                        {/* Games list */}
-                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                                            {visibleGames.map(game => {
-                                                                const fn = tournament?.fields?.find(f => f.id === game.field)?.name || game.field || null;
+                                                        ) : (
+                                                            <Trophy style={{ width: '120px', height: '120px', color: '#ffffff', marginBottom: '15px' }} />
+                                                        )}
+
+                                                        {/* LEAGUE NAME */}
+                                                        <p style={{ fontSize: '24px', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#ffffff', margin: '0 0 25px 0', textAlign: 'center', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>
+                                                            {tournament?.league?.name || tournament?.name}
+                                                        </p>
+
+                                                        {/* MATCH SCHEDULE TEXT */}
+                                                        <h1 style={{ fontSize: '90px', fontWeight: 900, textTransform: 'uppercase', color: '#ffffff', margin: '0 0 60px 0', lineHeight: 1, textAlign: 'center', letterSpacing: '-2px', textShadow: '0 4px 20px rgba(0,0,0,0.6)' }}>
+                                                            {activeRound || 'MATCH SCHEDULE'}
+                                                        </h1>
+
+                                                        {/* Games List (Table-like grid without borders) */}
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '35px', width: '100%' }}>
+                                                            {visibleGames.slice(0, 10).map(game => {
+                                                                const fn = tournament?.fields?.find(f => f.id === game.field)?.name || game.field || 'Estadio Por Definir';
                                                                 return (
-                                                                    <div key={game.id} style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                                        {/* Away */}
-                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
-                                                                            {game.awayTeam.logoUrl && <img src={game.awayTeam.logoUrl} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', background: 'white', flexShrink: 0 }} />}
-                                                                            <span style={{ fontSize: '13px', fontWeight: 900, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{game.awayTeam.shortName || game.awayTeam.name}</span>
+                                                                    <div key={game.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                                                                        {/* Teams Row */}
+                                                                        <div style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'center', gap: '15px' }}>
+                                                                            {/* Away Team */}
+                                                                            <div style={{ flex: 1, backgroundColor: '#f59e0b', padding: '12px 16px', display: 'flex', justifyContent: 'center', alignItems: 'center', borderRadius: '6px', boxShadow: '0 4px 15px rgba(0,0,0,0.4)', minHeight: '60px' }}>
+                                                                                <span style={{ fontSize: '24px', fontWeight: 900, color: '#09090b', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                                    {game.awayTeam.name}
+                                                                                </span>
+                                                                            </div>
+                                                                            
+                                                                            {/* VS */}
+                                                                            <span style={{ fontSize: '28px', fontWeight: 900, color: '#ffffff', flexShrink: 0, userSelect: 'none', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>VS</span>
+                                                                            
+                                                                            {/* Home Team */}
+                                                                            <div style={{ flex: 1, backgroundColor: '#f59e0b', padding: '12px 16px', display: 'flex', justifyContent: 'center', alignItems: 'center', borderRadius: '6px', boxShadow: '0 4px 15px rgba(0,0,0,0.4)', minHeight: '60px' }}>
+                                                                                <span style={{ fontSize: '24px', fontWeight: 900, color: '#09090b', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                                    {game.homeTeam.name}
+                                                                                </span>
+                                                                            </div>
                                                                         </div>
-                                                                        {/* VS */}
-                                                                        <span style={{ fontSize: '11px', fontWeight: 900, color: '#f59e0b', letterSpacing: '0.2em', flexShrink: 0 }}>VS</span>
-                                                                        {/* Home */}
-                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0, justifyContent: 'flex-end' }}>
-                                                                            <span style={{ fontSize: '13px', fontWeight: 900, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>{game.homeTeam.shortName || game.homeTeam.name}</span>
-                                                                            {game.homeTeam.logoUrl && <img src={game.homeTeam.logoUrl} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', background: 'white', flexShrink: 0 }} />}
-                                                                        </div>
-                                                                        {/* Date/Field */}
-                                                                        <div style={{ flexShrink: 0, textAlign: 'right', borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '12px', minWidth: '68px' }}>
-                                                                            <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)', fontWeight: 700, margin: 0 }}>{new Date(game.scheduledDate).toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' })}</p>
-                                                                            <p style={{ fontSize: '11px', color: '#f59e0b', fontWeight: 900, margin: '2px 0 0' }}>{new Date(game.scheduledDate).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}</p>
-                                                                            {fn && <p style={{ fontSize: '9px', color: 'rgba(255,255,255,0.4)', fontWeight: 700, margin: '2px 0 0' }}>{fn}</p>}
+                                                                        
+                                                                        {/* Stadium & Date */}
+                                                                        <div style={{ textAlign: 'center', color: '#e4e4e7', textShadow: '0 2px 5px rgba(0,0,0,0.8)' }}>
+                                                                            <p style={{ fontSize: '14px', fontWeight: 700, margin: '0 0 2px 0', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{fn}</p>
+                                                                            <p style={{ fontSize: '13px', fontWeight: 700, margin: 0, textTransform: 'uppercase', letterSpacing: '0.1em', opacity: 0.8 }}>
+                                                                                {new Date(game.scheduledDate).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })} <span style={{opacity:0.5}}>•</span> {new Date(game.scheduledDate).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                                                                            </p>
                                                                         </div>
                                                                     </div>
                                                                 );
                                                             })}
                                                         </div>
+
+                                                        {/* Force Footer to bottom */}
+                                                        <div style={{ flex: 1 }}></div>
+
                                                         {/* Footer */}
-                                                        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '24px' }}>
-                                                            {tournament?.logoUrl && <img src={tournament.logoUrl} alt="" style={{ width: '24px', height: '24px', objectFit: 'contain', opacity: 0.3, marginRight: '8px' }} />}
-                                                            <p style={{ fontSize: '9px', color: 'rgba(255,255,255,0.25)', fontWeight: 700, letterSpacing: '0.3em', textTransform: 'uppercase', margin: 0 }}>ScoreKeeper App</p>
-                                                        </div>
+                                                        <p style={{ fontSize: '24px', fontWeight: 600, color: '#ffffff', marginTop: '60px', letterSpacing: '0.05em', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>
+                                                            www.tourneytru.com
+                                                        </p>
                                                     </div>
                                                 </div>
+
 
                                                 {/* ── Games Grid ── */}
                                                 {visibleGames.length === 0 ? (

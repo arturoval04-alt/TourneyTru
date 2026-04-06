@@ -81,6 +81,10 @@ export class UpdateTournamentDto {
 
     @IsOptional()
     @IsString()
+    scheduleBgUrl?: string;
+
+    @IsOptional()
+    @IsString()
     description?: string;
 
     @IsOptional()

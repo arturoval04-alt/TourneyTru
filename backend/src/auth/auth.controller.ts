@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, HttpCode, HttpStatus, UseGuards, Request, Res, Req, UnauthorizedException } from '@nestjs/common';
+import { Controller, Post, Get, Body, HttpCode, HttpStatus, UseGuards, Request, Res, Req, UnauthorizedException, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request as ExpressRequest, Response } from 'express';
 import { AuthService } from './auth.service';
@@ -22,11 +22,21 @@ export class AuthController {
 
     @Post('register')
     @Throttle({ default: { limit: 5, ttl: 60000 } })
-    async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
-        const result = await this.authService.register(dto);
-        res.cookie('refreshToken', result.refreshToken, REFRESH_COOKIE_OPTIONS);
-        const { refreshToken: _, ...safeResult } = result;
-        return safeResult;
+    async register(@Body() dto: RegisterDto) {
+        return this.authService.register(dto);
+    }
+
+    @Get('verify-email')
+    @HttpCode(HttpStatus.OK)
+    verifyEmail(@Query('token') token: string) {
+        return this.authService.verifyEmail(token);
+    }
+
+    @Post('resend-verification')
+    @HttpCode(HttpStatus.OK)
+    @Throttle({ default: { limit: 3, ttl: 60000 } })
+    resendVerification(@Body() body: { email: string }) {
+        return this.authService.resendVerification(body.email);
     }
 
     @Post('login')

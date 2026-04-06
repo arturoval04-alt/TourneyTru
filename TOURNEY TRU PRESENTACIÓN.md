@@ -1,90 +1,343 @@
 # TOURNEY TRU — Presentación Oficial del Proyecto
 
 > Creado por **Arturo** · Plataforma de gestión de torneos de béisbol y sóftbol con marcador en vivo
+> **Versión 1.0 — Lanzamiento: Abril 2026**
+> **Sitio web:** tourneytru.com
+> **Redes sociales:** Instagram · Facebook · WhatsApp
+
+---
+
+# PARTE 1 — PARA EL EQUIPO DE MARKETING Y DISEÑO
+
+> Esta sección es la base para crear la campaña de lanzamiento: diapositivas, posts de redes, carruseles de Instagram, y cualquier material visual. Toda la información aquí es precisa y lista para usarse.
 
 ---
 
 ## ¿Qué es Tourney Tru?
 
-Tourney Tru (ScoreKeeper internamente) es una plataforma web completa para **organizar y transmitir torneos de béisbol y sóftbol**. Permite a los organizadores crear torneos, registrar equipos y jugadores, y llevar el marcador de cada partido en tiempo real, mientras que el público puede seguir el juego desde cualquier dispositivo.
+Tourney Tru es la **plataforma profesional de gestión y transmisión de torneos de béisbol y sóftbol**. Permite a organizadores crear torneos, registrar equipos y jugadores, y llevar el marcador de cada partido en tiempo real, mientras el público sigue el juego desde cualquier dispositivo — sin descargar nada, sin crear cuenta.
 
-La plataforma está construida para cubrir todo el ciclo de un torneo:
-desde la creación del torneo hasta la estadística final de cada jugador.
+### El problema que resuelve
 
----
+Hoy, miles de ligas de béisbol y sóftbol en México llevan sus torneos con hojas de papel, grupos de WhatsApp y fotos del marcador. No hay un lugar centralizado donde:
+- Los aficionados puedan seguir el juego en vivo desde su celular
+- Los organizadores tengan las estadísticas automáticas de cada jugador
+- Los streamers puedan transmitir con un marcador profesional en pantalla
 
-# PARTE 1 — PARA LOS USUARIOS
-
-## ¿Quiénes usan Tourney Tru y para qué?
-
-Hay tres tipos de personas que interactúan con la plataforma:
-
-### 1. Organizadores de torneo
-Crean y administran el torneo: agregan equipos, jugadores, programan juegos y asignan árbitros. Tienen acceso al panel de administración.
-
-### 2. Scorekeepers (anotadores)
-Son la persona en el estadio con la tableta o laptop. Llevan el marcador jugada a jugada durante el partido usando la interfaz de anotación. Registran hits, outs, carreras, cambios de alineación, y más.
-
-### 3. Espectadores / Público
-Siguen el partido en tiempo real desde su celular o computadora a través del **Gamecast** — una vista pública que muestra el marcador, las bases ocupadas, la alineación y el historial de jugadas.
+**Tourney Tru resuelve los tres.**
 
 ---
 
-## ¿Cómo se usa? (Flujo principal)
+## Propuesta de valor (para los posts y slides)
 
-### Paso 1 — Crear el torneo
-El organizador entra, crea un torneo con nombre, categoría (béisbol/sóftbol), sede y configuraciones de reglas.
-
-### Paso 2 — Agregar equipos y jugadores
-Se registran los equipos participantes y se carga el roster de cada equipo con nombre, número y posición de cada jugador.
-
-### Paso 3 — Programar juegos
-Se crean los partidos indicando equipo local, equipo visitante, fecha y árbitros asignados.
-
-### Paso 4 — Llevar el marcador (Scorekeeper)
-El anotador entra al panel del juego y:
-- Configura la alineación (orden al bate y posiciones)
-- Registra cada jugada: bola, strike, out, hit, carrera, cambio de jugador, etc.
-- El sistema actualiza automáticamente el conteo, las bases, el marcador y las estadísticas
-
-### Paso 5 — El público sigue el juego
-Cualquier persona con el link del partido puede abrir el Gamecast y ver en tiempo real exactamente lo que el scorekeeper está registrando. No requiere cuenta ni login.
-
-### Paso 6 — Estadísticas finales
-Al terminar el torneo, cada jugador tiene su hoja de estadísticas completa: turnos al bate, hits, carreras impulsadas, promedio de bateo, innings lanzados, ponches, etc.
+| Para quién | Lo que obtienen |
+|---|---|
+| **Organizadores de liga** | Gestión completa del torneo: equipos, jugadores, calendario, estadísticas automáticas |
+| **Anotadores (Scorekeepers)** | Panel profesional jugada por jugada desde tablet o laptop, con escáner de alineación por IA |
+| **Streamers / Transmisores** | Overlay del marcador en tiempo real sobre su transmisión de Facebook Live |
+| **Jugadores y aficionados** | Seguimiento del juego en vivo, perfil de jugador con estadísticas completas |
 
 ---
 
-## Funcionalidades disponibles hoy
+## Los 4 tipos de usuario
 
-- Creación y gestión de torneos, equipos y jugadores
-- Marcador en vivo con actualizaciones en tiempo real (WebSocket)
-- Reconexión automática del WebSocket con resincronización de estado completo
-- Registro completo de jugadas (hits, outs, errores, bases por bolas, ponches, etc.)
-- Visualización del diamante con bases ocupadas
-- Alineaciones, orden al bate, y posiciones defensivas
-- Sustituciones, cambios de posición y reingresos (reentry rules)
-- Asignación de árbitros por posición (home plate, 1B, 2B, 3B)
-- Estadísticas individuales de bateo y pitcheo por juego y por torneo
-- Gamecast público (sin login) para espectadores
-- Perfiles de jugadores con foto real, iniciales como fallback y badge de número
-- Ligas que agrupan torneos
+### 1. Organizador de Liga
+Crea y administra la liga, los torneos, los equipos y los jugadores. Puede añadir co-organizadores. Tiene acceso al panel completo de administración.
+
+### 2. Scorekeeper (Anotador)
+Es la persona en el estadio con la tableta. Registra cada jugada: hits, outs, carreras, errores, cambios de alineación. El sistema actualiza el marcador automáticamente para todos los espectadores.
+
+### 3. Streamer / Transmisor
+Transmite el juego en vivo (Facebook Live u otras plataformas). Tourney Tru le provee un **overlay transparente del marcador en tiempo real** para colocar sobre su transmisión — un marcador profesional sin equipo de producción.
+
+### 4. Aficionado / Espectador
+Abre el link del partido en su celular y sigue el juego en tiempo real. Ve el marcador, las bases ocupadas, la alineación y el historial de jugadas. **No necesita cuenta ni descargar nada.**
+
+---
+
+## Flujo del usuario — Cómo funciona (para infografías)
+
+```
+PASO 1: El organizador crea la liga y el torneo
+        → Sube logo, configura nombre, sede, categoría y reglas
+
+PASO 2: Registra equipos y jugadores
+        → Cada jugador tiene perfil con foto, número, posición y estadísticas
+
+PASO 3: Programa los partidos
+        → Fecha, hora, campo, árbitros asignados
+
+PASO 4: El día del juego, el Scorekeeper anota jugada por jugada
+        → Panel intuitivo con botones de jugada, diamante con bases, orden al bate
+
+PASO 5: El público sigue el juego en vivo
+        → Gamecast público: marcador, bases, alineación, play-by-play
+
+PASO 6: Al terminar el torneo, todos tienen sus estadísticas
+        → Promedios de bateo, innings lanzados, ponches, carreras impulsadas
+```
+
+---
+
+## Funcionalidades disponibles HOY (v1.0)
+
+### Gestión de torneos
+- Crear ligas y torneos (béisbol, sóftbol, semirápida)
+- Subir logo del torneo y foto de portada
+- Múltiples organizadores por torneo (co-admins)
+- Tabla de posiciones / standings en tiempo real
+- Campos/estadios registrados por torneo
+- Exportar jornada (poster con los partidos del día)
+- Hacer pública o privada una liga
 - Noticias del torneo
-- Notificaciones en pantalla (toasts) para errores de conexión y validación
-- Página de error global y página 404 personalizadas
-- Modo oscuro en toda la interfaz
-- **Sistema de planes y cuotas**: cada usuario tiene límites configurables (ligas, torneos, equipos, jugadores); el backend lanza `QUOTA_EXCEEDED` y la UI deshabilita los botones de creación al alcanzar el límite
-- **Tab "Mi Plan"** en el panel de administración: muestra uso actual vs. límite del plan con barras de progreso y etiqueta de plan (demo, standard, pro, custom, etc.)
-- **Verificación de jugadores**: los organizadores/admins pueden marcar jugadores como "Verificado" con un solo clic; el badge aparece en el perfil del jugador
-- **Participación multi-torneo (RosterEntry)**: un jugador verificado puede ser añadido como invitado a un equipo de otro torneo; su perfil muestra el historial de equipos con badge "Invitado"
-- **Múltiples organizadores por torneo**: un torneo puede tener varios organizadores; el creador queda añadido automáticamente al crear el torneo; los organizadores pueden editar el torneo igual que el administrador
-- **Escáner de alineación por IA**: captura de foto de la planilla de alineación con visión artificial (Google Gemini 2.5 Flash) — disponible en el panel del juego
 
-## Funcionalidades en desarrollo
+### Marcador en vivo
+- Marcador en tiempo real vía WebSocket (actualización instantánea)
+- Diamante con bases ocupadas animadas
+- Registro completo de jugadas: hits, outs, errores, bases por bolas, ponches, robos, doble plays, etc.
+- Alineaciones y orden al bate
+- Sustituciones con reglas de béisbol (reentry, DH)
+- Historial de jugadas play-by-play
+- Reconexión automática — si el scorekeeper pierde internet, resincroniza sin perder datos
+- **Escáner de alineación por IA (Gemini 2.5 Flash)**: el scorekeeper toma foto de la planilla de alineación y el sistema la interpreta automáticamente
 
-- **Integración con Facebook Live**: overlay transparente del marcador sobre transmisiones en vivo
-- Panel de transmisión en el Gamecast con incrustación del stream
-- **Escáner de alineación por IA**: captura de foto de la planilla de alineación con OCR/visión artificial
+### Perfiles y estadísticas
+- Perfil de equipo: roster, récord (JG-JP), próximos partidos, estadísticas
+- Perfil de jugador: foto, número, posición, verificación, estadísticas de bateo y pitcheo por torneo
+- Jugadores verificados: pueden participar como "Invitados" en otros equipos/torneos
+- Estadísticas individuales completas: AVG, H, 2B, 3B, HR, RBI, BB, K, ERA, IP, etc.
+
+### Gamecast público
+- Acceso sin login — cualquier persona con el link sigue el juego
+- Vista del marcador, bases, inning, alineación, play-by-play
+- Funciona en celular, tablet y computadora
+
+### Streamer
+- Overlay transparente del marcador para Facebook Live
+- Panel de control del stream integrado
+
+### Sistema de planes
+- Planes diferenciados por tipo de usuario con cuotas configurables
+- Tab "Mi Plan" con uso actual vs. límites del plan
+
+---
+
+## Funcionalidades en el roadmap (próximas versiones)
+
+1. **Facebook Live overlay completo** — panel de control total para el streamer (schema ya implementado, pendiente UI final)
+2. **Bracketing / Cuadro de eliminación** — visualización del bracket del torneo
+3. **App móvil** para scorekeepers en campo
+4. **Notificaciones push** para aficionados suscritos a un juego
+5. **Exportación de estadísticas** a PDF/Excel
+6. **Transferencia permanente de jugadores** entre equipos
+
+---
+
+## Planes y precios
+
+> **Para el material de marketing usar: "Contáctanos para conocer tu plan ideal"**
+
+### Plan Demo — GRATIS para siempre
+Ideal para probar la plataforma sin compromiso.
+- 1 liga
+- 1 torneo
+- Hasta 8 equipos
+- Acceso completo a todas las funciones
+
+### Plan Organizador
+Ideal para ligas activas.
+- **Base:** 1 liga · 1 torneo · 20 equipos → **$1,200/mes**
+- **Equipos adicionales:** $80 por equipo/mes
+- **Torneo adicional** (misma liga, hasta 20 equipos): **+$600/mes**
+
+### Plan Streamer
+Para personas que transmiten juegos.
+- **Por paquete de juegos:** 50 juegos → **$500**
+- Sin suscripción mensual — paga según uses
+
+---
+
+## Páginas de la plataforma — Descripción visual y screenshots
+
+> Todas las imágenes están en la carpeta `imagenes_tt/`. Úsalas directamente en los diseños.
+
+---
+
+### Página Principal (Home)
+Tagline central: **"Sigue Cada Jugada en Vivo"** sobre fondo azul marino oscuro.
+Subtítulo: "Resultados en tiempo real, estadísticas avanzadas y gestión profesional de torneos."
+Dos llamadas a la acción: **"Explorar Torneos"** (botón azul) y buscador de equipos/torneos.
+Menú: Ligas · Torneos · Equipos · Jugadores · Planes
+
+![Página Principal](imagenes_tt/Mainpage.jpg)
+
+---
+
+### Login / Registro
+Pantalla de inicio de sesión. Diseño limpio con el branding de Tourney Tru.
+
+![Login](imagenes_tt/paginalogin.jpg)
+
+---
+
+### Detalle de Liga
+Banner con logo de la liga, estadísticas rápidas (torneos, completados, árbitros registrados).
+Tabs: **Torneos · Árbitros · Información**
+Botón para hacer la liga pública o privada.
+
+![Detalle de Liga](imagenes_tt/paginaLigasId.jpg)
+
+---
+
+### Detalle de Torneo — Información
+Header con nombre, deporte, número de equipos, botones de configuración y transmisión en vivo.
+Tabs: **Información · Equipos · Juegos · Posiciones · Estadísticas · Acciones del Torneo**
+Sección de información: descripción, organizadores, calendario, campos, fondo del póster.
+
+![Torneo - Información](imagenes_tt/paginatorneoId.jpg)
+
+---
+
+### Detalle de Torneo — Vista 2 (Equipos / Juegos)
+Vista de los equipos o juegos del torneo. Grid de equipos con logos, nombre y categoría.
+
+![Torneo - Equipos y Juegos](imagenes_tt/paginatorneoid2.jpg)
+
+---
+
+### Detalle de Torneo — Estadísticas
+Tabla de estadísticas individuales del torneo: líderes de bateo, pitcheo, etc. Filtrable por equipo.
+
+![Torneo - Estadísticas](imagenes_tt/paginatorneoestadisticas.jpg)
+
+---
+
+### Detalle de Equipo
+Header con logo del equipo, nombre, categoría (Semirápida/Regular), roster count, manager y récord (JG-JP).
+Tabs: **Juegos · Jugadores · Estadísticas**
+Partidos recientes y partidos programados con fecha, hora y sede.
+
+![Detalle de Equipo](imagenes_tt/paginaequiposid.jpg)
+
+---
+
+### Equipo — Jugadores (Roster)
+Grid de jugadores del equipo con avatar, nombre, número y posición.
+Sección separada para jugadores invitados (participación multi-torneo).
+
+![Roster del Equipo](imagenes_tt/paginaequiposjugadores.jpg)
+
+---
+
+### Perfil de Jugador
+Foto/avatar, nombre, badge "✓ Verificado" (si aplica), equipo actual, número, posición.
+Estadísticas de bateo y pitcheo filtradas por torneo.
+Historial de participación en otros equipos como "Invitado".
+
+![Perfil de Jugador - Lista](imagenes_tt/PERFILJUGADORE.jpg)
+![Perfil de Jugador - Detalle](imagenes_tt/paginajugadoresid.jpg)
+
+---
+
+### Juego Programado
+Vista previa del partido antes de comenzar. Muestra equipos, fecha, hora, sede y árbitros asignados.
+
+![Juego Programado](imagenes_tt/JUEGOPROGRAMADO.jpg)
+
+---
+
+### Panel de Anotación — Juego en Vivo (Scorekeeper)
+Vista exclusiva para el anotador (requiere cuenta Scorekeeper u Organizador).
+Muestra: diamante con bases ocupadas, marcador, conteo actual (B-S-O), orden al bate y botones de jugada.
+Compatible con tablet en el dugout.
+
+![Juego en Vivo](imagenes_tt/juegoenvivo.jpg)
+
+---
+
+### Panel de Anotación — Box Score
+Vista del libro de anotaciones estilo beisbolero. Muestra cada turno al bate de cada jugador con el resultado de la jugada, por inning.
+
+![Box Score](imagenes_tt/juegoenvivoboxscore.jpg)
+
+---
+
+### Juego Finalizado
+Resumen final del partido: marcador, estadísticas por jugador, pitcher ganador/perdedor, MVPs.
+
+![Juego Finalizado](imagenes_tt/juegofinalizado.jpg)
+
+---
+
+### Tirilla Oficial
+Tirilla/boleta oficial del partido con el resumen de todas las jugadas y estadísticas para impresión o exportación.
+
+![Tirilla Oficial](imagenes_tt/tirillaoficial.jpg)
+
+---
+
+### Panel de Administración (Dashboard)
+Panel de control del organizador. 8 tabs: Perfil, Ligas, Torneos, Equipos, Jugadores, Juegos, Usuarios, Mi Plan.
+Muestra cuotas de uso vs. límite del plan con barras de progreso.
+
+![Dashboard Admin](imagenes_tt/dashboard.jpg)
+
+---
+
+## Mercado objetivo
+
+**Primario:** Ligas de béisbol y sóftbol en México (especialmente ciudades con cultura beisbolera: Sinaloa, Sonora, Jalisco, CDMX, Monterrey)
+**Secundario:** Cualquier persona que transmita o anote partidos de béisbol/sóftbol a nivel amateur y semiprofesional
+**Punto de entrada:** Liga Municipal de Softbol de Ahome (Los Mochis, Sinaloa) — primera liga en la plataforma
+
+---
+
+## Material a crear para el lanzamiento
+
+El siguiente material está previsto para la campaña de lanzamiento de Abril 2026:
+
+### Redes Sociales (Instagram / Facebook)
+- [ ] Post de anuncio de lanzamiento
+- [ ] Carrusel: "¿Qué es Tourney Tru?" (5-7 slides)
+- [ ] Carrusel: "¿Cómo funciona?" (flujo paso a paso con screenshots)
+- [ ] Post: Plan Demo gratis — llamada a la acción
+- [ ] Post: Para streamers — "Tu marcador profesional en Facebook Live"
+- [ ] Stories / Reels con demo de la app en uso
+- [ ] Post de planes y precios (versión visual con "Contáctanos")
+
+### Diapositivas / Pitch Deck
+- [ ] Slide 1: Portada — Logo + Tagline
+- [ ] Slide 2: El problema (ligas sin herramienta profesional)
+- [ ] Slide 3: La solución — Tourney Tru
+- [ ] Slide 4: Los 4 tipos de usuario
+- [ ] Slide 5: Cómo funciona (flujo visual)
+- [ ] Slide 6: Funciones principales (screenshots)
+- [ ] Slide 7: El Gamecast — cualquiera puede seguir el juego
+- [ ] Slide 8: Para Streamers — overlay profesional
+- [ ] Slide 9: Planes y precios
+- [ ] Slide 10: Lanzamiento — ¡Únete gratis! → tourneytru.com
+
+### Screenshots disponibles (reales, de la plataforma en uso)
+Todos en carpeta `imagenes_tt/`:
+
+| Archivo | Página |
+|---|---|
+| `Mainpage.jpg` | Página principal (hero) |
+| `paginalogin.jpg` | Login / Registro |
+| `paginaLigasId.jpg` | Detalle de liga |
+| `paginatorneoId.jpg` | Detalle de torneo — Información |
+| `paginatorneoid2.jpg` | Detalle de torneo — Equipos/Juegos |
+| `paginatorneoestadisticas.jpg` | Detalle de torneo — Estadísticas |
+| `paginaequiposid.jpg` | Perfil de equipo |
+| `paginaequiposjugadores.jpg` | Roster del equipo |
+| `PERFILJUGADORE.jpg` | Directorio de jugadores |
+| `paginajugadoresid.jpg` | Perfil individual de jugador |
+| `JUEGOPROGRAMADO.jpg` | Juego programado (pre-partido) |
+| `juegoenvivo.jpg` | Panel de anotación — juego en vivo |
+| `juegoenvivoboxscore.jpg` | Panel de anotación — box score |
+| `juegofinalizado.jpg` | Resumen de juego finalizado |
+| `tirillaoficial.jpg` | Tirilla/boleta oficial del partido |
+| `dashboard.jpg` | Panel de administración (dashboard) |
 
 ---
 
@@ -105,6 +358,7 @@ Al terminar el torneo, cada jugador tiene su hoja de estadísticas completa: tur
 | Cliente HTTP | Axios (con interceptor centralizado) |
 | Notificaciones | Sonner (toasts) |
 | Infraestructura | Cloudflare Tunnel |
+| IA | Google Gemini 2.5 Flash (escáner de alineación) |
 
 ---
 
@@ -138,7 +392,7 @@ src/
 ├── users/          ← Usuarios de la plataforma, planes y cuotas
 ├── stats/          ← Agregación y consulta de estadísticas
 ├── live/           ← Gateway WebSocket (Socket.IO)
-├── vision/         ← Módulo de visión artificial (escáner de alineación)
+├── vision/         ← Módulo de visión artificial (escáner de alineación con Gemini)
 ├── common/         ← Guards, interceptors y utilidades compartidas
 └── prisma/         ← Servicio de base de datos
 ```
@@ -170,10 +424,9 @@ Namespace: `/live_games`
 
 ### Seguridad del backend
 - **Autenticación**: JWT enviado como cookie `httpOnly` — no accesible por JavaScript
-- **Validación**: `ValidationPipe` global con `whitelist: true` y `forbidNonWhitelisted: true` — rechaza propiedades no declaradas en los DTOs
-- **DTOs validados**: Todos los módulos usan `class-validator` con restricciones de tipo, longitud y rango
+- **Validación**: `ValidationPipe` global con `whitelist: true` y `forbidNonWhitelisted: true`
 - **Rate limiting**: Endpoints de autenticación protegidos contra brute force
-- **SQL injection**: Prisma ORM previene inyección; los únicos `$queryRaw` en el proyecto son parametrizados y sin input de usuario
+- **SQL injection**: Prisma ORM previene inyección; los únicos `$queryRaw` son parametrizados
 
 ---
 
@@ -195,39 +448,36 @@ LineupChange         ← Sustitución o cambio durante el juego
 Play                 ← Jugada individual registrada
 PlayerStat           ← Estadísticas acumuladas por jugador y torneo
 GameUmpire           ← Asignación de árbitro a un juego
-Plan                 ← Plantillas de plan (demo, standard, pro...)
+Plan                 ← Plantillas de plan (demo, standard, pro, streamer...)
 Subscription         ← Suscripción de una liga a un plan
 ```
 
-### Índices de performance
-Los modelos críticos tienen índices compuestos para evitar full table scans:
-- `Game`: por `(tournamentId, status)`, `(status, createdAt)`, `(homeTeamId, awayTeamId)`
-- `Play`: por `(gameId, inning)`, `batterId`, `pitcherId`
-- `PlayerStat`: por `(playerId, tournamentId)`, `(teamId, tournamentId)`
-- `Lineup`: por `(gameId, teamId)`
+### Cuotas por plan
+
+| Plan | Ligas | Torneos/Liga | Equipos/Torneo | Jugadores/Equipo | Precio |
+|---|---|---|---|---|---|
+| **Demo** | 1 | 1 | 8 | ilimitado | Gratis |
+| **Organizador Base** | 1 | 1 | 20 | ilimitado | $1,200/mes |
+| **Organizador Extra** | 1 | +1/torneo | +N/equipo | ilimitado | +$600/torneo · +$80/equipo |
+| **Streamer** | — | — | — | — | $500 / 50 juegos |
+| **Admin** | sin límite | sin límite | sin límite | sin límite | interno |
 
 ### Campos importantes de `User`
-- `planLabel` — etiqueta del plan: `public`, `demo`, `standard`, `pro`, `admin`, `custom`
-- `maxLeagues`, `maxTournamentsPerLeague`, `maxTeamsPerTournament`, `maxPlayersPerTeam` — cuotas configurables individualmente por usuario
+- `planLabel` — etiqueta del plan: `public`, `demo`, `standard`, `pro`, `streamer`, `admin`, `custom`
+- `maxLeagues`, `maxTournamentsPerLeague`, `maxTeamsPerTournament`, `maxPlayersPerTeam` — cuotas configurables
 - `forcePasswordChange` — fuerza cambio de contraseña en el próximo login
 - `scorekeeperLeagueId` — liga asignada al scorekeeper
 
 ### Campos importantes de `Player`
-- `isVerified` — indica si el jugador está verificado y puede participar en rosters de otros equipos
+- `isVerified` — indica si el jugador puede participar en rosters de otros equipos
 - `verifiedAt`, `verificationMethod` — auditoría de la verificación
-
-### Campos del modelo `RosterEntry`
-- `playerId`, `teamId`, `tournamentId` — relaciones únicas (constraint compuesto)
-- `number`, `position` — número y posición del jugador en ese equipo/torneo
-- `isActive` — soft delete: `false` significa que ya no participa
-- `joinedAt`, `leftAt` — auditoría de la participación
 
 ### Campos importantes de `Game`
 - `homeScore`, `awayScore` — marcador
 - `currentInning`, `half` — inning actual (top/bottom)
 - `status` — `scheduled` / `in_progress` / `finished`
-- `maxInnings` — innings configurados (puede ser 7 o 9)
-- `facebookStreamUrl`, `streamStatus` — integración Facebook Live (en desarrollo)
+- `maxInnings` — innings configurados (7 o 9)
+- `facebookStreamUrl`, `streamStatus` — integración Facebook Live
 - `mvpBatter1Id`, `mvpBatter2Id`, `winningPitcherId` — MVPs del juego
 
 ### Campos de estadísticas (`PlayerStat`)
@@ -242,16 +492,20 @@ El frontend es una app Next.js con App Router. Cada carpeta en `src/app/` es una
 
 ```
 src/app/
-├── page.tsx                  ← Home/lobby con juegos recientes
-├── error.tsx                 ← Error boundary global (pantalla de error amigable)
+├── page.tsx                  ← Home/lobby con juegos recientes y buscador
+├── error.tsx                 ← Error boundary global
 ├── not-found.tsx             ← Página 404 personalizada
 ├── planes/                   ← Página pública de planes y precios
-├── (auth)/                   ← Login, registro, reset de contraseña
+├── (auth)/                   ← Login, registro, reset de contraseña, cambio de contraseña
 ├── (score)/                  ← Interfaz de anotación (scorekeeper)
+├── (streamer)/               ← Panel de control del streamer + nuevo juego
 ├── gamecast/[id]/            ← Vista pública del juego (sin login)
+├── gamecast/[id]/overlay     ← Overlay transparente para transmisiones
+├── gamescheduled/[id]/       ← Vista previa de juego programado
+├── gamefinalizado/[id]/      ← Vista de juego terminado
 ├── torneos/[id]/             ← Detalle de torneo con organizadores múltiples
 ├── equipos/[id]/             ← Perfil de equipo + roster de jugadores invitados
-├── jugadores/[id]/           ← Perfil de jugador con verificación e historial multi-torneo
+├── jugadores/[id]/           ← Perfil de jugador con verificación e historial
 ├── ligas/                    ← Lista y detalle de ligas
 └── admin/dashboard/          ← Panel de administración (8 tabs)
 ```
@@ -270,22 +524,7 @@ El dashboard tiene **8 tabs** según el rol del usuario:
 | Usuarios | Admin | Gestión de accesos, roles y planes |
 | Mi Plan | Organizer | Ver uso actual vs. límites del plan contratado |
 
-**Cuotas por plan** (configurables individualmente en el modelo `User`):
-
-| Plan | Ligas | Torneos/Liga | Equipos/Torneo | Jugadores/Equipo |
-|---|---|---|---|---|
-| demo | 1 | 1 | 6 | 25 |
-| standard | 1 | 3 | 10 | 30 |
-| pro | 1 | 10 | 50 | 50 |
-| custom | según usuario | según usuario | según usuario | según usuario |
-| admin | sin límite | sin límite | sin límite | sin límite |
-
-### Perfiles de torneo, equipo y jugador
-- **`torneos/[id]/`**: Los organizadores (no sólo el admin) pueden editar el torneo. El creador se añade automáticamente como organizador al crearlo. El acceso se controla con `canEdit` (estado calculado al cargar los datos, no hardcoded por rol).
-- **`equipos/[id]/`**: Tab JUGADORES muestra el roster regular + una sección "Jugadores Invitados" para los jugadores con `RosterEntry`. Los canEdit pueden añadir jugadores verificados de otros equipos.
-- **`jugadores/[id]/`**: Badge "✓ Verificado" en el nombre. Estadísticas de bateo y pitcheo con filtro por torneo. Historial de juegos con filtro por torneo. Tab de historial de participación en otros equipos.
-
-### Estado global: `store/gameStore.ts` (~1030 líneas)
+### Estado global: `store/gameStore.ts`
 El store de Zustand mantiene **todo el estado de un juego activo**:
 - Inning, mitad, conteo (bolas/strikes/outs), bases ocupadas
 - Alineaciones de ambos equipos con posición en el orden al bate
@@ -295,28 +534,26 @@ El store de Zustand mantiene **todo el estado de un juego activo**:
 
 Al reconectar, el store emite `requestFullSync` automáticamente y actualiza el estado local con la respuesta `fullStateSync` del servidor, garantizando consistencia tras cortes de conexión.
 
-Acciones principales del store:
-`addBall`, `addStrike`, `addOut`, `registerHit`, `executeAdvancedPlay`, `nextBatter`, `nextInning`, `makeSubstitution`
-
 ### Interceptor HTTP centralizado: `lib/api.ts`
 Todas las llamadas a la API pasan por un interceptor que maneja automáticamente:
 - **401**: intenta refrescar el token; si falla, limpia sesión y redirige a `/login`
 - **400**: muestra el mensaje de validación del servidor como toast
-- **500+**: muestra "Error del servidor. Intenta de nuevo." sin exponer detalles internos
+- **500+**: muestra "Error del servidor. Intenta de nuevo."
 - **Sin red**: muestra "Sin conexión a internet."
 
 ### Componentes clave
 
 | Componente | Ruta | Descripción |
 |---|---|---|
-| `ActionPanel` | `components/controls/` | Panel principal de anotación con botones de jugada (mín. 48×48px para móvil) |
-| `PlayerAvatar` | `components/` | Avatar del jugador: foto real, fallback de iniciales con color, badge de número |
-| `Field` | `components/live/` | Visualización del diamante con bases |
+| `ActionPanel` | `components/controls/` | Panel principal de anotación con botones de jugada |
+| `PlayerAvatar` | `components/` | Avatar del jugador: foto real, avatar emoji o iniciales con color |
+| `Field` | `components/live/` | Visualización del diamante con bases ocupadas |
 | `ScorebookTable` | `components/` | Tabla de marcador al estilo libro de anotaciones |
 | `CambiosModal` | `components/controls/` | Modal para sustituciones |
 | `PlayByPlayLog` | `components/live/` | Historial de jugadas en tiempo real |
 | `AdvancedPlayModal` | `components/controls/` | Jugadas avanzadas (doble play, errores, etc.) |
-| `AILineupScanner` | `components/game/` | Escáner de alineación por foto con IA (en desarrollo) |
+| `AILineupScanner` | `components/game/` | Escáner de alineación por foto con IA (Gemini) |
+| `StreamAdminPanel` | `components/` | Panel de control del streamer |
 
 ---
 
@@ -328,7 +565,7 @@ DATABASE_URL="sqlserver://servidor;database=ScoreKeeper;user=usuario;password=pa
 JWT_SECRET="clave_secreta_minimo_32_caracteres"
 JWT_REFRESH_SECRET="clave_refresh_minimo_32_caracteres"
 PORT=3001
-ALLOWED_ORIGINS="http://localhost:3000,https://tudominio.com"
+ALLOWED_ORIGINS="http://localhost:3000,https://tourneytru.com"
 FRONTEND_URL="http://localhost:3000"
 ```
 
@@ -366,24 +603,15 @@ npm run dev                 # app en puerto 3000
 
 ## Infraestructura (producción)
 
-La arquitectura de producción usa **Cloudflare Tunnel** para exponer el backend local de forma segura sin necesidad de abrir puertos en el router. Esto permite:
+La arquitectura de producción usa **Cloudflare Tunnel** para exponer el backend local de forma segura sin necesidad de abrir puertos. Esto permite:
 
 - Backend corriendo localmente (o en un servidor sin IP pública)
-- Frontend en Vercel o cualquier hosting
+- Frontend en Vercel
 - El túnel conecta el backend al dominio público de forma cifrada
 
 ---
 
 ## Decisiones arquitectónicas importantes
-
-### ¿Por qué NestJS y no algo más simple?
-NestJS ofrece estructura, inyección de dependencias y decoradores que escalan bien con la complejidad del dominio (béisbol tiene muchas reglas). Facilita agregar módulos sin que el código se vuelva caótico.
-
-### ¿Por qué SQL Server y no PostgreSQL?
-Decisión de infraestructura existente. Prisma abstrae las diferencias — si en el futuro se necesita migrar, el cambio en el schema es mínimo.
-
-### ¿Por qué Zustand y no Redux?
-El estado del juego es complejo pero contenido. Zustand es más liviano, sencillo de leer y la persistencia integrada permite sobrevivir recargas de página sin perder el estado del juego en curso.
 
 ### ¿Por qué WebSocket y no polling?
 Un partido de béisbol puede tener 200+ jugadas. Con polling cada segundo estarías haciendo 200+ requests innecesarios por espectador. WebSocket envía el update exactamente cuando ocurre la jugada, sin overhead.
@@ -391,25 +619,28 @@ Un partido de béisbol puede tener 200+ jugadas. Con polling cada segundo estar�
 ### ¿Por qué cookies httpOnly para el JWT?
 Guardar el JWT en `localStorage` lo expone a cualquier script en la página (XSS). Una cookie `httpOnly` no es accesible por JavaScript — aunque exista una vulnerabilidad XSS, el atacante no puede robar el token de sesión.
 
+### ¿Por qué Zustand y no Redux?
+El estado del juego es complejo pero contenido. Zustand es más liviano y la persistencia integrada permite sobrevivir recargas de página sin perder el estado del juego en curso.
+
 ---
 
 ## Próximos pasos del proyecto (roadmap)
 
-1. **Facebook Live overlay** — overlay transparente del marcador para streamers (schema ya listo, falta el panel de control completo)
+1. **Facebook Live overlay completo** — panel de control total para streamers (schema ya implementado)
 2. **Bracketing de torneos** — visualización del cuadro de eliminación
 3. **App móvil** para scorekeepers en campo
 4. **Notificaciones push** para espectadores suscritos a un juego
 5. **Exportación de estadísticas** a PDF/Excel
-6. **Escáner de alineación por IA** — completar integración del módulo `vision/` (ya funcional con Gemini 2.5 Flash, falta UI definitiva)
-7. **Transferencia permanente de jugadores** — actualmente el `RosterEntry` siempre es temporal (Invitado); se podría añadir un flujo para cambiar el `teamId` permanente del jugador
+6. **Transferencia permanente de jugadores** entre equipos
 
 ---
 
 ## Contacto del creador
 
 Arturo — creador y desarrollador principal de Tourney Tru.
-Para reporte de bugs o sugerencias, contactar directamente.
+Sitio: **tourneytru.com**
+Redes: Instagram · Facebook
 
 ---
 
-*Documento actualizado el 27 de marzo de 2026.*
+*Documento actualizado el 5 de abril de 2026 — Versión 1.0*

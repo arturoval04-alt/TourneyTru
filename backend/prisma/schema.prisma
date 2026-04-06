@@ -88,6 +88,7 @@ model Tournament {
   description   String?               @db.NVarChar(Max)
   category      String?
   logoUrl       String?               @map("logo_url") @db.NVarChar(Max)
+  scheduleBgUrl String?               @map("schedule_bg_url") @db.NVarChar(Max)
   rulesType     String                @default("baseball_9") @map("rules_type")
   status        String                @default("upcoming") @db.NVarChar(20)
   isPrivate     Boolean               @default(false) @map("is_private")

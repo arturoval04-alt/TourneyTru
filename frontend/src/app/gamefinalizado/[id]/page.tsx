@@ -169,21 +169,8 @@ export default function GameFinalizado() {
                             statsStr={wpStats}
                             colorType="amber"
                         />
-                        <div className="grid grid-cols-2 gap-4">
-                            <MvpCard
-                                label="PITCHER PERDEDOR (L)"
-                                player={losingPitcher}
-                                statsStr={lpStats}
-                                colorType="red"
-                            />
-                            <MvpCard
-                                label="PITCHER SALVADO (SV)"
-                                player={savePitcher}
-                                statsStr={svStats}
-                                colorType="green"
-                            />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
+
+                        <div className="grid grid-cols-1 gap-4">
                             <MvpCard
                                 label="MVP BATEADOR 1"
                                 player={mvpBatter1}
@@ -200,7 +187,7 @@ export default function GameFinalizado() {
                     </div>
 
                     {/* RIGHT 2/8: PLAY BY PLAY HISTORIC LOG */}
-                    <div className="lg:col-span-3 bg-slate-900 border border-slate-700/50 rounded-2xl md:rounded-3xl p-3 md:p-4 shadow-xl flex flex-col h-[400px] lg:h-[auto] min-h-[400px] lg:max-h-[728px] overflow-hidden">
+                    <div className="lg:col-span-3 bg-slate-900 border border-slate-700/50 rounded-2xl md:rounded-3xl p-3 md:p-4 shadow-xl flex flex-col h-[400px] lg:h-[auto] min-h-[400px] lg:max-h-[730px] overflow-hidden">
                         <div className="flex-1 -mx-2 h-full">
                             <PlayByPlayLog />
                         </div>
@@ -235,9 +222,9 @@ function MvpCard({ label, player, statsStr, colorType }: { label: React.ReactNod
 
     const colorMap = {
         amber: { border: 'border-amber-500/60', bg: 'bg-amber-950/30', label: 'text-amber-400', gradient: 'bg-gradient-to-r from-amber-500 to-amber-600' },
-        blue:  { border: 'border-sky-500/60',   bg: 'bg-sky-950/30',   label: 'text-sky-400',   gradient: 'bg-gradient-to-r from-sky-500 to-sky-600' },
-        red:   { border: 'border-red-500/60',    bg: 'bg-red-950/30',   label: 'text-red-400',   gradient: 'bg-gradient-to-r from-red-600 to-red-700' },
-        green: { border: 'border-emerald-500/60',bg: 'bg-emerald-950/30',label: 'text-emerald-400',gradient: 'bg-gradient-to-r from-emerald-500 to-emerald-600' },
+        blue: { border: 'border-sky-500/60', bg: 'bg-sky-950/30', label: 'text-sky-400', gradient: 'bg-gradient-to-r from-sky-500 to-sky-600' },
+        red: { border: 'border-red-500/60', bg: 'bg-red-950/30', label: 'text-red-400', gradient: 'bg-gradient-to-r from-red-600 to-red-700' },
+        green: { border: 'border-emerald-500/60', bg: 'bg-emerald-950/30', label: 'text-emerald-400', gradient: 'bg-gradient-to-r from-emerald-500 to-emerald-600' },
     };
     const { border: borderColor, bg: bgColor, label: labelColor, gradient } = colorMap[colorType];
 

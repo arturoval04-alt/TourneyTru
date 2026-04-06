@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcrypt';
@@ -17,6 +18,7 @@ export class AuthService {
     constructor(
         private prisma: PrismaService,
         private jwtService: JwtService,
+        private mailService: MailService,
     ) {}
 
     async register(dto: RegisterDto) {
@@ -30,6 +32,10 @@ export class AuthService {
 
         // Hash de contraseña
         const passwordHash = await bcrypt.hash(dto.password, 12);
+
+        // Token de verificación de correo (expira en 24h)
+        const verificationToken = crypto.randomBytes(32).toString('hex');
+        const verificationTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
         // Buscar o crear el rol especificado (o default 'general')
         const roleName = dto.role || 'general';
@@ -47,6 +53,9 @@ export class AuthService {
                     lastName: (dto.lastName || '').trim(),
                     phone: dto.phone,
                     roleId: role.id,
+                    emailVerified: false,
+                    verificationToken,
+                    verificationTokenExpiresAt,
                     ...(dto.organizerRequestNote ? {
                         organizerRequestNote: dto.organizerRequestNote,
                         organizerRequestedAt: new Date(),
@@ -66,21 +75,16 @@ export class AuthService {
                     });
                 } catch (err) {
                     console.error('[Register] Error vinculando torneo:', err);
-                    // No fallamos el registro completo si solo falla la vinculación
                 }
             }
 
-            const tokens = this.generateTokens(user.id, user.email, user.role.name);
+            // Enviar correo de verificación (sin bloquear la respuesta si falla)
+            this.mailService.sendVerificationEmail(user.email, user.firstName, verificationToken)
+                .catch(err => console.error('[Register] Error enviando correo de verificación:', err));
 
             return {
-                user: {
-                    id: user.id,
-                    email: user.email,
-                    firstName: user.firstName,
-                    lastName: user.lastName,
-                    role: user.role.name,
-                },
-                ...tokens,
+                message: 'Cuenta creada. Revisa tu correo para verificar tu cuenta.',
+                email: user.email,
             };
         } catch (err) {
             console.error('[Register Error]', err);
@@ -101,6 +105,10 @@ export class AuthService {
         const passwordValid = await bcrypt.compare(dto.password, user.passwordHash);
         if (!passwordValid) {
             throw new UnauthorizedException('Credenciales incorrectas');
+        }
+
+        if (!(user as any).emailVerified) {
+            throw new UnauthorizedException('EMAIL_NOT_VERIFIED');
         }
 
         const tokens = this.generateTokens(user.id, user.email, user.role.name);
@@ -145,6 +153,55 @@ export class AuthService {
         }
     }
 
+    async verifyEmail(token: string): Promise<{ message: string }> {
+        const user = await this.prisma.user.findFirst({
+            where: {
+                verificationToken: token,
+                verificationTokenExpiresAt: { gt: new Date() },
+            },
+        });
+
+        if (!user) {
+            throw new BadRequestException('El enlace de verificación es inválido o ha expirado.');
+        }
+
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: {
+                emailVerified: true,
+                verificationToken: null,
+                verificationTokenExpiresAt: null,
+            },
+        });
+
+        return { message: 'Correo verificado correctamente. Ya puedes iniciar sesión.' };
+    }
+
+    async resendVerification(email: string): Promise<{ message: string }> {
+        const message = 'Si el correo está registrado y sin verificar, recibirás un nuevo enlace.';
+
+        const user = await this.prisma.user.findUnique({
+            where: { email: email.toLowerCase() },
+        });
+
+        if (!user || (user as any).emailVerified) {
+            return { message };
+        }
+
+        const verificationToken = crypto.randomBytes(32).toString('hex');
+        const verificationTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: { verificationToken, verificationTokenExpiresAt },
+        });
+
+        this.mailService.sendVerificationEmail(user.email, user.firstName, verificationToken)
+            .catch(err => console.error('[ResendVerification] Error enviando correo:', err));
+
+        return { message };
+    }
+
     async forgotPassword(email: string): Promise<{ token: string; message: string }> {
         const user = await this.prisma.user.findUnique({
             where: { email: email.toLowerCase() },
@@ -164,9 +221,10 @@ export class AuthService {
             data: { passwordResetToken: token, passwordResetExpiry: expiry },
         });
 
-        console.log(`[DEV] Reset token para ${email}: ${token}`);
+        this.mailService.sendPasswordResetEmail(user.email, user.firstName, token)
+            .catch(err => console.error('[ForgotPassword] Error enviando correo:', err));
 
-        return { token, message };
+        return { token: '', message };
     }
 
     async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
