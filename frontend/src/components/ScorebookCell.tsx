@@ -38,16 +38,27 @@ function parsePlay(result: string): ParsedPlay {
         else if (r === 'H2' || r === '2B') { totalBases = Math.max(totalBases, 2); if (index === 0) { label = 'H2'; labelColor = 'text-sky-600'; } }
         else if (r === 'H1' || r === '1B') { totalBases = Math.max(totalBases, 1); if (index === 0) { label = 'H1'; labelColor = 'text-sky-600'; } }
         
-        // BB / HBP
-        else if (r === 'BB' || r === 'HBP' || r === 'HP') { 
+        // BB / HBP / IBB
+        else if (r === 'BB' || r === 'HBP' || r === 'HP' || r === 'IBB') { 
             totalBases = Math.max(totalBases, 1); 
-            if (index === 0) { label = r === 'BB' ? 'BB' : 'HBP'; labelColor = 'text-emerald-600'; } 
+            if (index === 0) { label = r === 'IBB' ? 'IBB' : (r === 'BB' ? 'BB' : 'HBP'); labelColor = 'text-emerald-600'; } 
+        }
+        // KWP: Dropped third strike — strikeout but batter reaches 1st
+        else if (r === 'KWP') {
+            totalBases = Math.max(totalBases, 1);
+            if (index === 0) { label = 'KWP'; labelColor = 'text-violet-600'; }
+            isKS = true; // It's still a strikeout
         }
 
-        // Advancements (SB, WP, ADV)
+        // Pinch Runner (entered via substitution)
+        else if (r === 'PR') { totalBases = Math.max(totalBases, 1); if (index === 0) { label = 'PR'; labelColor = 'text-purple-600'; } }
+
+        // Advancements (SB, WP, PB, BK, ADV)
         else if (r.startsWith('SB')) totalBases += 1;
         else if (r.startsWith('ADV')) totalBases += 1;
-        else if (r.startsWith('WP_RUN')) totalBases = 4;
+        else if (r === 'WP_RUN') { totalBases = 4; if (index === 0) { label = 'WP'; labelColor = 'text-sky-600'; } }
+        else if (r === 'PB_RUN') { totalBases = 4; if (index === 0) { label = 'PB'; labelColor = 'text-orange-500'; } }
+        else if (r === 'BK_RUN') { totalBases = 4; if (index === 0) { label = 'BK'; labelColor = 'text-violet-600'; } }
 
         // Outs
         else if (r === 'KS' || r === 'K' || r === 'KL' || r.includes('(K)') || r.includes('(ꓘ)')) { 
@@ -63,14 +74,13 @@ function parsePlay(result: string): ParsedPlay {
         else if (r.startsWith('E')) { totalBases = Math.max(totalBases, 1); if (index === 0 || !label) { label = r.split(' ')[0]; labelColor = 'text-amber-500'; } }
         
         // Advancements: Set label if nothing else set
-        else if (r.startsWith('SB') || r.startsWith('ADV') || r.startsWith('WP_RUN')) {
-            const advLabel = r.startsWith('SB') ? 'SB' : (r.startsWith('ADV') ? 'ADV' : 'WP');
+        else if (r.startsWith('SB') || r.startsWith('ADV')) {
+            const advLabel = r.startsWith('SB') ? 'SB' : 'ADV';
             if (index === 0 || !label) {
                 label = advLabel;
                 labelColor = r.startsWith('SB') ? 'text-emerald-600' : 'text-sky-600';
             }
-            if (r.startsWith('SB') || r.startsWith('ADV')) totalBases += 1;
-            else if (r.startsWith('WP_RUN')) totalBases = 4;
+            totalBases += 1;
         }
 
         else if (r === 'RUNNER_OUT') {
@@ -134,6 +144,27 @@ const BasePath: React.FC<BasePathProps> = ({ from, to, color }) => (
 // ──────────────────────────────────────────────────────────────────────────────
 export const ScorebookCell: React.FC<ScorebookCellProps> = ({ plays, currentBase }) => {
     if (!plays || plays.length === 0) {
+        // Si el corredor está actualmente en base (corredor sustituto / PR), mostrar diamante live
+        if (currentBase != null && currentBase >= 1) {
+            const reachedFirst = currentBase >= 1;
+            const reachedSecond = currentBase >= 2;
+            const reachedThird = currentBase >= 3;
+            const scored = currentBase >= 4;
+            return (
+                <div className="w-16 h-16 border border-gray-300 relative bg-white">
+                    <svg viewBox="0 0 100 100" className="w-full h-full absolute inset-0 z-0" overflow="visible">
+                        <polygon points={DIAMOND_POINTS} fill="none" stroke="#e5e7eb" strokeWidth="1.5" />
+                        {reachedFirst && <BasePath from={HOME} to={FIRST} color="#1e293b" />}
+                        {reachedSecond && <BasePath from={FIRST} to={SEC} color="#1e293b" />}
+                        {reachedThird && <BasePath from={SEC} to={THIRD} color="#1e293b" />}
+                        {scored && <BasePath from={THIRD} to={HOME} color="#2563eb" />}
+                    </svg>
+                    <div className="z-10 absolute inset-0 flex items-center justify-center">
+                        <span className="text-[9px] font-black text-purple-600 bg-white/60 px-0.5 rounded">PR</span>
+                    </div>
+                </div>
+            );
+        }
         return (
             <div className="w-16 h-16 border border-gray-300 relative bg-white" />
         );

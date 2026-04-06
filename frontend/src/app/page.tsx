@@ -330,7 +330,7 @@ export default function LobbyPage() {
                     <motion.div
                       key={game.id}
                       variants={fadeUpObj}
-                      onClick={() => router.push(`/gamecast/${game.id}`)}
+                      onClick={() => router.push(game.status === 'in_progress' ? `/gamecast/${game.id}` : game.status === 'finished' ? `/gamefinalizado/${game.id}` : `/gamescheduled/${game.id}`)}
                       className={`group relative bg-surface hover:bg-surface/80 border rounded-3xl overflow-hidden transition-all duration-500 cursor-pointer flex flex-col ${isLive ? 'border-primary/30 shadow-[0_0_20px_rgba(var(--primary),0.1)] hover:shadow-[0_0_30px_rgba(var(--primary),0.2)] hover:border-primary/50' : 'border-white/10 hover:border-white/20 shadow-xl'}`}
                     >
                       {/* Subtie tournament background watermark */}

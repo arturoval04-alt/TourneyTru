@@ -86,6 +86,11 @@ export default function Navbar() {
                                                 Dashboard
                                             </Link>
                                         )}
+                                        {user.role === 'streamer' && (
+                                            <Link href="/dashboard" onClick={() => setIsMenuOpen(false)} className="block px-4 py-2 text-sm text-foreground hover:bg-muted/10 font-medium transition-colors rounded-lg">
+                                                Mis Juegos
+                                            </Link>
+                                        )}
                                         <button onClick={handleLogout} className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-500/10 font-medium transition-colors rounded-lg cursor-pointer">
                                             Cerrar Sesión
                                         </button>

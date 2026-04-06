@@ -59,8 +59,9 @@ export function calculateBoxscore(gameId: string, homeTeam: any, awayTeam: any, 
             if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(resCode)) {
                 pitcher.pitchingHits = (pitcher.pitchingHits || 0) + 1;
             }
-            if (resCode === 'BB') pitcher.pitchingBB = (pitcher.pitchingBB || 0) + 1;
-            if (resCode.startsWith('K')) pitcher.pitchingSO = (pitcher.pitchingSO || 0) + 1;
+            if (resCode === 'BB' || resCode === 'IBB') pitcher.pitchingBB = (pitcher.pitchingBB || 0) + 1;
+            if (resCode === 'HBP') pitcher.pitchingBB = (pitcher.pitchingBB || 0) + 1;
+            if (resCode.startsWith('K') || resCode === 'KWP') pitcher.pitchingSO = (pitcher.pitchingSO || 0) + 1;
             pitcher.pitchingRuns = (pitcher.pitchingRuns || 0) + (play.runs_scored || 0);
             pitcher.pitchingIPOuts = (pitcher.pitchingIPOuts || 0) + (play.outs_recorded || 0);
         }
@@ -75,15 +76,15 @@ export function calculateBoxscore(gameId: string, homeTeam: any, awayTeam: any, 
                 continue;
             }
 
-            const isAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'INT'].includes(resCode);
+            const isAtBat = !['BB', 'IBB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'INT', 'SB', 'CS', 'ADV', 'KWP'].includes(resCode);
             if (isAtBat) batter.atBats++;
 
             if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(resCode)) {
                 batter.hits++;
                 battingBox.totalHits++;
             }
-            if (resCode === 'BB') batter.bb++;
-            if (resCode.startsWith('K')) batter.so++;
+            if (resCode === 'BB' || resCode === 'IBB') batter.bb++;
+            if (resCode.startsWith('K') || resCode === 'KWP') batter.so++;
             batter.rbi += play.rbi || 0;
             batter.runs += play.runs_scored || 0;
 

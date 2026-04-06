@@ -54,7 +54,14 @@ export class TeamsService {
 
     async findAll(filters?: { tournamentId?: string; includePlayers?: boolean }) {
         const where: any = {};
-        if (filters?.tournamentId) where.tournamentId = filters.tournamentId;
+        if (filters?.tournamentId) {
+            where.tournamentId = filters.tournamentId;
+        } else {
+            where.tournament = {
+                isPrivate: false,
+                league: { isPrivate: false }
+            };
+        }
 
         return this.prisma.team.findMany({
             where,
@@ -76,6 +83,9 @@ export class TeamsService {
                     include: {
                         playsAsBatter: true,
                         playsAsPitcher: true,
+                        lineupEntries: {
+                            where: { isStarter: true }
+                        }
                     }
                 },
                 rosterEntries: {
@@ -127,15 +137,20 @@ export class TeamsService {
         const playersWithStats = team.players.map(player => {
             const batting = this.calculateBattingStats(player.playsAsBatter);
             const pitching = this.calculatePitchingStats(player.playsAsPitcher);
+            const gs = player.lineupEntries.length;
+            const gsPitching = player.lineupEntries.filter(l => l.position === 'P' || l.dhForPosition === 'P').length;
+            
             return {
                 ...player,
-                stats: { batting, pitching }
+                stats: { batting: { ...batting, gs }, pitching: { ...pitching, gs: gsPitching } }
             };
         });
 
         // Team Totals
         const teamBatting = this.calculateBattingStats(team.players.flatMap(p => p.playsAsBatter));
         const teamPitching = this.calculatePitchingStats(team.players.flatMap(p => p.playsAsPitcher));
+        const teamGs = team.players.reduce((sum, p) => sum + p.lineupEntries.length, 0);
+        const teamGsPitching = team.players.reduce((sum, p) => sum + p.lineupEntries.filter(l => l.position === 'P' || l.dhForPosition === 'P').length, 0);
 
         return { 
             ...team, 
@@ -144,8 +159,8 @@ export class TeamsService {
             losses, 
             gamesPlayed: wins + losses,
             stats: {
-                batting: teamBatting,
-                pitching: teamPitching
+                batting: { ...teamBatting, gs: teamGs },
+                pitching: { ...teamPitching, gs: teamGsPitching }
             }
         };
     }
@@ -160,7 +175,7 @@ export class TeamsService {
 
         for (const p of plays) {
             const res = p.result;
-            const isAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'CI'].includes(res) && !res.includes('WP_RUN') && !res.includes('RUN_SCORED');
+            const isAtBat = !['BB', 'IBB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'CI'].includes(res) && !res.includes('WP_RUN') && !res.includes('RUN_SCORED');
             if (isAtBat) stats.atBats++;
             
             if (['H1', '1B'].includes(res)) { stats.hits++; }
@@ -184,12 +199,13 @@ export class TeamsService {
         if (atBats > 0) stats.avg = (hits / atBats).toFixed(3);
         const obpDenom = atBats + bb + hbp + sac;
         const obpVal = obpDenom > 0 ? (hits + bb + hbp) / obpDenom : 0;
-        stats.obp = obpVal.toFixed(3);
+        stats.obp = obpVal.toFixed(3).replace(/^0/, '');
         const slgVal = atBats > 0 ? tb / atBats : 0;
-        stats.slg = slgVal.toFixed(3);
-        stats.ops = (obpVal + slgVal).toFixed(3);
+        stats.slg = slgVal.toFixed(3).replace(/^0/, '');
+        stats.ops = (obpVal + slgVal).toFixed(3).replace(/^0/, '');
+        stats.avg = stats.avg.replace(/^0/, '');
 
-        return stats;
+        return { ...stats, pa: obpDenom };
     }
 
     private calculatePitchingStats(plays: any[]) {
@@ -215,12 +231,15 @@ export class TeamsService {
         stats.ip = innings;
         
         const ipVal = totalOuts / 3;
+        const extStats = { k9: '0.00', bb9: '0.00' };
         if (ipVal > 0) {
             stats.era = ((stats.er * 9) / ipVal).toFixed(2);
             stats.whip = ((stats.bb + stats.h) / ipVal).toFixed(2);
+            extStats.k9 = ((stats.so / ipVal) * 9).toFixed(2);
+            extStats.bb9 = ((stats.bb / ipVal) * 9).toFixed(2);
         }
 
-        return stats;
+        return { ...stats, ...extStats };
     }
 
     async update(id: string, updateData: UpdateTeamDto) {

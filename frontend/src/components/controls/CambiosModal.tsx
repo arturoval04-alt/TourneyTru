@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '@/lib/api';
 import { useGameStore } from '@/store/gameStore';
+import { getUser } from '@/lib/auth';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -81,7 +82,7 @@ function StepDots({ total, current }: { total: number; current: number }) {
 interface Props { isOpen: boolean; onClose: () => void; }
 
 export default function CambiosModal({ isOpen, onClose }: Props) {
-    const { gameId, homeTeamId, awayTeamId, homeTeamName, awayTeamName, fetchGameConfig, connectSocket, syncStateToBackend } = useGameStore();
+    const { gameId, homeTeamId, awayTeamId, homeTeamName, awayTeamName, fetchGameConfig, syncStateToBackend } = useGameStore();
 
     // wizard state
     const [step, setStep] = useState(0);   // 0=equipo, 1=tipo, 2=detalle, 3=review
@@ -105,6 +106,14 @@ export default function CambiosModal({ isOpen, onClose }: Props) {
     // reingreso
     const [reingresoPId, setReingresoPId] = useState('');
 
+    // new player registration (streamer only)
+    const isStreamer = getUser()?.role === 'streamer';
+    const [showNewPlayerForm, setShowNewPlayerForm] = useState(false);
+    const [newPlayerFirstName, setNewPlayerFirstName] = useState('');
+    const [newPlayerLastName, setNewPlayerLastName] = useState('');
+    const [newPlayerNumber, setNewPlayerNumber] = useState('');
+    const [savingNewPlayer, setSavingNewPlayer] = useState(false);
+
     // submit
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -119,6 +128,7 @@ export default function CambiosModal({ isOpen, onClose }: Props) {
             setElegibles(null); setError(null);
             setSubPlayerOutId(''); setSubPlayerInId(''); setSubPosition(''); setSubDhFor('');
             setPosSwaps([]); setPosSelecting(null); setReingresoPId('');
+            setShowNewPlayerForm(false); setNewPlayerFirstName(''); setNewPlayerLastName(''); setNewPlayerNumber('');
         }
     }, [isOpen]);
 
@@ -232,6 +242,31 @@ export default function CambiosModal({ isOpen, onClose }: Props) {
         return false;
     }, [changeType, subPlayerOutId, subPlayerInId, subPosition, subDhFor, posSwaps, reingresoPId]);
 
+    // ── Register new player (streamer) ───────────────────────────────────────
+    const handleSaveNewPlayer = async () => {
+        if (!gameId || !teamId) return;
+        const firstName = newPlayerFirstName.trim();
+        const lastName = newPlayerLastName.trim();
+        if (!firstName && !lastName) return;
+        setSavingNewPlayer(true);
+        setError(null);
+        try {
+            await api.post(`/streamer/games/${gameId}/team/${teamId}/players`, {
+                firstName: firstName || '—',
+                lastName: lastName || '—',
+                number: newPlayerNumber ? parseInt(newPlayerNumber) : undefined,
+            });
+            // reload elegibles so the new player appears in puedenEntrar
+            await loadElegibles(teamId);
+            setShowNewPlayerForm(false);
+            setNewPlayerFirstName(''); setNewPlayerLastName(''); setNewPlayerNumber('');
+        } catch (err: any) {
+            setError(err.response?.data?.message || 'Error registrando el jugador.');
+        } finally {
+            setSavingNewPlayer(false);
+        }
+    };
+
     // ── Submit ────────────────────────────────────────────────────────────────
     const handleSubmit = async () => {
         if (!gameId) return;
@@ -246,13 +281,25 @@ export default function CambiosModal({ isOpen, onClose }: Props) {
                     position: subPosition,
                     dhForPosition: subPosition === 'DH' ? subDhFor : undefined,
                 });
+
+                // Si el jugador que sale estaba en base, actualizar el corredor al nuevo jugador
+                const playerIn = elegibles?.puedenEntrar.find(p => p.playerId === subPlayerInId);
+                if (playerIn) {
+                    const { baseIds, bases } = useGameStore.getState();
+                    const newBaseIds = { ...baseIds };
+                    const newBases = { ...bases };
+                    const inName = `${playerIn.firstName} ${playerIn.lastName}`;
+                    if (newBaseIds.first === subPlayerOutId)  { newBaseIds.first  = subPlayerInId; newBases.first  = inName; }
+                    if (newBaseIds.second === subPlayerOutId) { newBaseIds.second = subPlayerInId; newBases.second = inName; }
+                    if (newBaseIds.third === subPlayerOutId)  { newBaseIds.third  = subPlayerInId; newBases.third  = inName; }
+                    useGameStore.setState({ baseIds: newBaseIds, bases: newBases });
+                }
             } else if (changeType === 'POSICION') {
                 await api.post(`/games/${gameId}/cambios/posicion`, { teamId, swaps: posSwaps });
             } else if (changeType === 'REINGRESO') {
                 await api.post(`/games/${gameId}/cambios/reingreso`, { teamId, starterPlayerId: reingresoPId });
             }
             await fetchGameConfig();
-            connectSocket();
             syncStateToBackend();
             onClose();
         } catch (err: any) {
@@ -412,9 +459,68 @@ export default function CambiosModal({ isOpen, onClose }: Props) {
 
                             {/* Entra */}
                             <div>
-                                <label className="text-xs text-slate-400 font-bold uppercase tracking-wide block mb-1.5">Entra al juego</label>
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label className="text-xs text-slate-400 font-bold uppercase tracking-wide">Entra al juego</label>
+                                    {isStreamer && !showNewPlayerForm && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowNewPlayerForm(true)}
+                                            className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 transition-colors"
+                                        >
+                                            <span>+</span> Registrar nuevo jugador
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* New player inline form (streamer only) */}
+                                {isStreamer && showNewPlayerForm && (
+                                    <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-3 mb-2 space-y-2">
+                                        <p className="text-xs text-amber-400 font-bold">Nuevo jugador</p>
+                                        <div className="flex gap-2">
+                                            <input
+                                                className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-amber-500"
+                                                placeholder="Nombre"
+                                                value={newPlayerFirstName}
+                                                onChange={e => setNewPlayerFirstName(e.target.value)}
+                                            />
+                                            <input
+                                                className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-amber-500"
+                                                placeholder="Apellido"
+                                                value={newPlayerLastName}
+                                                onChange={e => setNewPlayerLastName(e.target.value)}
+                                            />
+                                            <input
+                                                className="w-12 bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-sm text-white text-center focus:outline-none focus:border-amber-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+                                                placeholder="#"
+                                                type="number"
+                                                min={0}
+                                                max={99}
+                                                value={newPlayerNumber}
+                                                onChange={e => setNewPlayerNumber(e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={handleSaveNewPlayer}
+                                                disabled={savingNewPlayer || (!newPlayerFirstName.trim() && !newPlayerLastName.trim())}
+                                                className="flex-1 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-900 font-bold text-xs transition-colors"
+                                            >
+                                                {savingNewPlayer ? 'Guardando...' : 'Guardar'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => { setShowNewPlayerForm(false); setNewPlayerFirstName(''); setNewPlayerLastName(''); setNewPlayerNumber(''); }}
+                                                className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold text-xs transition-colors"
+                                            >
+                                                Cancelar
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div className="space-y-1.5">
-                                    {elegibles?.puedenEntrar.length === 0 && (
+                                    {elegibles?.puedenEntrar.length === 0 && !showNewPlayerForm && (
                                         <p className="text-slate-500 text-xs text-center py-2">No hay jugadores disponibles en el roster.</p>
                                     )}
                                     {elegibles?.puedenEntrar.map(p => (

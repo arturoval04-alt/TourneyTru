@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import Navbar from "@/components/Navbar";
 import api from "@/lib/api";
+import { MapPin, Trophy, ChevronRight, Search } from "lucide-react";
 
 interface LeagueItem {
     id: string;
@@ -26,6 +26,8 @@ const SPORT_LABEL: Record<string, string> = {
     softball: "Sóftbol",
     both: "Béisbol & Sóftbol",
 };
+
+const getSportIcon = (sport?: string) => (sport || '').includes('softball') ? '🥎' : '⚾';
 
 export default function LigasPage() {
     const [leagues, setLeagues] = useState<LeagueItem[]>([]);
@@ -60,21 +62,26 @@ export default function LigasPage() {
                     </div>
 
                     {/* Búsqueda */}
-                    <div className="mb-8">
+                    <div className="mb-8 relative max-w-md group text-white">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
                         <input
                             type="text"
                             placeholder="Buscar liga por nombre o ciudad..."
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            className="w-full max-w-md px-4 py-2 bg-surface text-foreground placeholder-muted-foreground border border-muted/40 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary shadow-sm transition-all"
+                            className="w-full pl-12 pr-4 py-3 bg-surface text-foreground placeholder-muted-foreground border border-muted/30 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary shadow-sm transition-all"
                         />
                     </div>
 
+                    <p className="text-sm text-muted-foreground mb-6 font-medium">
+                        Mostrando {filtered.length} liga{filtered.length !== 1 ? 's' : ''}
+                    </p>
+
                     {/* Grid de ligas */}
                     {loading ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {[1, 2, 3].map((i) => (
-                                <div key={i} className="h-40 bg-surface border border-muted/30 rounded-2xl animate-pulse" />
+                        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-4">
+                            {[1, 2, 3, 4].map((i) => (
+                                <div key={i} className="h-80 bg-surface border border-muted/30 rounded-2xl animate-pulse" />
                             ))}
                         </div>
                     ) : filtered.length === 0 ? (
@@ -85,61 +92,71 @@ export default function LigasPage() {
                             </p>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                             {filtered.map((league) => (
-                                <Link key={league.id} href={`/ligas/${league.id}`}>
-                                    <div className="bg-surface border border-muted/30 rounded-2xl p-6 shadow-sm hover:shadow-lg hover:-translate-y-2 hover:border-primary/50 cursor-pointer transition-all duration-300 group h-full flex flex-col">
-                                        {/* Logo + nombre */}
-                                        <div className="flex items-center gap-4 mb-4">
-                                            <div className="w-14 h-14 shrink-0 rounded-xl overflow-hidden bg-muted/10 border border-muted/20 flex items-center justify-center">
+                                <Link key={league.id} href={`/ligas/${league.id}`} className="block group cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary rounded-2xl animate-fade-in-up">
+                                    <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-md hover:shadow-xl hover:-translate-y-2 hover:border-primary/50 transition-all duration-300 h-full flex flex-col justify-center">
+
+                                        {/* Banner / Cover */}
+                                        <div className="relative h-40 w-full bg-gradient-to-br from-slate-800 to-slate-900 overflow-hidden">
+                                            <div className="absolute inset-0 bg-black/10 group-hover:bg-black/0 transition-colors"></div>
+
+                                            {/* Sport Badge Overlay */}
+                                            <div className="absolute top-4 right-4 px-3 py-1 bg-black/60 backdrop-blur-md text-white rounded-full text-[11px] font-bold border border-white/10 flex items-center gap-1.5 shadow-sm z-20">
+                                                <span>{getSportIcon(league.sport)}</span> {SPORT_LABEL[league.sport || ''] || league.sport || 'Deporte'}
+                                            </div>
+
+                                            {/* Verification Badge */}
+                                            {league.isVerified && (
+                                                <div className="absolute top-4 left-4 bg-primary px-2.5 py-1 rounded-full text-[10px] font-black text-white uppercase shadow-sm z-20">
+                                                    Verificada
+                                                </div>
+                                            )}
+
+                                            {/* Logo Overlay */}
+                                            <div className="w-full h-full flex items-center justify-center p-4">
                                                 {league.logoUrl ? (
-                                                    <Image
+                                                    <img
                                                         src={league.logoUrl}
                                                         alt={league.name}
-                                                        width={56}
-                                                        height={56}
-                                                        className="object-cover w-full h-full"
+                                                        className="w-full h-full object-contain group-hover:scale-110 transition-transform duration-700"
                                                     />
                                                 ) : (
-                                                    <span className="text-2xl">🏆</span>
-                                                )}
-                                            </div>
-                                            <div className="min-w-0">
-                                                <div className="flex items-center gap-2 flex-wrap">
-                                                    <h3 className="font-black text-lg group-hover:text-primary transition-colors leading-tight truncate">
-                                                        {league.shortName || league.name}
-                                                    </h3>
-                                                    {league.isVerified && (
-                                                        <span
-                                                            title="Liga verificada"
-                                                            className="text-primary shrink-0"
-                                                            aria-label="Liga verificada"
-                                                        >
-                                                            ✓
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                {league.shortName && (
-                                                    <p className="text-xs text-muted-foreground truncate">{league.name}</p>
+                                                    <div className="opacity-20 group-hover:scale-125 transition-transform duration-700">
+                                                        <Trophy className="w-20 h-20 text-white" />
+                                                    </div>
                                                 )}
                                             </div>
                                         </div>
 
-                                        {/* Info */}
-                                        <div className="flex flex-wrap gap-2 mt-auto">
-                                            {league.sport && (
-                                                <span className="px-2.5 py-1 bg-primary/10 text-primary text-xs font-bold rounded-full">
-                                                    {SPORT_LABEL[league.sport] ?? league.sport}
-                                                </span>
-                                            )}
-                                            {(league.city || league.state) && (
-                                                <span className="px-2.5 py-1 bg-muted/10 text-muted-foreground text-xs rounded-full">
-                                                    📍 {[league.city, league.state].filter(Boolean).join(", ")}
-                                                </span>
-                                            )}
-                                            <span className="px-2.5 py-1 bg-muted/10 text-muted-foreground text-xs rounded-full">
-                                                {league._count.tournaments} torneo{league._count.tournaments !== 1 ? "s" : ""}
-                                            </span>
+                                        {/* Content */}
+                                        <div className="p-2 flex flex-col flex-1">
+                                            <h3 className="font-black text-xl text-foreground text-center mb-4 leading-tight group-hover:text-primary transition-colors line-clamp-2">
+                                                {league.name !== league.shortName ? league.name : "Liga Oficial"}
+                                            </h3>
+
+                                            <div className="space-y-3 mb-6 flex-1 ">
+                                                {/* Lugar */}
+                                                {(league.city || league.state) && (
+                                                    <div className="flex items-center justify-center gap-3 text-sm text-muted-foreground font-medium">
+                                                        <MapPin className="w-4 h-4 text-muted-foreground/70 shrink-0" />
+                                                        <span className="truncate">
+                                                            {[league.city, league.state].filter(Boolean).join(", ")}
+                                                        </span>
+                                                    </div>
+                                                )}
+
+                                                {/* Sport (additional info or label) */}
+                                                <div className="flex items-center justify-center gap-3 text-sm text-muted-foreground font-medium">
+                                                    <Trophy className="w-4 h-4 text-muted-foreground/70 shrink-0" />
+                                                    <span>{league._count.tournaments} torneo{league._count.tournaments !== 1 ? "s" : ""}</span>
+                                                </div>
+                                            </div>
+
+                                            {/* Footer */}
+                                            <div className="border-t border-muted/20 pt-4 mt-auto flex items-center justify-between">
+
+                                            </div>
                                         </div>
                                     </div>
                                 </Link>

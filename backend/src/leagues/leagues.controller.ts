@@ -30,14 +30,16 @@ export class LeaguesController {
 
     @Patch(':id')
     @UseGuards(JwtAuthGuard)
-    update(@Param('id') id: string, @Body() updateLeagueDto: UpdateLeagueDto) {
-        return this.leaguesService.update(id, updateLeagueDto);
+    update(@Param('id') id: string, @Body() updateLeagueDto: UpdateLeagueDto, @Req() req: any) {
+        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
+        return this.leaguesService.update(id, updateLeagueDto, requestor);
     }
 
     @Delete(':id')
     @UseGuards(JwtAuthGuard)
-    remove(@Param('id') id: string) {
-        return this.leaguesService.remove(id);
+    remove(@Param('id') id: string, @Req() req: any) {
+        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
+        return this.leaguesService.remove(id, requestor);
     }
 
     @Get(':id/torneos')

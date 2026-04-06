@@ -133,10 +133,9 @@ export default function PublicGamecast() {
         // 2. Carga inicial
         fetchBoxscore(gameId);
 
-        // El store ya recibe actualizaciones vía socket.io
-        // Refrescar boxscore con el primer load
         return () => {
             isMountedRef.current = false;
+            useGameStore.getState().disconnectSocket();
         };
     }, [params.id, fetchBoxscore]);
 

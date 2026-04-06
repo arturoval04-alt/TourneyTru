@@ -93,10 +93,14 @@ export default function CreateGameWizard({
   const [scheduledDate, setScheduledDate] = useState('');
   const [scheduledTime, setScheduledTime] = useState('');
   const [fieldId, setFieldId] = useState('');
+  const [gameRound, setGameRound] = useState('');
   const [selectedUmpires, setSelectedUmpires] = useState<
     { umpireId: string; role: 'plate' | 'base1' | 'base2' | 'base3'; name: string }[]
   >([]);
   const [umpireSearch, setUmpireSearch] = useState('');
+  const [customUmpires, setCustomUmpires] = useState<{ plate: string; base1: string; base2: string; base3: string }>({
+    plate: '', base1: '', base2: '', base3: '',
+  });
 
   // ── Juego creado ──────────────────────────────────────────────────────────
   const [gameId, setGameId] = useState<string | null>(existingGameId ?? null);
@@ -214,15 +218,23 @@ export default function CreateGameWizard({
       const tId = propTournamentId ?? selectedTournamentId;
       const maxInnings = maxInningsFromRules(selectedTournament?.rulesType ?? 'softball_7');
 
-      const { data: newGame } = await api.post('/games', {
+      // Build custom umpire names: registered umpire name takes precedence over free-text
+      const registeredByRole = Object.fromEntries(selectedUmpires.map((u) => [u.role, u.name]));
+      const gamePayload: Record<string, any> = {
         tournamentId: tId,
         homeTeamId,
         awayTeamId,
         scheduledDate: dateTime,
         field: fieldId || null,
+        round: gameRound || null,
         maxInnings,
         status: 'scheduled',
-      });
+        umpirePlate: registeredByRole['plate'] || customUmpires.plate || null,
+        umpireBase1: registeredByRole['base1'] || customUmpires.base1 || null,
+        umpireBase2: registeredByRole['base2'] || customUmpires.base2 || null,
+        umpireBase3: registeredByRole['base3'] || customUmpires.base3 || null,
+      };
+      const { data: newGame } = await api.post('/games', gamePayload);
 
       // Asignar umpires
       for (const u of selectedUmpires) {
@@ -486,50 +498,59 @@ export default function CreateGameWizard({
                 </div>
               )}
 
+              {/* Jornada */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">
+                  Jornada / Round (opcional)
+                </label>
+                <input
+                  type="text"
+                  value={gameRound}
+                  onChange={(e) => setGameRound(e.target.value)}
+                  placeholder="Ej: J1, Jornada 3, Cuartos de Final..."
+                  className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 placeholder-zinc-600"
+                />
+              </div>
+
               {/* Umpires */}
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-3">
                 <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wide flex items-center gap-1">
-                  <Users size={11} /> Umpires (máx. 4)
+                  <Users size={11} /> Umpires (opcional)
                 </label>
 
-                {/* Chips de umpires seleccionados por rol */}
-                <div className="flex flex-wrap gap-2">
+                {/* Per-role rows */}
+                <div className="flex flex-col gap-2">
                   {UMPIRE_ROLES.map(({ role, label }) => {
                     const assigned = selectedUmpires.find((u) => u.role === role);
+                    const customVal = customUmpires[role];
                     return (
-                      <div
-                        key={role}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border ${
-                          assigned
-                            ? 'bg-blue-900/40 border-blue-700 text-blue-200'
-                            : 'bg-zinc-900 border-zinc-700 text-zinc-500'
-                        }`}
-                      >
-                        <span className="font-semibold">{label}:</span>
+                      <div key={role} className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-zinc-500 w-20 shrink-0">{label}</span>
                         {assigned ? (
-                          <>
-                            <span>{assigned.name}</span>
-                            <button
-                              onClick={() => removeUmpire(assigned.umpireId)}
-                              className="text-zinc-400 hover:text-red-400 ml-0.5"
-                            >
-                              ×
-                            </button>
-                          </>
+                          <div className="flex-1 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-900/40 border border-blue-700 text-blue-200 text-xs">
+                            <span className="flex-1">{assigned.name}</span>
+                            <button onClick={() => removeUmpire(assigned.umpireId)} className="text-zinc-400 hover:text-red-400">×</button>
+                          </div>
                         ) : (
-                          <span>—</span>
+                          <input
+                            type="text"
+                            placeholder={umpires.length > 0 ? 'Nombre libre o busca abajo…' : 'Nombre del umpire…'}
+                            value={customVal}
+                            onChange={(e) => setCustomUmpires((prev) => ({ ...prev, [role]: e.target.value }))}
+                            className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500"
+                          />
                         )}
                       </div>
                     );
                   })}
                 </div>
 
-                {/* Búsqueda de umpires */}
-                {selectedUmpires.length < 4 && umpires.length > 0 && (
+                {/* Búsqueda de umpires registrados */}
+                {umpires.length > 0 && selectedUmpires.length < 4 && (
                   <div className="relative">
                     <input
                       type="text"
-                      placeholder="Buscar umpire..."
+                      placeholder="Buscar umpire registrado…"
                       value={umpireSearch}
                       onChange={(e) => setUmpireSearch(e.target.value)}
                       className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 w-full"
@@ -540,18 +561,21 @@ export default function CreateGameWizard({
                           <div key={u.id} className="px-3 py-2 hover:bg-zinc-800 transition-colors">
                             <p className="text-sm text-white">{u.firstName} {u.lastName}</p>
                             <div className="flex gap-1 mt-1">
-                              {UMPIRE_ROLES.filter((r) => !selectedUmpires.find((s) => s.role === r.role)).map(({ role, label }) => (
+                              {UMPIRE_ROLES.filter((r) => !selectedUmpires.find((s) => s.role === r.role)).map(({ role: r, label: l }) => (
                                 <button
-                                  key={role}
-                                  onClick={() => addUmpire(u, role)}
+                                  key={r}
+                                  onClick={() => addUmpire(u, r)}
                                   className="text-[10px] px-1.5 py-0.5 rounded bg-blue-900 text-blue-200 hover:bg-blue-700 transition-colors"
                                 >
-                                  {label}
+                                  {l}
                                 </button>
                               ))}
                             </div>
                           </div>
                         ))}
+                        {filteredUmpires.length === 0 && (
+                          <p className="px-3 py-2 text-xs text-zinc-500">No se encontraron umpires.</p>
+                        )}
                       </div>
                     )}
                   </div>

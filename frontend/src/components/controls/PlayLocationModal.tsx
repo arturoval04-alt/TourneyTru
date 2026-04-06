@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useGameStore } from '@/store/gameStore';
 import clsx from 'clsx';
+import { AlertTriangle } from 'lucide-react';
 
 interface PlayLocationModalProps {
     isOpen: boolean;
@@ -36,6 +37,10 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
     const [dpCode,  setDpCode]    = useState('');
     const [dpDests, setDpDests]   = useState<Record<string, string>>({});
 
+    // Phantom out step (after confirming an error)
+    const [phantomOutStep, setPhantomOutStep] = useState(false);
+    const [pendingErrorRunnerIds, setPendingErrorRunnerIds] = useState<string[]>([]);
+
     useEffect(() => { setMounted(true); }, []);
 
     // Reset DP state when modal closes
@@ -45,6 +50,8 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
             setDpCode('');
             setDpDests({});
             setSelectedPositions([]);
+            setPhantomOutStep(false);
+            setPendingErrorRunnerIds([]);
         }
     }, [isOpen]);
 
@@ -174,7 +181,8 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
             const isGroundout = playName === 'Rola';
             addOut(`${code}|${description}`, isGroundout);
         } else if (playType === 'Error') {
-            const batter = useGameStore.getState().currentBatter;
+            const state = useGameStore.getState();
+            const batter = state.currentBatter;
             const posNum = selectedPositions[0] || 0;
             const posNameError = posNames[posNum] || `E${posNum}`;
             let prep = 'del';
@@ -183,6 +191,15 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
             description = `${batter} se embasa por Error ${prep} ${posNameError}`;
             const errorSymbol = `E${posNum}`;
             registerHit(1, errorSymbol + '|' + description);
+
+            // Collect runner IDs currently on base — they may become unearned if this was a phantom out
+            const runnerIds = [state.baseIds.first, state.baseIds.second, state.baseIds.third].filter(Boolean) as string[];
+            if (runnerIds.length > 0) {
+                setPendingErrorRunnerIds(runnerIds);
+                setSelectedPositions([]);
+                setPhantomOutStep(true);
+                return; // Show phantom-out question before closing
+            }
         }
 
         setSelectedPositions([]);
@@ -247,6 +264,52 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
                             className="flex-[2] py-2.5 rounded-lg font-bold text-sm transition disabled:opacity-40 disabled:cursor-not-allowed bg-red-600 hover:bg-red-500 text-white"
                         >
                             Registrar Doble Play
+                        </button>
+                    </div>
+                </div>
+            </div>,
+            document.body
+        );
+    }
+
+    // ── Phantom Out question ─────────────────────────────────────────
+    if (phantomOutStep) {
+        const { markPhantomOut } = useGameStore.getState();
+        return createPortal(
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+                <div className="bg-slate-900 border border-yellow-500/40 rounded-xl max-w-sm w-full p-6 shadow-2xl">
+                    <div className="flex items-center gap-2 mb-3">
+                        <AlertTriangle className="w-6 h-6 text-yellow-400 shrink-0" />
+                        <h2 className="text-lg font-black text-yellow-400 uppercase tracking-wide">¿Out Fantasma?</h2>
+                    </div>
+                    <p className="text-sm text-slate-300 mb-2 leading-relaxed">
+                        Hay corredor(es) en base cuando ocurrió este error.
+                    </p>
+                    <p className="text-sm text-slate-400 mb-5 leading-relaxed">
+                        <strong className="text-white">¿Este error habría resultado en un out?</strong>{' '}
+                        Si es así, el inning se habría terminado antes y las carreras que anoten esos corredores serían <span className="text-yellow-300 font-bold">sucias</span>.
+                    </p>
+                    <div className="flex gap-3">
+                        <button
+                            onClick={() => {
+                                // No phantom out — runs stay earned
+                                setPhantomOutStep(false);
+                                onClose();
+                            }}
+                            className="flex-1 py-3 rounded-lg font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 text-sm transition border border-slate-700"
+                        >
+                            No, solo base extra
+                        </button>
+                        <button
+                            onClick={() => {
+                                // Mark existing runners as phantom-out candidates
+                                markPhantomOut(pendingErrorRunnerIds);
+                                setPhantomOutStep(false);
+                                onClose();
+                            }}
+                            className="flex-1 py-3 rounded-lg font-black text-slate-900 bg-yellow-400 hover:bg-yellow-300 text-sm transition"
+                        >
+                            Sí, fue out fantasma
                         </button>
                     </div>
                 </div>

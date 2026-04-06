@@ -48,6 +48,11 @@ export class CreateGameDto {
     @Min(1)
     @Max(15)
     maxInnings?: number;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    round?: string;
 }
 
 export class UpdateGameDto {
@@ -85,11 +90,24 @@ export class UpdateGameDto {
 
     @IsOptional()
     @IsString()
+    losingPitcherId?: string;
+
+    @IsOptional()
+    @IsString()
+    savePitcherId?: string;
+
+    @IsOptional()
+    @IsString()
     mvpBatter1Id?: string;
 
     @IsOptional()
     @IsString()
     mvpBatter2Id?: string;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    round?: string;
 }
 
 export class CreateLineupDto {

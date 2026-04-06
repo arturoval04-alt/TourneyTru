@@ -15,11 +15,12 @@ import ImageUploader from "@/components/ui/ImageUploader";
 
 interface BattingStats {
     games: number; atBats: number; runs: number; hits: number; h2: number; h3: number; hr: number; rbi: number; bb: number; so: number; hbp: number; sac: number;
-    avg: string; obp: string; slg: string; ops: string;
+    avg: string; obp: string; slg: string; ops: string; gs?: number;
 }
 
 interface PitchingStats {
     games: number; wins: number; losses: number; ip: number; h: number; r: number; er: number; bb: number; so: number; era: string; whip: string;
+    gs?: number; k9?: string; bb9?: string;
 }
 
 interface PlayerItem {
@@ -492,7 +493,7 @@ export default function TeamProfilePage() {
                                                 }
 
                                                 return (
-                                                    <div key={game.id} onClick={() => router.push(`/gamecast/${game.id}`)} className={`${bgGradient} border ${borderClass} rounded-2xl overflow-hidden shadow-sm flex flex-col hover:shadow-md transition-shadow relative cursor-pointer`}>
+                                                    <div key={game.id} onClick={() => router.push(game.status === 'in_progress' ? `/gamecast/${game.id}` : game.status === 'finished' ? `/gamefinalizado/${game.id}` : `/gamescheduled/${game.id}`)} className={`${bgGradient} border ${borderClass} rounded-2xl overflow-hidden shadow-sm flex flex-col hover:shadow-md transition-shadow relative cursor-pointer`}>
                                                         {game.status === 'in_progress' && (
                                                             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 to-orange-500" />
                                                         )}
@@ -881,6 +882,7 @@ export default function TeamProfilePage() {
                                                 {statsType === 'bateo' ? (
                                                     <>
                                                         <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">JJ</th>
+                                                        <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">GS</th>
                                                         <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">VB</th>
                                                         <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">C</th>
                                                         <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">H</th>
@@ -892,11 +894,13 @@ export default function TeamProfilePage() {
                                                         <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">K</th>
                                                         <th className="px-4 py-4 text-xs font-black text-primary text-center bg-primary/5">AVG</th>
                                                         <th className="px-4 py-4 text-xs font-black text-primary text-center bg-primary/5">OBP</th>
-                                                        <th className="px-4 py-4 text-xs font-black text-primary text-center bg-primary/5">OPS</th>
+                                                        <th className="px-4 py-4 text-xs font-black text-primary text-center bg-primary/5">SLG</th>
+                                                        <th className="px-4 py-4 text-xs font-black text-primary text-center bg-primary/10">OPS</th>
                                                     </>
                                                 ) : (
                                                     <>
                                                         <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">JJ</th>
+                                                        <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">GS</th>
                                                         <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">JG</th>
                                                         <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">JP</th>
                                                         <th className="px-4 py-4 text-xs font-black text-primary text-center bg-primary/5">IP</th>
@@ -906,6 +910,8 @@ export default function TeamProfilePage() {
                                                         <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">K</th>
                                                         <th className="px-5 py-4 text-xs font-black text-primary text-center bg-primary/5">ERA</th>
                                                         <th className="px-5 py-4 text-xs font-black text-primary text-center bg-primary/5">WHIP</th>
+                                                        <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">K/9</th>
+                                                        <th className="px-3 py-4 text-xs font-black text-muted-foreground text-center">BB/9</th>
                                                     </>
                                                 )}
                                             </tr>
@@ -933,6 +939,7 @@ export default function TeamProfilePage() {
                                                         {statsType === 'bateo' ? (
                                                             <>
                                                                 <td className="px-3 py-4 text-sm font-medium text-foreground text-center">{p.stats?.batting.games}</td>
+                                                                <td className="px-3 py-4 text-sm font-medium text-foreground text-center">{p.stats?.batting.gs || 0}</td>
                                                                 <td className="px-3 py-4 text-sm font-medium text-foreground text-center">{p.stats?.batting.atBats}</td>
                                                                 <td className="px-3 py-4 text-sm font-medium text-foreground text-center">{p.stats?.batting.runs}</td>
                                                                 <td className="px-3 py-4 text-sm font-medium text-foreground text-center">{p.stats?.batting.hits}</td>
@@ -944,11 +951,13 @@ export default function TeamProfilePage() {
                                                                 <td className="px-3 py-4 text-sm font-medium text-foreground text-center">{p.stats?.batting.so}</td>
                                                                 <td className="px-4 py-4 text-sm font-black text-primary text-center bg-primary/5">{p.stats?.batting.avg}</td>
                                                                 <td className="px-4 py-4 text-sm font-bold text-primary/80 text-center bg-primary/5">{p.stats?.batting.obp}</td>
-                                                                <td className="px-4 py-4 text-sm font-bold text-primary/80 text-center bg-primary/5">{p.stats?.batting.ops}</td>
+                                                                <td className="px-4 py-4 text-sm font-bold text-primary/80 text-center bg-primary/5">{p.stats?.batting.slg}</td>
+                                                                <td className="px-4 py-4 text-sm font-black text-primary/90 text-center bg-primary/10">{p.stats?.batting.ops}</td>
                                                             </>
                                                         ) : (
                                                             <>
                                                                 <td className="px-3 py-4 text-sm font-medium text-foreground text-center">{p.stats?.pitching.games}</td>
+                                                                <td className="px-3 py-4 text-sm font-medium text-foreground text-center">{p.stats?.pitching.gs || 0}</td>
                                                                 <td className="px-3 py-4 text-sm font-medium text-foreground text-center">{p.stats?.pitching.wins}</td>
                                                                 <td className="px-3 py-4 text-sm font-medium text-foreground text-center">{p.stats?.pitching.losses}</td>
                                                                 <td className="px-4 py-4 text-sm font-black text-primary text-center bg-primary/5">{p.stats?.pitching.ip}</td>
@@ -958,6 +967,8 @@ export default function TeamProfilePage() {
                                                                 <td className="px-3 py-4 text-sm font-medium text-foreground text-center">{p.stats?.pitching.so}</td>
                                                                 <td className="px-5 py-4 text-sm font-black text-primary text-center bg-primary/5">{p.stats?.pitching.era}</td>
                                                                 <td className="px-5 py-4 text-sm font-bold text-primary/80 text-center bg-primary/5">{p.stats?.pitching.whip}</td>
+                                                                <td className="px-3 py-4 text-sm font-medium text-muted-foreground text-center">{p.stats?.pitching.k9}</td>
+                                                                <td className="px-3 py-4 text-sm font-medium text-muted-foreground text-center">{p.stats?.pitching.bb9}</td>
                                                             </>
                                                         )}
                                                     </tr>
@@ -969,6 +980,7 @@ export default function TeamProfilePage() {
                                                 {statsType === 'bateo' ? (
                                                     <>
                                                         <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.gamesPlayed}</td>
+                                                        <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.stats?.batting.gs || 0}</td>
                                                         <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.stats?.batting.atBats}</td>
                                                         <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.stats?.batting.runs}</td>
                                                         <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.stats?.batting.hits}</td>
@@ -980,11 +992,13 @@ export default function TeamProfilePage() {
                                                         <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.stats?.batting.so}</td>
                                                         <td className="px-4 py-4 text-sm font-black text-primary text-center bg-primary/5">{team.stats?.batting.avg}</td>
                                                         <td className="px-4 py-4 text-sm font-black text-primary text-center bg-primary/5">{team.stats?.batting.obp}</td>
-                                                        <td className="px-4 py-4 text-sm font-black text-primary text-center bg-primary/5">{team.stats?.batting.ops}</td>
+                                                        <td className="px-4 py-4 text-sm font-black text-primary text-center bg-primary/5">{team.stats?.batting.slg}</td>
+                                                        <td className="px-4 py-4 text-sm font-black text-primary text-center bg-primary/10">{team.stats?.batting.ops}</td>
                                                     </>
                                                 ) : (
                                                     <>
                                                         <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.gamesPlayed}</td>
+                                                        <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.stats?.pitching.gs || 0}</td>
                                                         <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.wins}</td>
                                                         <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.losses}</td>
                                                         <td className="px-4 py-4 text-sm font-black text-primary text-center bg-primary/5">{team.stats?.pitching.ip}</td>
@@ -994,6 +1008,8 @@ export default function TeamProfilePage() {
                                                         <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.stats?.pitching.so}</td>
                                                         <td className="px-5 py-4 text-sm font-black text-primary text-center bg-primary/5">{team.stats?.pitching.era}</td>
                                                         <td className="px-5 py-4 text-sm font-black text-primary text-center bg-primary/5">{team.stats?.pitching.whip}</td>
+                                                        <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.stats?.pitching.k9}</td>
+                                                        <td className="px-3 py-4 text-sm font-black text-primary text-center">{team.stats?.pitching.bb9}</td>
                                                     </>
                                                 )}
                                             </tr>

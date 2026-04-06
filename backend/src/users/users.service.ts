@@ -369,6 +369,20 @@ export class UsersService {
         const user = await this.prisma.user.findUnique({ where: { id: userId } });
         if (!user) throw new NotFoundException('Usuario no encontrado');
 
+        // Verificar si el usuario es propietario de Ligas o Torneos
+        const leagueCount = await this.prisma.league.count({ where: { adminId: userId } });
+        const tournamentCount = await this.prisma.tournament.count({ where: { adminId: userId } });
+
+        if (leagueCount > 0 || tournamentCount > 0) {
+            throw new ForbiddenException('No puedes eliminar a este usuario porque pertenece como administrador/dueño de Ligas o Torneos activos.');
+        }
+
+        // Desvincular autoría de noticias (si aplica) seteando el autor a null
+        await this.prisma.tournamentNews.updateMany({
+            where: { authorId: userId },
+            data: { authorId: null }
+        });
+
         // Delete related TournamentOrganizer records first
         await this.prisma.tournamentOrganizer.deleteMany({ where: { userId } });
 

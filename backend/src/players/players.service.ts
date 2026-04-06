@@ -35,7 +35,16 @@ export class PlayersService {
 
     async findAll(filters?: { teamId?: string }) {
         const where: any = {};
-        if (filters?.teamId) where.teamId = filters.teamId;
+        if (filters?.teamId) {
+            where.teamId = filters.teamId;
+        } else {
+            where.team = {
+                tournament: {
+                    isPrivate: false,
+                    league: { isPrivate: false }
+                }
+            };
+        }
         return this.prisma.player.findMany({ where, include: { team: true }, orderBy: { lastName: 'asc' } });
     }
 
@@ -44,6 +53,12 @@ export class PlayersService {
         const q = query.trim();
         return this.prisma.player.findMany({
             where: {
+                team: {
+                    tournament: {
+                        isPrivate: false,
+                        league: { isPrivate: false }
+                    }
+                },
                 OR: [
                     { firstName: { contains: q } },
                     { lastName: { contains: q } },

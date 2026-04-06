@@ -165,7 +165,7 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
   ) {
     const auth = this.verifySocketAuth(client, payload.token);
-    if (!auth || !['admin', 'organizer', 'scorekeeper'].includes(auth.role)) {
+    if (!auth || !['admin', 'organizer', 'scorekeeper', 'streamer'].includes(auth.role)) {
       throw new WsException('Unauthorized');
     }
     const { gameId, fullState } = payload;
@@ -185,7 +185,7 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
   ) {
     const auth = this.verifySocketAuth(client, payload.token);
-    if (!auth || !['admin', 'organizer', 'scorekeeper'].includes(auth.role)) {
+    if (!auth || !['admin', 'organizer', 'scorekeeper', 'streamer'].includes(auth.role)) {
       throw new WsException('Unauthorized');
     }
     const { gameId, playInfo, fullState } = payload;
@@ -244,6 +244,8 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
         } as any
       }));
       this.logger.log(`Jugada guardada (Play ID: ${play?.id}, Result: ${resultCode})`);
+      // Notificar al scorekeeper el ID del play guardado (para soporte de undo)
+      if (play?.id) client.emit('play_registered', { playId: play.id });
     } catch (e) {
       this.logger.error('Error guardando play en DB (sin reintentos disponibles):', e);
       // Notificar al scorekeeper para que reintente vía HTTP

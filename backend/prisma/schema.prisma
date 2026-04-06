@@ -101,6 +101,7 @@ model Tournament {
   fields        Field[]
   games         Game[]
   playerStats   PlayerStat[]
+  standings     Standing[]
   teams         Team[]
   news          TournamentNews[]
   organizers    TournamentOrganizer[]
@@ -153,6 +154,7 @@ model Team {
   rosterEntries RosterEntry[]
   homeField     Field?         @relation(fields: [homeFieldId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   tournament    Tournament     @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  standings     Standing[]
 
   @@map("teams")
 }
@@ -174,6 +176,8 @@ model Player {
   gamesMvp1         Game[]         @relation("GameMvpBatter1")
   gamesMvp2         Game[]         @relation("GameMvpBatter2")
   gamesWonAsPitcher Game[]         @relation("GameWinningPitcher")
+  gamesLostAsPitcher Game[]        @relation("GameLosingPitcher")
+  gamesSavedAsPitcher Game[]       @relation("GameSavePitcher")
   lineupChangesIn   LineupChange[] @relation("LineupChangePlayerIn")
   lineupChangesOut  LineupChange[] @relation("LineupChangePlayerOut")
   lineupEntries     Lineup[]
@@ -227,6 +231,8 @@ model Game {
   homeTeamId       String         @map("home_team_id")
   awayTeamId       String         @map("away_team_id")
   winningPitcherId String?        @map("winning_pitcher_id")
+  losingPitcherId  String?        @map("losing_pitcher_id")
+  savePitcherId    String?        @map("save_pitcher_id")
   mvpBatter1Id     String?        @map("mvp_batter1_id")
   mvpBatter2Id     String?        @map("mvp_batter2_id")
   createdAt        DateTime       @default(now()) @map("created_at")
@@ -236,6 +242,7 @@ model Game {
   umpirePlate        String?        @map("umpire_plate")
   facebookStreamUrl  String?        @map("facebook_stream_url") @db.NVarChar(Max)
   streamStatus       String?        @default("offline") @map("stream_status") @db.NVarChar(20)
+  round              String?        @map("round") @db.NVarChar(100)
   gameUmpires      GameUmpire[]
   awayTeam         Team           @relation("AwayTeam", fields: [awayTeamId], references: [id], onUpdate: NoAction)
   homeTeam         Team           @relation("HomeTeam", fields: [homeTeamId], references: [id], onUpdate: NoAction)
@@ -243,6 +250,8 @@ model Game {
   mvpBatter2       Player?        @relation("GameMvpBatter2", fields: [mvpBatter2Id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   tournament       Tournament     @relation(fields: [tournamentId], references: [id], onUpdate: NoAction)
   winningPitcher   Player?        @relation("GameWinningPitcher", fields: [winningPitcherId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  losingPitcher    Player?        @relation("GameLosingPitcher", fields: [losingPitcherId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  savePitcher      Player?        @relation("GameSavePitcher", fields: [savePitcherId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   lineupChanges    LineupChange[]
   lineups          Lineup[]
   plays            Play[]
@@ -297,6 +306,7 @@ model PlayerStat {
   playerId     String      @map("player_id")
   teamId       String      @map("team_id")
   tournamentId String?     @map("tournament_id")
+  // ─── Batting stats ─────────────────────────────
   atBats       Int         @default(0, map: "ps_at_bats_df") @map("at_bats")
   runs         Int         @default(0, map: "ps_runs_df")
   hits         Int         @default(0, map: "ps_hits_df")
@@ -308,6 +318,18 @@ model PlayerStat {
   so           Int         @default(0, map: "ps_so_df")
   hbp          Int         @default(0, map: "ps_hbp_df")
   sac          Int         @default(0, map: "ps_sac_df")
+  // ─── New batting columns (Phase 3) ────────────
+  gamesPlayed       Int    @default(0) @map("games_played")
+  gamesStarted      Int    @default(0) @map("games_started")
+  plateAppearances  Int    @default(0) @map("plate_appearances")
+  sacFlies          Int    @default(0) @map("sac_flies")
+  sacBunts          Int    @default(0) @map("sac_bunts")
+  stolenBases       Int    @default(0) @map("stolen_bases")
+  caughtStealing    Int    @default(0) @map("caught_stealing")
+  groundDP          Int    @default(0) @map("ground_dp")
+  totalBases        Int    @default(0) @map("total_bases")
+  ibb               Int    @default(0)
+  // ─── Pitching stats ───────────────────────────
   wins         Int         @default(0, map: "ps_wins_df")
   losses       Int         @default(0, map: "ps_losses_df")
   ipOuts       Int         @default(0, map: "ps_ip_outs_df") @map("ip_outs")
@@ -315,6 +337,15 @@ model PlayerStat {
   erAllowed    Int         @default(0, map: "ps_er_allowed_df") @map("er_allowed")
   bbAllowed    Int         @default(0, map: "ps_bb_allowed_df") @map("bb_allowed")
   soPitching   Int         @default(0, map: "ps_so_pitching_df") @map("so_pitching")
+  // ─── New pitching columns (Phase 3) ───────────
+  gamesStartedP     Int    @default(0) @map("games_started_p")
+  battersFaced      Int    @default(0) @map("batters_faced")
+  hrAllowed         Int    @default(0) @map("hr_allowed")
+  wildPitches       Int    @default(0) @map("wild_pitches")
+  saves             Int    @default(0)
+  // ─── Fielding stats (Phase 5) ─────────────────
+  errors            Int    @default(0)
+  // ─── Timestamps ───────────────────────────────
   createdAt    DateTime    @default(now(), map: "ps_created_at_df") @map("created_at")
   updatedAt    DateTime    @default(now(), map: "ps_updated_at_df") @updatedAt @map("updated_at")
   player       Player      @relation(fields: [playerId], references: [id], onDelete: Cascade, map: "ps_player_id_fkey")
@@ -355,6 +386,11 @@ model Play {
   runsScored     Int      @default(0) @map("runs_scored")
   scored         Boolean  @default(false)
   outsRecorded   Int      @default(0) @map("outs_recorded")
+  // ─── New flags (Phase 3) ───────────────────────
+  isPlateAppearance  Boolean  @default(true) @map("is_pa")
+  isSacFly           Boolean  @default(false) @map("is_sac_fly")
+  isDoublePlay       Boolean  @default(false) @map("is_double_play")
+  // ─── Relationships ────────────────────────────
   gameId         String   @map("game_id")
   batterId       String   @map("batter_id")
   pitcherId      String   @map("pitcher_id")
@@ -439,4 +475,27 @@ model Subscription {
   @@index([leagueId], map: "subscriptions_league_idx")
   @@index([status], map: "subscriptions_status_idx")
   @@map("subscriptions")
+}
+
+// ─────────────────────────────────────────────
+// STANDING — Tabla de posiciones por torneo
+// Se recalcula automáticamente al finalizar un juego
+// ─────────────────────────────────────────────
+model Standing {
+  id           String     @id @default(uuid())
+  teamId       String     @map("team_id")
+  tournamentId String     @map("tournament_id")
+  wins         Int        @default(0)
+  losses       Int        @default(0)
+  ties         Int        @default(0)
+  runsFor      Int        @default(0) @map("runs_for")
+  runsAgainst  Int        @default(0) @map("runs_against")
+  streak       String?    @db.NVarChar(10)
+  lastUpdated  DateTime   @default(now()) @map("last_updated")
+  team         Team       @relation(fields: [teamId], references: [id], onUpdate: NoAction, map: "standing_team_id_fkey")
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade, map: "standing_tournament_id_fkey")
+
+  @@unique([teamId, tournamentId], map: "standings_team_tournament_unique")
+  @@index([tournamentId], map: "standings_tournament_idx")
+  @@map("standings")
 }

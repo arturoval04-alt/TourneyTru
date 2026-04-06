@@ -18,6 +18,12 @@ export interface BoxscoreBatterProps {
     rbi: number;
     bb: number;
     so: number;
+    pitchingIPOuts?: number;
+    pitchingSO?: number;
+    pitchingBB?: number;
+    pitchingHits?: number;
+    pitchingRuns?: number;
+    pitchingEarnedRuns?: number;
     plays: Record<number, PlayCell[]>; // Inning -> Plays
 }
 

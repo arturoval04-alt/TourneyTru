@@ -9,6 +9,7 @@ export class LeaguesService {
     constructor(private prisma: PrismaService) { }
 
     async create(data: CreateLeagueDto) {
+        const { isPrivate, ...rest } = data as any;
         if (data.adminId) {
             const user = await this.prisma.user.findUnique({ where: { id: data.adminId } }) as any;
             if (user && user.maxLeagues < 999) {
@@ -24,7 +25,15 @@ export class LeaguesService {
                 }
             }
         }
-        return this.prisma.league.create({ data });
+        
+        const league = await this.prisma.league.create({ data: rest as any });
+
+        // isPrivate not in Prisma client type (not exported correctly) — update via raw SQL
+        if (isPrivate !== undefined) {
+            await this.prisma.$executeRaw`UPDATE leagues SET is_private = ${isPrivate ? 1 : 0} WHERE id = ${league.id}`;
+        }
+        
+        return { ...league, isPrivate };
     }
 
     async findAll(adminId?: string, requestor?: Requestor) {
@@ -33,6 +42,8 @@ export class LeaguesService {
 
         if (adminId) {
             where.adminId = adminId;
+        } else if (!isSystemAdmin) {
+            where.isPrivate = false;
         }
 
         const results = await this.prisma.league.findMany({
@@ -89,8 +100,8 @@ export class LeaguesService {
         return league;
     }
 
-    async update(id: string, updateData: UpdateLeagueDto) {
-        await this.findOne(id);
+    async update(id: string, updateData: UpdateLeagueDto, requestor?: Requestor) {
+        await this.findOne(id, requestor);
         const { isPrivate, ...rest } = updateData as any;
 
         const result = await this.prisma.league.update({
@@ -106,8 +117,8 @@ export class LeaguesService {
         return result;
     }
 
-    async remove(id: string) {
-        await this.findOne(id);
+    async remove(id: string, requestor?: Requestor) {
+        await this.findOne(id, requestor);
         return this.prisma.league.delete({
             where: { id },
         });

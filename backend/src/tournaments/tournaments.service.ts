@@ -131,8 +131,8 @@ export class TournamentsService {
         return tournament;
     }
 
-    async update(id: string, updateData: UpdateTournamentDto) {
-        await this.findOne(id);
+    async update(id: string, updateData: UpdateTournamentDto, requestor?: Requestor) {
+        await this.findOne(id, requestor);
         const { startDate, isPrivate, ...rest } = updateData as any;
 
         const result = await this.prisma.tournament.update({
@@ -151,8 +151,8 @@ export class TournamentsService {
         return result;
     }
 
-    async remove(id: string) {
-        await this.findOne(id);
+    async remove(id: string, requestor?: Requestor) {
+        await this.findOne(id, requestor);
         return this.prisma.tournament.delete({
             where: { id },
         });

@@ -23,6 +23,7 @@ interface PlayerStat {
     bb: number; so: number; hbp: number; sac: number;
     wins: number; losses: number; ipOuts: number;
     hAllowed: number; erAllowed: number; bbAllowed: number; soPitching: number;
+    gamesStarted?: number; gamesStartedP?: number;
 }
 
 interface GameEntry {
@@ -104,7 +105,14 @@ function whip(bbAllowed: number, hAllowed: number, ipOuts: number) {
 function ipDisplay(ipOuts: number) {
     return `${Math.floor(ipOuts / 3)}.${ipOuts % 3}`;
 }
-
+function k9(so: number, ipOuts: number) {
+    if (!ipOuts) return "0.00";
+    return ((so * 27) / ipOuts).toFixed(2);
+}
+function bb9(bb: number, ipOuts: number) {
+    if (!ipOuts) return "0.00";
+    return ((bb * 27) / ipOuts).toFixed(2);
+}
 function aggregateStats(stats: PlayerStat[]) {
     return stats.reduce((acc, s) => ({
         atBats: acc.atBats + s.atBats,
@@ -125,10 +133,12 @@ function aggregateStats(stats: PlayerStat[]) {
         erAllowed: acc.erAllowed + s.erAllowed,
         bbAllowed: acc.bbAllowed + s.bbAllowed,
         soPitching: acc.soPitching + s.soPitching,
+        gamesStarted: acc.gamesStarted + (s.gamesStarted || 0),
+        gamesStartedP: acc.gamesStartedP + (s.gamesStartedP || 0),
     }), {
         atBats: 0, runs: 0, hits: 0, h2: 0, h3: 0, hr: 0, rbi: 0,
         bb: 0, so: 0, hbp: 0, sac: 0,
-        wins: 0, losses: 0, ipOuts: 0, hAllowed: 0, erAllowed: 0, bbAllowed: 0, soPitching: 0,
+        wins: 0, losses: 0, ipOuts: 0, hAllowed: 0, erAllowed: 0, bbAllowed: 0, soPitching: 0, gamesStarted: 0, gamesStartedP: 0,
     });
 }
 
@@ -173,6 +183,7 @@ interface ComputedStats {
     // pitching (may not exist)
     w?: number; l?: number; ipOuts?: number; hAllowed?: number;
     erAllowed?: number; bbAllowed?: number; soPitching?: number;
+    gs?: number; gsPitching?: number;
 }
 
 export default function PlayerProfilePage() {
@@ -369,6 +380,8 @@ export default function PlayerProfilePage() {
     const fAvg = filteredStatsTotals ? avg(filteredStatsTotals.hits, filteredStatsTotals.atBats) : displayAvg;
     const fHBP = filteredStatsTotals?.hbp ?? totals.hbp;
     const fSAC = filteredStatsTotals?.sac ?? totals.sac;
+    const fGS = cs?.gs ?? (filteredStatsTotals?.gamesStarted ?? totals.gamesStarted);
+    const fGSPitching = cs?.gsPitching ?? (filteredStatsTotals?.gamesStartedP ?? totals.gamesStartedP);
 
     const fWins = filteredStatsTotals?.wins ?? displayWins;
     const fLosses = filteredStatsTotals?.losses ?? displayLosses;
@@ -581,6 +594,8 @@ export default function PlayerProfilePage() {
                                     ))}
                                 </div>
                                 <div>
+                                    <StatRow label="Juegos Iniciados (GS)" value={fGS} />
+                                    <StatRow label="Apariciones al Plato (PA)" value={fAB + fBB + fHBP + fSAC} highlight="text-primary" />
                                     <StatRow label="Turnos al Bate (AB)" value={fAB} />
                                     <StatRow label="Hits (H)" value={fH} />
                                     <StatRow label="Dobles (2B)" value={f2B} />
@@ -608,6 +623,8 @@ export default function PlayerProfilePage() {
                                         { label: "WHIP", value: whip(fBBAllowed, fHAllowed, fIPOuts), color: "text-primary" },
                                         { label: "W-L", value: `${fWins}-${fLosses}`, color: "text-foreground" },
                                         { label: "IP", value: ipDisplay(fIPOuts), color: "text-foreground" },
+                                        { label: "K/9", value: k9(fSOPitching, fIPOuts), color: "text-foreground" },
+                                        { label: "BB/9", value: bb9(fBBAllowed, fIPOuts), color: "text-foreground" },
                                     ].map(s => (
                                         <div key={s.label} className="bg-background rounded-xl p-4 text-center border border-muted/10">
                                             <p className={`text-2xl font-black font-mono ${s.color}`}>{s.value}</p>
@@ -615,6 +632,7 @@ export default function PlayerProfilePage() {
                                         </div>
                                     ))}
                                 </div>
+                                <StatRow label="Juegos Iniciados (GS)" value={fGSPitching} />
                                 <StatRow label="Victorias (W)" value={fWins} highlight="text-emerald-500" />
                                 <StatRow label="Derrotas (L)" value={fLosses} />
                                 <StatRow label="Entradas Lanzadas (IP)" value={ipDisplay(fIPOuts)} />
@@ -679,7 +697,7 @@ export default function PlayerProfilePage() {
                                     else if (winStatus === 'live') { bgGradient = 'bg-gradient-to-br from-blue-500/20 to-surface'; borderClass = 'border-blue-500/30'; }
 
                                     return (
-                                        <Link key={g.id} href={`/gamecast/${g.id}`} className={`${bgGradient} border ${borderClass} rounded-2xl overflow-hidden shadow-sm flex flex-col hover:shadow-md hover:-translate-y-1 transition-all`}>
+                                        <Link key={g.id} href={g.status === 'in_progress' ? `/gamecast/${g.id}` : g.status === 'finished' ? `/gamefinalizado/${g.id}` : `/gamescheduled/${g.id}`} className={`${bgGradient} border ${borderClass} rounded-2xl overflow-hidden shadow-sm flex flex-col hover:shadow-md hover:-translate-y-1 transition-all`}>
                                             {/* Game Header */}
                                             <div className="px-4 py-1.5 border-b border-black/5 dark:border-white/5 flex justify-between items-center bg-black/5 dark:bg-white/5">
                                                 <div className="text-xs font-bold opacity-70 flex items-center gap-2">

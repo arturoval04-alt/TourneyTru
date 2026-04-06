@@ -56,7 +56,10 @@ function OverlayContent() {
         const store = useGameStore.getState();
         store.setGameId(gameId);
         store.fetchGameConfig().then(() => store.connectSocket());
-        return () => { isMountedRef.current = false; };
+        return () => {
+            isMountedRef.current = false;
+            useGameStore.getState().disconnectSocket();
+        };
     }, [gameId]);
 
     // Boxscore para stats ricas (igual que gamecast)

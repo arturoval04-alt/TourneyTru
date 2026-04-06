@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Post, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Patch, Post, Delete, Body, Param, UseGuards, Request, BadRequestException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -87,7 +87,7 @@ export class UsersController {
     @Roles('admin')
     async deleteUser(@Param('id') id: string, @Request() req: any) {
         if (req.user.id === id) {
-            throw new Error('No puedes eliminar tu propia cuenta.');
+            throw new BadRequestException('No puedes eliminar tu propia cuenta desde el dashboard.');
         }
         return this.usersService.deleteUser(id);
     }

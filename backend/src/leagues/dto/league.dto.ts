@@ -50,6 +50,10 @@ export class CreateLeagueDto {
 
     @IsUUID()
     adminId: string;
+
+    @IsOptional()
+    @IsBoolean()
+    isPrivate?: boolean;
 }
 
 export class UpdateLeagueDto {

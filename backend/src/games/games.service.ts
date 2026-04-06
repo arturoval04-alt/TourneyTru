@@ -122,20 +122,78 @@ export class GamesService {
     }
 
     async update(id: string, updateData: UpdateGameDto) {
-        await this.findOne(id);
+        const game = await this.findOne(id);
         
         // Ensure empty strings are casted to undefined so Prisma ignores them correctly instead of throwing 400 Bad Request
         if (updateData.winningPitcherId === "") updateData.winningPitcherId = undefined;
+        if (updateData.losingPitcherId === "") updateData.losingPitcherId = undefined;
+        if (updateData.savePitcherId === "") updateData.savePitcherId = undefined;
         if (updateData.mvpBatter1Id === "") updateData.mvpBatter1Id = undefined;
         if (updateData.mvpBatter2Id === "") updateData.mvpBatter2Id = undefined;
 
         // Ensure fields exist before trying to create relation edits, otherwise ignore.
         const prismaUpdateData: any = { ...updateData };
 
-        return this.prisma.game.update({
+        const updated = await this.prisma.game.update({
             where: { id },
             data: prismaUpdateData,
         });
+
+        // Auto-recalculate standings when a game is finalized
+        if (updateData.status === 'finished' && game.status !== 'finished') {
+            try {
+                await this.recalculateStandings(game.tournamentId);
+            } catch (err) {
+                console.error('[Standings] Error recalculating standings:', err);
+            }
+        }
+
+        return updated;
+    }
+
+    /** Recalculate tournament standings from all finished games */
+    private async recalculateStandings(tournamentId: string) {
+        const games = await this.prisma.game.findMany({
+            where: { tournamentId, status: 'finished' },
+            select: { homeTeamId: true, awayTeamId: true, homeScore: true, awayScore: true },
+        });
+        const teams = await this.prisma.team.findMany({
+            where: { tournamentId },
+            select: { id: true },
+        });
+
+        const standings: Record<string, { wins: number; losses: number; ties: number; runsFor: number; runsAgainst: number; results: string[] }> = {};
+        for (const t of teams) standings[t.id] = { wins: 0, losses: 0, ties: 0, runsFor: 0, runsAgainst: 0, results: [] };
+
+        for (const g of games) {
+            const home = standings[g.homeTeamId];
+            const away = standings[g.awayTeamId];
+            if (!home || !away) continue;
+            home.runsFor += g.homeScore; home.runsAgainst += g.awayScore;
+            away.runsFor += g.awayScore; away.runsAgainst += g.homeScore;
+            if (g.homeScore > g.awayScore) { home.wins++; home.results.push('W'); away.losses++; away.results.push('L'); }
+            else if (g.awayScore > g.homeScore) { away.wins++; away.results.push('W'); home.losses++; home.results.push('L'); }
+            else { home.ties++; home.results.push('T'); away.ties++; away.results.push('T'); }
+        }
+
+        const calcStreak = (r: string[]) => {
+            if (!r.length) return '-';
+            const last = r[r.length - 1];
+            let c = 0;
+            for (let i = r.length - 1; i >= 0; i--) { if (r[i] === last) c++; else break; }
+            return `${last}${c}`;
+        };
+
+        const upserts = Object.entries(standings).map(([teamId, s]) =>
+            this.prisma.standing.upsert({
+                where: { teamId_tournamentId: { teamId, tournamentId } },
+                create: { teamId, tournamentId, wins: s.wins, losses: s.losses, ties: s.ties, runsFor: s.runsFor, runsAgainst: s.runsAgainst, streak: calcStreak(s.results) },
+                update: { wins: s.wins, losses: s.losses, ties: s.ties, runsFor: s.runsFor, runsAgainst: s.runsAgainst, streak: calcStreak(s.results), lastUpdated: new Date() },
+            }),
+        );
+
+        await this.prisma.$transaction(upserts);
+        console.log(`[Standings] Recalculated for tournament ${tournamentId}`);
     }
 
     async remove(id: string) {
@@ -382,11 +440,28 @@ export class GamesService {
         const dhAnchor = normalizedPosition === 'DH' ? this.normalizeDefensivePosition(dto.dhForPosition) : null;
 
         // Proponer nuevo lineup: marcar saliente como inactivo, insertar entrante
-        const proposedLineup = currentLineup
-            .filter(l => (l as any).isActive && l.id !== playerOut.id)
-            .map(l => ({ position: l.position, dhForPosition: l.dhForPosition }));
-        proposedLineup.push({ position: dto.position, dhForPosition: dhAnchor });
-        this.validateLineup(proposedLineup);
+        const remainingActive = currentLineup.filter(l => (l as any).isActive && l.id !== playerOut.id);
+
+        // Validación dirigida (no re-validar anclas de DH preexistentes en el lineup):
+        // 1. No puede haber posiciones defensivas duplicadas con el nuevo jugador
+        const defensiveUsed = new Set<string>();
+        for (const l of remainingActive) {
+            const dp = this.normalizeDefensivePosition(l.position);
+            if (dp) defensiveUsed.add(dp);
+        }
+        const incomingDefPos = this.normalizeDefensivePosition(dto.position);
+        if (incomingDefPos && defensiveUsed.has(incomingDefPos)) {
+            throw new BadRequestException(`Posición defensiva duplicada: ${incomingDefPos}.`);
+        }
+        // 2. Si el entrante es DH, debe anclar a una posición defensiva válida
+        if (normalizedPosition === 'DH') {
+            if (!dhAnchor) {
+                throw new BadRequestException('Si se usa DH, debe anclarse a una posición defensiva válida.');
+            }
+            if (!defensiveUsed.has(dhAnchor)) {
+                throw new BadRequestException(`El DH debe anclarse a una posición defensiva presente en el lineup (${dhAnchor}).`);
+            }
+        }
 
         // Marcar al saliente como inactivo en el lineup
         await (this.prisma.lineup as any).update({
@@ -577,7 +652,7 @@ export class GamesService {
                 mvpBatter2: true,
                 lineups: {
                     include: { player: true },
-                    orderBy: { battingOrder: 'asc' }
+                    orderBy: [{ battingOrder: 'asc' }, { isStarter: 'desc' }]
                 },
                 plays: {
                     orderBy: { timestamp: 'asc' }
@@ -590,15 +665,23 @@ export class GamesService {
         const initTeamBoxscore = (team: any, lineups: any[]): any => {
             const teamLineup = lineups.filter(l => l.teamId === team.id);
 
-            // Determine Flex Batting Order
-            const startingDH = teamLineup.find(l => l.isStarter && this.normalizePosition(l.position) === 'DH');
-            let flexBattingOrder: number | null = null;
-            if (startingDH && startingDH.dhForPosition) {
-                const flexStarter = teamLineup.find(l => l.isStarter && this.normalizePosition(l.position) === this.normalizeDefensivePosition(startingDH.dhForPosition));
-                if (flexStarter) {
-                    flexBattingOrder = flexStarter.battingOrder;
-                }
-            }
+            // Identify which defensive position(s) are covered by a DH.
+            // Those fielders are defense-only and must NOT appear in the batting boxscore.
+            const dhCoveredPositions = new Set<string>(
+                teamLineup
+                    .filter(l => this.normalizePosition(l.position) === 'DH' && l.dhForPosition)
+                    .map(l => this.normalizeDefensivePosition(l.dhForPosition))
+                    .filter((p): p is string => p !== null)
+            );
+
+            // Batting lineup: only players who actually occupy a batting slot.
+            // Defense-only players (covered by DH) are excluded — they have no plate appearances.
+            const battingLineup = dhCoveredPositions.size > 0
+                ? teamLineup.filter(l => {
+                    const normPos = this.normalizeDefensivePosition(l.position);
+                    return !normPos || !dhCoveredPositions.has(normPos);
+                })
+                : teamLineup;
 
             return {
                 teamId: team.id,
@@ -608,7 +691,7 @@ export class GamesService {
                 totalErrors: 0,
                 runsByInning: {},
                 lastBatterByInning: {}, // Track who was the last to have a main play in each inning
-                lineup: teamLineup.map(l => {
+                lineup: battingLineup.map(l => {
                     let entryInning: number | undefined = undefined;
                     if (!l.isStarter) {
                         const lTime = new Date(l.createdAt).getTime();
@@ -627,7 +710,7 @@ export class GamesService {
                         position: l.position,
                         battingOrder: l.battingOrder,
                         isStarter: l.isStarter,
-                        isFlex: flexBattingOrder !== null && l.battingOrder === flexBattingOrder,
+                        isFlex: false,
                         entryInning,
                         atBats: 0,
                         runs: 0,
@@ -638,6 +721,9 @@ export class GamesService {
                         pitchingIPOuts: 0,
                         pitchingSO: 0,
                         pitchingBB: 0,
+                        pitchingHits: 0,
+                        pitchingRuns: 0,
+                        pitchingEarnedRuns: 0,
                         plays: {}
                     };
                 })
@@ -647,11 +733,31 @@ export class GamesService {
         const homeBox = initTeamBoxscore(game.homeTeam, game.lineups);
         const awayBox = initTeamBoxscore(game.awayTeam, game.lineups);
 
+        // Earned run tracking: runners who reached via error are "tainted" — any run
+        // they score is unearned. The set resets at the start of each new half-inning.
+        const taintedRunners = new Set<string>();
+        let currentHalfKey = '';
+
         // Process plays
         for (const playObj of game.plays) {
             const play = playObj as any; // Temporary cast until prisma generate succeeds
+            // Skip internal control plays (UNDO markers) that shouldn't affect the boxscore
+            const resultCode = (play.result || '').split('|')[0].toUpperCase().trim();
+            if (resultCode.includes('UNDO')) continue;
+
             const isTop = play.half === 'top';
             const battingBox = isTop ? awayBox : homeBox;
+
+            // Reset taint set at each new half-inning
+            const halfKey = `${play.inning}-${play.half}`;
+            if (halfKey !== currentHalfKey) {
+                currentHalfKey = halfKey;
+                taintedRunners.clear();
+            }
+            // A batter who reaches via a fielding error is an unearned runner
+            if ((play.result || '').toUpperCase().match(/^E\d/)) {
+                taintedRunners.add(play.batterId);
+            }
 
             // Find batter in lineup (robust comparison)
             const batter = battingBox.lineup.find((b: any) =>
@@ -690,7 +796,7 @@ export class GamesService {
                         const existingPlays = batter.plays[inn];
                         if (existingPlays && existingPlays.length > 0) {
                             const lastPlay = existingPlays[existingPlays.length - 1];
-                            
+
                             // Merge the new result (e.g. "BB|SB" or "H1|RUNNER_OUT")
                             if (!lastPlay.result.includes(play.result)) {
                                 lastPlay.result = `${lastPlay.result}|${play.result}`;
@@ -706,7 +812,37 @@ export class GamesService {
                                     pitcher.pitchingIPOuts = (pitcher.pitchingIPOuts || 0) + (play.outsRecorded || 0);
                                 }
                             }
+                            if (isRunScore && pitcher) {
+                                pitcher.pitchingRuns = (pitcher.pitchingRuns || 0) + 1;
+                                // Earned only if runner did NOT reach via error AND not flagged as phantom-out unearned
+                                const isUnearned = taintedRunners.has(play.batterId) || resultUpper.includes('UNEARNED');
+                                if (!isUnearned) {
+                                    pitcher.pitchingEarnedRuns = (pitcher.pitchingEarnedRuns || 0) + 1;
+                                }
+                            }
                             updated = true;
+                        }
+                    }
+
+                    // If no prior play found, this runner entered via substitution (pinch runner).
+                    // Create a synthetic PR entry so their advancement is visible in the boxscore.
+                    if (!updated && (isAdvance || isRunScore)) {
+                        if (!batter.plays[play.inning]) batter.plays[play.inning] = [];
+                        const prResult = `PR|${play.result}`;
+                        batter.plays[play.inning].push({
+                            result: prResult,
+                            outsBeforePlay: play.outsBeforePlay ?? 0,
+                            outsRecorded: 0,
+                            runsScored: isRunScore ? 1 : 0,
+                            rbi: 0,
+                            scored: isRunScore,
+                        });
+                        if (isRunScore && pitcher) {
+                            pitcher.pitchingRuns = (pitcher.pitchingRuns || 0) + 1;
+                            const isUnearned = taintedRunners.has(play.batterId) || resultUpper.includes('UNEARNED');
+                            if (!isUnearned) {
+                                pitcher.pitchingEarnedRuns = (pitcher.pitchingEarnedRuns || 0) + 1;
+                            }
                         }
                     }
                 }
@@ -749,6 +885,11 @@ export class GamesService {
                             pitcher.pitchingIPOuts = Math.max(0, (pitcher.pitchingIPOuts || 0) - (lastPlay.outsRecorded || 0));
                             if (lastPlay.result.toUpperCase().startsWith('K')) pitcher.pitchingSO = Math.max(0, (pitcher.pitchingSO || 0) - 1);
                             if (lastPlay.result.toUpperCase() === 'BB') pitcher.pitchingBB = Math.max(0, (pitcher.pitchingBB || 0) - 1);
+                            if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(lastPlay.result.toUpperCase())) pitcher.pitchingHits = Math.max(0, (pitcher.pitchingHits || 0) - 1);
+                            if (['HR', 'H4'].includes(lastPlay.result.toUpperCase())) {
+                                pitcher.pitchingRuns = Math.max(0, (pitcher.pitchingRuns || 0) - 1);
+                                pitcher.pitchingEarnedRuns = Math.max(0, (pitcher.pitchingEarnedRuns || 0) - 1);
+                            }
                         }
 
                         // REPLACE the record
@@ -761,14 +902,14 @@ export class GamesService {
 
                         // FORWARD new stats
                         const isError = play.result.toUpperCase().match(/^E\d$/);
-                        const isAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'FC', 'SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED'].includes(play.result.toUpperCase()) && !isError;
+                        const isAtBat = !['BB', 'IBB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'FC', 'SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED', 'KWP'].includes(play.result.toUpperCase()) && !isError;
                         if (isAtBat) batter.atBats += 1;
                         if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(play.result.toUpperCase())) {
                             batter.hits += 1;
                             battingBox.totalHits += 1;
                         }
-                        if (play.result.toUpperCase() === 'BB') batter.bb += 1;
-                        if (play.result.toUpperCase().startsWith('K')) batter.so += 1;
+                        if (play.result.toUpperCase() === 'BB' || play.result.toUpperCase() === 'IBB') batter.bb += 1;
+                        if (play.result.toUpperCase().startsWith('K') || play.result.toUpperCase() === 'KWP') batter.so += 1;
                         batter.rbi += play.rbi;
                         // H1/H2/H3: batter stays on base — runners' runs come from RUN_SCORED plays
                         // HR/H4: batter scores exactly 1 run
@@ -783,6 +924,12 @@ export class GamesService {
                             pitcher.pitchingIPOuts = (pitcher.pitchingIPOuts || 0) + (play.outsRecorded || 0);
                             if (play.result.toUpperCase().startsWith('K')) pitcher.pitchingSO = (pitcher.pitchingSO || 0) + 1;
                             if (play.result.toUpperCase() === 'BB') pitcher.pitchingBB = (pitcher.pitchingBB || 0) + 1;
+                            if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(play.result.toUpperCase())) pitcher.pitchingHits = (pitcher.pitchingHits || 0) + 1;
+                            if (['HR', 'H4'].includes(play.result.toUpperCase())) {
+                                // HR is always an earned run (batter didn't reach via error)
+                                pitcher.pitchingRuns = (pitcher.pitchingRuns || 0) + 1;
+                                pitcher.pitchingEarnedRuns = (pitcher.pitchingEarnedRuns || 0) + 1;
+                            }
                         }
 
                         // Don't add a new play entry
@@ -792,15 +939,15 @@ export class GamesService {
 
                 // Normal At-Bat processing
                 const isError = play.result.toUpperCase().match(/^E\d$/);
-                const isAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'FC', 'SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED', 'RUNNER_OUT'].includes(play.result.toUpperCase()) && !isError;
+                const isAtBat = !['BB', 'IBB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'FC', 'SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED', 'RUNNER_OUT', 'KWP'].includes(play.result.toUpperCase()) && !isError;
                 if (isAtBat) batter.atBats += 1;
 
                 if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(play.result.toUpperCase())) {
                     batter.hits += 1;
                     battingBox.totalHits += 1;
                 }
-                if (play.result.toUpperCase() === 'BB') batter.bb += 1;
-                if (play.result.toUpperCase().startsWith('K')) batter.so += 1;
+                if (play.result.toUpperCase() === 'BB' || play.result.toUpperCase() === 'IBB') batter.bb += 1;
+                if (play.result.toUpperCase().startsWith('K') || play.result.toUpperCase() === 'KWP') batter.so += 1;
                 batter.rbi += play.rbi;
 
                 // H1/H2/H3: batter stays on base — runners' runs come from RUN_SCORED plays
@@ -809,13 +956,20 @@ export class GamesService {
                 // ADV / other: batter_id IS the runner, so runsScored is theirs
                 { const ru = play.result.toUpperCase();
                   if (['HR', 'H4'].includes(ru)) { batter.runs += 1; }
-                  else if (!['H1', 'H2', 'H3', '1B', '2B', '3B', 'BB'].includes(ru) && play.runsScored > 0) { batter.runs += play.runsScored; } }
+                  else if (!['H1', 'H2', 'H3', '1B', '2B', '3B', 'BB', 'IBB', 'HBP', 'KWP'].includes(ru) && play.runsScored > 0) { batter.runs += play.runsScored; } }
 
                 // Update pitcher stats
                 if (pitcher) {
                     pitcher.pitchingIPOuts = (pitcher.pitchingIPOuts || 0) + (play.outsRecorded || 0);
-                    if (play.result.toUpperCase().startsWith('K')) pitcher.pitchingSO = (pitcher.pitchingSO || 0) + 1;
-                    if (play.result.toUpperCase() === 'BB') pitcher.pitchingBB = (pitcher.pitchingBB || 0) + 1;
+                    if (play.result.toUpperCase().startsWith('K') || play.result.toUpperCase() === 'KWP') pitcher.pitchingSO = (pitcher.pitchingSO || 0) + 1;
+                    if (play.result.toUpperCase() === 'BB' || play.result.toUpperCase() === 'IBB') pitcher.pitchingBB = (pitcher.pitchingBB || 0) + 1;
+                    if (play.result.toUpperCase() === 'HBP') pitcher.pitchingBB = (pitcher.pitchingBB || 0) + 1;
+                    if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(play.result.toUpperCase())) pitcher.pitchingHits = (pitcher.pitchingHits || 0) + 1;
+                    if (['HR', 'H4'].includes(play.result.toUpperCase())) {
+                        // HR is always an earned run
+                        pitcher.pitchingRuns = (pitcher.pitchingRuns || 0) + 1;
+                        pitcher.pitchingEarnedRuns = (pitcher.pitchingEarnedRuns || 0) + 1;
+                    }
                 }
 
                 // Add to play grid
@@ -890,11 +1044,31 @@ export class GamesService {
         );
         const currentOuts = currentHalfPlays.reduce((sum, p) => sum + p.outsRecorded, 0) % 3;
 
-        // Compute batter indices
-        const homeLp = game.lineups.filter((l) => l.teamId === game.homeTeamId);
-        const awayLp = game.lineups.filter((l) => l.teamId === game.awayTeamId);
-        const awayPA = game.plays.filter((p) => p.half === 'top').length;
-        const homePA = game.plays.filter((p) => p.half === 'bottom').length;
+        // Compute batter indices — solo jugadores activos y solo PAs reales
+        const NON_PA_CODES = ['SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED', 'RUNNER_OUT', 'UNDO'];
+        const isPAPlay = (p: any) => {
+            const code = (p.result || '').split('|')[0].toUpperCase().trim();
+            return !NON_PA_CODES.some((x) => code.startsWith(x));
+        };
+
+        // Helper: exclude defense-only players covered by a DH from the batting lineup
+        const filterBattingLineup = (lp: any[]) => {
+            const covered = new Set<string>(
+                lp.filter(l => this.normalizePosition(l.position) === 'DH' && l.dhForPosition)
+                   .map(l => this.normalizeDefensivePosition(l.dhForPosition))
+                   .filter((p): p is string => p !== null)
+            );
+            if (!covered.size) return lp;
+            return lp.filter(l => {
+                const norm = this.normalizeDefensivePosition(l.position);
+                return !norm || !covered.has(norm);
+            });
+        };
+
+        const homeLp = filterBattingLineup(game.lineups.filter((l) => l.teamId === game.homeTeamId && (l as any).isActive !== false));
+        const awayLp = filterBattingLineup(game.lineups.filter((l) => l.teamId === game.awayTeamId && (l as any).isActive !== false));
+        const awayPA = game.plays.filter((p) => p.half === 'top' && isPAPlay(p)).length;
+        const homePA = game.plays.filter((p) => p.half === 'bottom' && isPAPlay(p)).length;
         const awayBatterIndex = awayLp.length > 0 ? awayPA % awayLp.length : 0;
         const homeBatterIndex = homeLp.length > 0 ? homePA % homeLp.length : 0;
 
@@ -914,6 +1088,8 @@ export class GamesService {
             position: l.position,
             batting_order: l.battingOrder,
             dh_for_position: l.dhForPosition,
+            is_active: (l as any).isActive !== false,
+            is_starter: l.isStarter,
             player: l.player ? {
                 id: l.player.id,
                 firstName: l.player.firstName,
@@ -974,6 +1150,15 @@ export class GamesService {
     async removeUmpire(gameId: string, umpireId: string) {
         await this.findOne(gameId);
         return this.prisma.gameUmpire.deleteMany({ where: { gameId, umpireId } });
+    }
+
+    // ─── Delete specific plays by ID (undo support) ──────────────────────────────
+    async deletePlays(gameId: string, playIds: string[]) {
+        if (!playIds?.length) return { deleted: 0 };
+        const result = await this.prisma.play.deleteMany({
+            where: { id: { in: playIds }, gameId },
+        });
+        return { deleted: result.count };
     }
 
     private classifyPlayResult(result: string): string {

@@ -4,9 +4,10 @@ import AdvancedPlayModal from './AdvancedPlayModal';
 import PlayLocationModal from './PlayLocationModal';
 import FieldersChoiceModal from './FieldersChoiceModal';
 import CambiosModal from './CambiosModal';
+import EspecialesMenuModal from './EspecialesMenuModal';
 
 export default function ActionPanel() {
-    const { addBall, addStrike, addFoul, addOut, executeWildPitchOrPassedBall, history, undo } = useGameStore();
+    const { addBall, addStrike, addFoul, addOut, executeWildPitch, executePassedBall, registerHBP, registerIBB, registerDroppedThirdStrike, history, undo } = useGameStore();
 
     // Estado del mini-mapa modal
     const [isLocationModalOpen, setLocationModalOpen] = useState(false);
@@ -18,12 +19,25 @@ export default function ActionPanel() {
     const [isAdvancedModalOpen, setIsAdvancedModalOpen] = useState(false);
     const [isFieldersChoiceModalOpen, setIsFieldersChoiceModalOpen] = useState(false);
     const [isLineupChangeOpen, setIsLineupChangeOpen] = useState(false);
+    const [isEspecialesMenuOpen, setIsEspecialesMenuOpen] = useState(false);
 
     const openLocationModal = (type: 'Hit' | 'Out' | 'Error', name: string, hitNum?: number) => {
         setPlayType(type);
         setPlayName(name);
         setHitType(hitNum);
         setLocationModalOpen(true);
+    };
+
+    const handleEspecialesAction = (actionType: string) => {
+        switch (actionType) {
+            case 'HBP': registerHBP(); break;
+            case 'BB_INT': registerIBB(); break;
+            case 'K_LLEGA': registerDroppedThirdStrike(); break;
+            case 'FLY_SAC': useGameStore.getState().executeSacrifice('fly'); break;
+            case 'BUNT_SAC': useGameStore.getState().executeSacrifice('bunt'); break;
+            case 'BK': useGameStore.getState().executeBalk(); break;
+            case 'MATRIZ': setIsAdvancedModalOpen(true); break;
+        }
     };
 
     return (
@@ -47,12 +61,12 @@ export default function ActionPanel() {
 
             {/* Control Grid — responsive 1-col mobile, 4-col desktop */}
             <div className="p-3 sm:p-4">
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 sm:gap-4">
 
                     {/* ─── PITCHEOS ─── */}
                     <div className="flex flex-col gap-2">
                         <h4 className="section-title">Pitcheos</h4>
-                        <div className="grid grid-cols-2 gap-1.5">
+                        <div className="grid grid-cols-3 gap-1.5">
                             <button onClick={() => addStrike()} className="action-btn-lift bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 sm:py-7 rounded-lg shadow-md shadow-red-900/30 text-sm min-h-[48px] min-w-[48px]">
                                 STRIKE
                             </button>
@@ -62,8 +76,11 @@ export default function ActionPanel() {
                             <button onClick={addFoul} className="bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold py-4 rounded-lg active:scale-95 transition-all border border-slate-600 min-h-[48px] min-w-[48px]">
                                 FOUL
                             </button>
-                            <button onClick={() => executeWildPitchOrPassedBall("WP / PB")} className="bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold py-4 rounded-lg active:scale-95 transition-all border border-slate-600 min-h-[48px] min-w-[48px]">
-                                WP/PB
+                            <button onClick={executeWildPitch} className="bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold py-4 rounded-lg active:scale-95 transition-all border border-slate-600 min-h-[48px] min-w-[48px]">
+                                WP
+                            </button>
+                            <button onClick={executePassedBall} className="bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold py-4 rounded-lg active:scale-95 transition-all border border-slate-600 min-h-[48px] min-w-[48px]">
+                                PB
                             </button>
                         </div>
                     </div>
@@ -84,7 +101,6 @@ export default function ActionPanel() {
                             <button onClick={() => openLocationModal('Hit', 'Jonrón', 4)} className="bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xl sm:text-2xl py-3 sm:py-4 rounded-lg shadow-md shadow-indigo-900/30 active:scale-95 transition-all min-h-[48px] min-w-[48px]">
                                 H4
                             </button>
-
                         </div>
                     </div>
 
@@ -105,13 +121,13 @@ export default function ActionPanel() {
                                 const batter = useGameStore.getState().currentBatter;
                                 addOut(`KS|${batter} es Ponchado Tirándole (K)`);
                             }} className="bg-red-900 hover:bg-red-800 text-white text-[10px] font-bold py-4 rounded-lg active:scale-95 transition-all border border-red-500/30 min-h-[48px] min-w-[48px]">
-                                PONCHE (K)
+                                K TIRÁNDOLE
                             </button>
                             <button onClick={() => {
                                 const batter = useGameStore.getState().currentBatter;
-                                addOut(`K|${batter} es Ponchado Sin Tirar (ꓘ)`);
+                                addOut(`K|${batter} es Ponchado Viendo (ꓘ)`);
                             }} className="bg-red-900 hover:bg-red-800 text-white text-[10px] font-bold py-6 rounded-lg active:scale-95 transition-all border border-red-500/30 min-h-[48px] min-w-[48px]">
-                                K SWING
+                                K VIENDO (ꓘ)
                             </button>
                             <button onClick={() => openLocationModal('Out', 'Doble Play')} className="bg-orange-600 hover:bg-orange-500 text-white text-[10px] font-black py-6 rounded-lg active:scale-95 transition-all border border-orange-400/50 shadow-sm min-h-[48px] min-w-[48px]">
                                 DOBLE PLAY
@@ -119,30 +135,22 @@ export default function ActionPanel() {
                         </div>
                     </div>
 
-                    {/* ─── OTROS / ERRORES ─── */}
+                    {/* ─── ESPECIALES ─── */}
                     <div className="flex flex-col gap-2">
-                        <h4 className="section-title">Otros / Errores</h4>
-                        <div className="grid grid-cols-2 gap-1.5">
-                            <button onClick={() => useGameStore.getState().executeSacrifice('fly')} className="bg-purple-700 hover:bg-purple-600 text-white text-[10px] font-bold py-3 rounded-lg active:scale-95 transition-all">
-                                Fly/Toque Sac
+                        <h4 className="section-title">Especiales</h4>
+                        <div className="flex flex-col gap-1.5 h-full">
+                            <button onClick={() => setIsEspecialesMenuOpen(true)} className="flex-1 bg-violet-700 hover:bg-violet-600 text-white font-black text-sm uppercase py-4 rounded-lg shadow-md shadow-violet-900/40 active:scale-95 transition-all text-center border border-violet-500/40 min-h-[80px]">
+                                ⭐ Otros - Bases
                             </button>
-                            <button onClick={() => useGameStore.getState().executeSacrifice('bunt')} className="bg-purple-700 hover:bg-purple-600 text-white text-[10px] font-bold py-3 rounded-lg active:scale-95 transition-all">
-                                Fly/Toque Sac
-                            </button>
-                            <button onClick={() => openLocationModal('Error', 'Error')} className="bg-yellow-600 hover:bg-yellow-500 text-amber-50 text-[11px] font-bold py-3 rounded-lg active:scale-95 transition-all shadow-sm">
-                                Error
-                            </button>
-                            <button onClick={() => setIsFieldersChoiceModalOpen(true)} className="bg-yellow-700 hover:bg-yellow-600 text-amber-50 text-[11px] font-bold py-3 rounded-lg active:scale-95 transition-all border border-yellow-500/30">
-                                Bola Ocupada
-                            </button>
-                            <button onClick={() => openLocationModal('Out', 'Doble Play')} className="bg-orange-600 hover:bg-orange-500 text-white text-[10px] font-bold py-3 rounded-lg active:scale-95 transition-all border border-orange-400/50">
-                                Doble Play
-                            </button>
-                            <button onClick={() => setIsAdvancedModalOpen(true)} className="bg-amber-500 hover:bg-amber-400 text-slate-900 text-[10px] uppercase tracking-widest font-black py-3 rounded-lg active:scale-95 transition-all shadow-sm">
-                                Matriz
-                            </button>
+                            <div className="grid grid-cols-2 gap-1.5 mt-auto">
+                                <button onClick={() => setIsFieldersChoiceModalOpen(true)} className="bg-yellow-700 hover:bg-yellow-600 text-amber-50 text-[10px] sm:text-xs font-bold py-3 sm:py-4 rounded-lg active:scale-95 transition-all outline outline-1 outline-yellow-600 min-h-[48px]">
+                                    Bola Ocupada
+                                </button>
+                                <button onClick={() => openLocationModal('Error', 'Error')} className="bg-orange-700 hover:bg-orange-600 text-amber-50 text-[10px] sm:text-xs font-bold py-3 sm:py-4 rounded-lg active:scale-95 transition-all outline outline-1 outline-orange-600 min-h-[48px]">
+                                    Error
+                                </button>
+                            </div>
                         </div>
-
                     </div>
                 </div>
                 <div className="text-center mt-4">
@@ -159,6 +167,7 @@ export default function ActionPanel() {
             <AdvancedPlayModal isOpen={isAdvancedModalOpen} onClose={() => setIsAdvancedModalOpen(false)} />
             <FieldersChoiceModal isOpen={isFieldersChoiceModalOpen} onClose={() => setIsFieldersChoiceModalOpen(false)} />
             <CambiosModal isOpen={isLineupChangeOpen} onClose={() => setIsLineupChangeOpen(false)} />
+            <EspecialesMenuModal isOpen={isEspecialesMenuOpen} onClose={() => setIsEspecialesMenuOpen(false)} onAction={handleEspecialesAction} />
 
             {isLocationModalOpen && (
                 <PlayLocationModal

@@ -860,28 +860,26 @@ export default function AdminDashboard() {
 
     return (
         <div className="min-h-screen bg-background text-foreground font-sans transition-colors duration-300">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+            <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 md:py-12">
 
                 {/* Header */}
-                <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-8 border-b border-muted/20 gap-4 mb-8">
+                <header className="flex items-center justify-between pb-4 sm:pb-8 border-b border-muted/20 gap-3 mb-4 sm:mb-8">
                     <div>
-                        <h1 className="text-3xl font-black text-foreground uppercase tracking-tight flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-white shadow-lg shadow-primary/20">⚙️</div>
+                        <h1 className="text-xl sm:text-3xl font-black text-foreground uppercase tracking-tight flex items-center gap-2 sm:gap-3">
+                            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-primary flex items-center justify-center text-white shadow-lg shadow-primary/20 text-base sm:text-xl">⚙️</div>
                             Panel de Control
                         </h1>
-                        <p className="text-muted-foreground mt-2 font-medium">Gestión integral de torneos, equipos y configuración del sistema.</p>
+                        <p className="text-muted-foreground mt-1 text-xs sm:text-sm font-medium hidden sm:block">Gestión integral de torneos, equipos y configuración del sistema.</p>
                     </div>
-                    <div>
-                        <button
-                            onClick={() => router.push('/')}
-                            className="px-6 py-2.5 bg-surface hover:bg-muted/10 text-foreground font-bold rounded-xl border border-muted/30 transition-all shadow-sm"
-                        >
-                            Ver Sitio Público
-                        </button>
-                    </div>
+                    <button
+                        onClick={() => router.push('/')}
+                        className="px-3 sm:px-6 py-2 sm:py-2.5 bg-surface hover:bg-muted/10 text-foreground font-bold rounded-xl border border-muted/30 transition-all shadow-sm text-xs sm:text-sm shrink-0"
+                    >
+                        Ver Sitio
+                    </button>
                 </header>
 
-                <div className="flex flex-col md:flex-row gap-8 items-start">
+                <div className="flex flex-col md:flex-row gap-4 sm:gap-8 items-start">
                     {/* Navigation Sidebar */}
                     <SideMenu />
 
@@ -1498,7 +1496,7 @@ export default function AdminDashboard() {
                                                     <td className="px-6 py-4 text-right flex justify-end items-center gap-2">
                                                         {game.status === 'finished' ? (
                                                             <button
-                                                                onClick={() => router.push(`/gamecast/${game.id}`)}
+                                                                onClick={() => router.push(`/gamefinalizado/${game.id}`)}
                                                                 className="px-4 py-1.5 bg-amber-500/10 text-amber-600 hover:bg-amber-500 hover:text-white rounded-lg transition text-xs font-black shadow-sm flex items-center gap-2"
                                                             >
                                                                 Ver Boxscore
@@ -1568,26 +1566,31 @@ export default function AdminDashboard() {
                                 ) : (
                                     <div className="space-y-3">
                                         {myScorekeepers.map((u: UserData) => (
-                                            <div key={u.id} className="bg-surface border border-muted/30 rounded-2xl p-4 sm:p-5 flex items-center justify-between gap-3">
-                                                <div>
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <span className="font-black text-foreground">{u.firstName} {u.lastName}</span>
-                                                        <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${u.role === 'presi' ? 'bg-amber-500/10 text-amber-500' : 'bg-primary/10 text-primary'}`}>
-                                                            {u.role === 'presi' ? 'Presidente' : 'ScoreKeeper'}
-                                                        </span>
-                                                    </div>
-                                                    <div className="text-xs text-muted-foreground">
-                                                        {u.email}
-                                                        {u.role === 'presi' && u.assignedTournaments && u.assignedTournaments.length > 0 && (
-                                                            <div className="mt-1 flex flex-wrap gap-1">
+                                            <div key={u.id} className="bg-surface border border-muted/30 rounded-2xl p-4 sm:p-5">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                                                            <span className="font-black text-foreground">{u.firstName} {u.lastName}</span>
+                                                            <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${
+                                                                u.role === 'presi' ? 'bg-amber-500/10 text-amber-500' :
+                                                                u.role === 'streamer' ? 'bg-purple-500/10 text-purple-400' :
+                                                                'bg-primary/10 text-primary'
+                                                            }`}>
+                                                                {u.role === 'presi' ? 'Presidente' : u.role === 'streamer' ? 'Streamer' : 'ScoreKeeper'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="text-xs text-muted-foreground">{u.email}</div>
+                                                        {/* Torneos asignados */}
+                                                        {u.assignedTournaments && u.assignedTournaments.length > 0 && (
+                                                            <div className="mt-1.5 flex flex-wrap gap-1">
                                                                 {u.assignedTournaments.map((t: any) => (
-                                                                    <span key={t.id} className="text-[10px] border border-muted/30 px-1.5 py-0.5 rounded bg-muted/10">{t.name}</span>
+                                                                    <span key={t.id} className="text-[10px] border border-muted/30 px-1.5 py-0.5 rounded-md bg-muted/10 text-muted-foreground">🏆 {t.name}</span>
                                                                 ))}
                                                             </div>
                                                         )}
                                                     </div>
+                                                    <div className="w-2 h-2 rounded-full bg-green-500 shrink-0 mt-1.5" title="Activo" />
                                                 </div>
-                                                <div className="w-2 h-2 rounded-full bg-green-500 shrink-0" title="Activo" />
                                             </div>
                                         ))}
                                     </div>
@@ -1745,7 +1748,9 @@ export default function AdminDashboard() {
                                         <option value="all">Todos los roles</option>
                                         <option value="admin">Admin</option>
                                         <option value="organizer">Organizador</option>
+                                        <option value="presi">Presidente</option>
                                         <option value="scorekeeper">Scorekeeper</option>
+                                        <option value="streamer">Streamer</option>
                                         <option value="general">Público</option>
                                     </select>
                                 </div>
@@ -1770,7 +1775,9 @@ export default function AdminDashboard() {
                                                                 {/* Role badge */}
                                                                 {u.role === 'admin' && <span className="bg-red-500/10 text-red-500 px-2 py-0.5 rounded text-xs font-bold uppercase">Admin</span>}
                                                                 {u.role === 'organizer' && <span className="bg-green-500/10 text-green-500 px-2 py-0.5 rounded text-xs font-bold uppercase">Organizador</span>}
+                                                                {u.role === 'presi' && <span className="bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded text-xs font-bold uppercase">Presidente</span>}
                                                                 {u.role === 'scorekeeper' && <span className="bg-primary/10 text-primary px-2 py-0.5 rounded text-xs font-bold uppercase">ScoreKeeper</span>}
+                                                                {u.role === 'streamer' && <span className="bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded text-xs font-bold uppercase">Streamer</span>}
                                                                 {u.role === 'general' && <span className="bg-muted/20 text-muted-foreground px-2 py-0.5 rounded text-xs font-bold uppercase">Público</span>}
                                                                 {/* Plan badge */}
                                                                 {u.planLabel && u.planLabel !== 'public' && (
@@ -1782,6 +1789,14 @@ export default function AdminDashboard() {
                                                                 )}
                                                             </div>
                                                             <div className="text-xs text-muted-foreground">{u.email}</div>
+                                                            {/* Torneos asignados — presi, scorekeeper, streamer */}
+                                                            {['presi', 'scorekeeper', 'streamer'].includes(u.role) && u.assignedTournaments && u.assignedTournaments.length > 0 && (
+                                                                <div className="mt-1.5 flex flex-wrap gap-1">
+                                                                    {u.assignedTournaments.map((t: any) => (
+                                                                        <span key={t.id} className="text-[10px] border border-muted/30 px-1.5 py-0.5 rounded-md bg-muted/10 text-muted-foreground">🏆 {t.name}</span>
+                                                                    ))}
+                                                                </div>
+                                                            )}
                                                             {isPending && (
                                                                 <div className="mt-2 text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20 rounded-lg px-3 py-2">
                                                                     Solicitud: Quiere organizar torneos
@@ -1814,9 +1829,10 @@ export default function AdminDashboard() {
                                                                         try {
                                                                             await api.delete(`/users/${u.id}`);
                                                                             setUsers(prev => prev.filter(x => x.id !== u.id));
-                                                                        } catch (err) {
+                                                                        } catch (err: any) {
                                                                             console.error(err);
-                                                                            alert('Error al eliminar la cuenta.');
+                                                                            const msg = err.response?.data?.message || 'Error al eliminar la cuenta.';
+                                                                            alert(msg);
                                                                         }
                                                                     }}
                                                                     className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 font-bold text-xs rounded-lg transition border border-red-500/30"
@@ -1829,7 +1845,7 @@ export default function AdminDashboard() {
                                                     </div>
                                                     {/* Quota info (only for organizer/admin) */}
                                                     {(u.role === 'organizer' || u.role === 'admin') && (
-                                                        <div className="mt-3 pt-3 border-t border-muted/10 grid grid-cols-4 gap-2 text-center">
+                                                        <div className="mt-3 pt-3 border-t border-muted/10 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                                                             {[
                                                                 { label: 'Ligas', used: u.usedLeagues ?? 0, max: u.maxLeagues },
                                                                 { label: 'Torneos/Liga', used: u.usedTournaments ?? 0, max: u.maxTournamentsPerLeague },
@@ -2332,6 +2348,7 @@ export default function AdminDashboard() {
                                         <select value={userForm.role} onChange={e => setUserForm({ ...userForm, role: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition">
                                             <option value="general">Público / General</option>
                                             <option value="scorekeeper">Scorekeeper Móvil</option>
+                                            <option value="streamer">Streamer</option>
                                             <option value="admin">Administrador Total</option>
                                         </select>
                                     </div>
@@ -2408,15 +2425,15 @@ export default function AdminDashboard() {
                             {/* Rol */}
                             <div>
                                 <label className="block text-xs font-bold text-muted-foreground mb-2 uppercase">Rol del sistema</label>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {(['general', 'organizer', 'scorekeeper', 'admin'] as const).map(r => (
+                                <div className="grid grid-cols-3 gap-2">
+                                    {(['general', 'organizer', 'presi', 'scorekeeper', 'streamer', 'admin'] as const).map(r => (
                                         <button
                                             key={r}
                                             type="button"
                                             onClick={() => setAccessForm(prev => ({ ...prev, role: r }))}
                                             className={`py-2 px-3 rounded-lg border text-xs font-bold transition ${accessForm.role === r ? 'border-primary bg-primary/10 text-foreground' : 'border-muted/30 bg-background text-muted-foreground hover:border-muted/60'}`}
                                         >
-                                            {r === 'general' ? 'Público' : r === 'organizer' ? 'Organizador' : r === 'scorekeeper' ? 'ScoreKeeper' : 'Admin'}
+                                            {r === 'general' ? 'Público' : r === 'organizer' ? 'Organizador' : r === 'presi' ? 'Presidente' : r === 'scorekeeper' ? 'ScoreKeeper' : r === 'streamer' ? 'Streamer' : 'Admin'}
                                         </button>
                                     ))}
                                 </div>

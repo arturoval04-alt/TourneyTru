@@ -11,11 +11,12 @@ import { useParams, useRouter } from 'next/navigation';
 import { GameBoxscoreDto } from '@/types/boxscore';
 import { ScorebookTable } from '@/components/ScorebookTable';
 import api from '@/lib/api';
-import { calculateBoxscore } from '@/lib/boxscore';
-import { Users, LayoutDashboard, Radio, ChevronLeft, Trophy } from 'lucide-react';
+import { Users, LayoutDashboard, Radio, Trophy, Printer } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import { isLoggedIn, getUser } from '@/lib/auth';
 import StreamAdminPanel from '@/components/live/StreamAdminPanel';
+import AILineupScanner from '@/components/game/AILineupScanner';
+import type { LineupEntry, Player } from '@/components/game/LineupBuilder';
 
 // Mapa de código numérico a nombre de posición
 const POS_LABEL: Record<string, string> = {
@@ -43,10 +44,16 @@ export default function ScorekeeperLivePanel() {
 
     const [activeTab, setActiveTab] = useState<"alineaciones" | "scorekeeper" | "stream">("scorekeeper");
     const [authorized, setAuthorized] = useState(false);
+    const [generatingLineup, setGeneratingLineup] = useState(false);
+    const [scanTeam, setScanTeam] = useState<'home' | 'away' | null>(null);
+    const [scanRoster, setScanRoster] = useState<Player[]>([]);
+    const [savingAILineup, setSavingAILineup] = useState(false);
 
     // Wrap-up modal states
     const [showWrapUpModal, setShowWrapUpModal] = useState(false);
     const [selectedPitcherId, setSelectedPitcherId] = useState<string>('');
+    const [selectedLosingPitcherId, setSelectedLosingPitcherId] = useState<string>('');
+    const [selectedSavePitcherId, setSelectedSavePitcherId] = useState<string>('');
     const [selectedBatter1Id, setSelectedBatter1Id] = useState<string>('');
     const [selectedBatter2Id, setSelectedBatter2Id] = useState<string>('');
 
@@ -57,13 +64,13 @@ export default function ScorekeeperLivePanel() {
             return;
         }
         const user = getUser();
-        const allowedRoles = ['admin', 'organizer', 'scorekeeper'];
+        const allowedRoles = ['admin', 'organizer', 'scorekeeper', 'streamer'];
         if (!user || !allowedRoles.includes(user.role)) {
             router.replace('/');
             return;
         }
-        // Admin: acceso total sin verificación de scope
-        if (user.role === 'admin') {
+        // Admin y Streamer: acceso total sin verificación de scope
+        if (user.role === 'admin' || user.role === 'streamer') {
             setAuthorized(true);
             return;
         }
@@ -95,21 +102,42 @@ export default function ScorekeeperLivePanel() {
         baseIds, inning, half, currentBatter, currentBatterId,
         homeLineup, awayLineup, homeScore, awayScore, playLogs,
         shouldPromptEndGame, clearEndGamePrompt,
+        homeTeamId, awayTeamId, homeTeamName, awayTeamName,
     } = useGameStore();
 
     const handleFinalizarJuego = () => {
+        const currentUser = getUser();
+        if (currentUser?.role === 'streamer') {
+            if (!window.confirm("🚨 ATENCIÓN STREAMER 🚨\n\nAl Aceptar, se ELIMINARÁ por completo este juego rápido y sus equipos temporales (Opción Efímera).\n\n⚠️ ASEGÚRATE de hacer clic en 'Exportar' para imprimir tu PDF antes de continuar, o perderás todos los datos estadísticos.\n\n¿Estás seguro de que deseas eliminar y cerrar el partido ahora?")) return;
+            submitGameFinalization();
+            return;
+        }
+
         if (!window.confirm("¿Deseas finalizar el juego oficialmente? Pasaremos a seleccionar los MVP's.")) return;
 
         if (boxscore) {
             const isHomeWin = homeScore > awayScore;
             const winningTeamBox = isHomeWin ? boxscore.homeTeam : boxscore.awayTeam;
-            const winningPitchers = winningTeamBox.lineup.filter((l: any) => l.position === 'P' || l.position === '1');
+            const losingTeamBox  = isHomeWin ? boxscore.awayTeam : boxscore.homeTeam;
+
+            // Auto-select winning pitcher: pitcher on winning team with most IP
+            const winningPitchers = winningTeamBox.lineup
+                .filter((l: any) => l.position === 'P' || l.position === '1')
+                .sort((a: any, b: any) => (b.pitchingIPOuts || 0) - (a.pitchingIPOuts || 0));
             if (winningPitchers.length > 0) setSelectedPitcherId(winningPitchers[0].playerId);
+
+            // Auto-select losing pitcher: pitcher on losing team with most IP
+            const losingPitchers = losingTeamBox.lineup
+                .filter((l: any) => l.position === 'P' || l.position === '1')
+                .sort((a: any, b: any) => (b.pitchingIPOuts || 0) - (a.pitchingIPOuts || 0));
+            if (losingPitchers.length > 0) setSelectedLosingPitcherId(losingPitchers[0].playerId);
+
+            // No auto-select for save pitcher — requires manual judgment
+            setSelectedSavePitcherId('');
 
             const allBatters = [...(boxscore.homeTeam.lineup), ...(boxscore.awayTeam.lineup)]
                 .filter((b: any) => b.atBats > 0)
                 .sort((a: any, b: any) => (b.hits - a.hits) || (b.rbi - a.rbi));
-
             if (allBatters.length > 0) setSelectedBatter1Id(allBatters[0].playerId);
             if (allBatters.length > 1) setSelectedBatter2Id(allBatters[1].playerId);
         }
@@ -119,21 +147,36 @@ export default function ScorekeeperLivePanel() {
 
     const submitGameFinalization = async () => {
         try {
-            // Finalizar el juego via backend API
+            const currentUser = getUser();
+            if (currentUser?.role === 'streamer') {
+                // Opción Efímera: Borrado en cascada
+                await api.delete(`/streamer/games/${params.id}`);
+                alert("Partido eliminado correctamente (Modo Streamer). Recuerda usar el PDF exportado.");
+                router.push('/dashboard');
+                return;
+            }
+
+            // Finalizar el juego via backend API para torneo normal
             await api.patch(`/games/${params.id}`, {
                 status: 'finished',
                 homeScore,
                 awayScore,
                 winningPitcherId: selectedPitcherId || null,
+                losingPitcherId: selectedLosingPitcherId || null,
+                savePitcherId: selectedSavePitcherId || null,
                 mvpBatter1Id: selectedBatter1Id || null,
                 mvpBatter2Id: selectedBatter2Id || null,
             });
             alert("Juego finalizado y estadísticas guardadas exitosamente.");
-            router.push(`/torneos`);
+            router.push(currentUser?.role === 'streamer' ? '/dashboard' : '/torneos');
         } catch (error) {
             console.error("Error al finalizar el juego:", error);
             alert("Hubo un error al intentar finalizar el juego o guardar las estadísticas.");
         }
+    };
+
+    const handleExportBoxScore = () => {
+        window.open(`/game/${params.id}/print`, '_blank', 'width=960,height=800,scrollbars=yes');
     };
 
     const pitcherInfo = useMemo(() => {
@@ -293,10 +336,91 @@ export default function ScorekeeperLivePanel() {
                     {activeTab === 'alineaciones' && (
                         <div className="animate-fade-in-up">
                             {homeLineup.length === 0 && awayLineup.length === 0 ? (
-                                <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-700/40 rounded-2xl p-12 text-center shadow-lg min-h-[500px] flex flex-col items-center justify-center">
-                                    <Users className="w-16 h-16 text-slate-600 mb-4" />
-                                    <h2 className="text-2xl font-black text-white mb-4">Alineación y Configuración del Juego</h2>
-                                    <p className="text-slate-400 max-w-xl mx-auto">Aún no se han establecido las alineaciones para este juego.</p>
+                                <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-700/40 rounded-2xl shadow-lg overflow-hidden">
+                                    {/* Scanner activo */}
+                                    {scanTeam ? (
+                                        <div className="p-6">
+                                            <div className="flex items-center justify-between mb-4">
+                                                <h3 className="text-white font-black text-lg">
+                                                    Escanear lineup — {scanTeam === 'home' ? homeTeamName || 'Local' : awayTeamName || 'Visitante'}
+                                                </h3>
+                                                <button onClick={() => setScanTeam(null)} className="text-slate-400 hover:text-white text-xs underline">Cancelar</button>
+                                            </div>
+                                            <AILineupScanner
+                                                roster={scanRoster}
+                                                onCancel={() => setScanTeam(null)}
+                                                onLineupReady={async (entries: LineupEntry[]) => {
+                                                    setSavingAILineup(true);
+                                                    const teamId = scanTeam === 'home' ? homeTeamId : awayTeamId;
+                                                    try {
+                                                        await api.post(`/games/${params.id}/team/${teamId}/lineup`, {
+                                                            lineups: entries.map(e => ({
+                                                                battingOrder: e.battingOrder,
+                                                                position: e.position,
+                                                                dhForPosition: e.dhForPosition ?? null,
+                                                                isStarter: true,
+                                                                playerId: e.playerId,
+                                                            })),
+                                                        });
+                                                        await useGameStore.getState().fetchGameConfig();
+                                                        setScanTeam(null);
+                                                    } catch { /* silencioso */ } finally {
+                                                        setSavingAILineup(false);
+                                                    }
+                                                }}
+                                            />
+                                            {savingAILineup && <p className="text-center text-sky-400 text-sm mt-3 animate-pulse">Guardando lineup...</p>}
+                                        </div>
+                                    ) : (
+                                        <div className="p-12 text-center flex flex-col items-center gap-6">
+                                            <Users className="w-16 h-16 text-slate-600" />
+                                            <div>
+                                                <h2 className="text-2xl font-black text-white mb-2">Alineación y Configuración del Juego</h2>
+                                                <p className="text-slate-400 max-w-xl mx-auto">Aún no se han establecido las alineaciones para este juego.</p>
+                                            </div>
+                                            {getUser()?.role === 'streamer' && (
+                                                <div className="flex flex-col sm:flex-row gap-3">
+                                                    <button
+                                                        onClick={async () => {
+                                                            setGeneratingLineup(true);
+                                                            try {
+                                                                await api.post(`/streamer/games/${params.id}/auto-lineup`);
+                                                                await useGameStore.getState().fetchGameConfig();
+                                                            } catch { /* silencioso */ } finally {
+                                                                setGeneratingLineup(false);
+                                                            }
+                                                        }}
+                                                        disabled={generatingLineup}
+                                                        className="px-5 py-2.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white font-bold rounded-xl text-sm transition-colors"
+                                                    >
+                                                        {generatingLineup ? 'Generando...' : 'Desde jugadores registrados'}
+                                                    </button>
+                                                    {[{ side: 'home' as const, label: homeTeamName || 'Local', teamId: homeTeamId },
+                                                      { side: 'away' as const, label: awayTeamName || 'Visitante', teamId: awayTeamId }].map(({ side, label, teamId }) => (
+                                                        <button
+                                                            key={side}
+                                                            onClick={async () => {
+                                                                if (!teamId) return;
+                                                                const { data } = await api.get(`/teams/${teamId}`);
+                                                                const roster: Player[] = (data.players ?? []).map((p: any) => ({
+                                                                    id: p.id,
+                                                                    firstName: p.firstName,
+                                                                    lastName: p.lastName,
+                                                                    number: p.number,
+                                                                    photoUrl: p.photoUrl,
+                                                                }));
+                                                                setScanRoster(roster);
+                                                                setScanTeam(side);
+                                                            }}
+                                                            className="px-5 py-2.5 bg-purple-700 hover:bg-purple-600 text-white font-bold rounded-xl text-sm transition-colors flex items-center gap-2"
+                                                        >
+                                                            <span>🪄</span> Escanear IA — {label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -379,12 +503,22 @@ export default function ScorekeeperLivePanel() {
                                     <h3 className="text-lg sm:text-xl font-black text-white uppercase tracking-wider flex items-center gap-2">
                                         <Trophy className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-500" /> RESUMEN OFICIAL (Boxscore)
                                     </h3>
-                                    <button
-                                        onClick={handleFinalizarJuego}
-                                        className="bg-rose-600 hover:bg-rose-700 text-white px-4 sm:px-6 py-2 rounded-xl font-bold text-xs sm:text-sm shadow-lg shadow-rose-900/20 transition-all flex items-center gap-2 shrink-0"
-                                    >
-                                        FINALIZAR JUEGO
-                                    </button>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <button
+                                            onClick={handleExportBoxScore}
+                                            className="bg-slate-700 hover:bg-slate-600 text-white px-4 sm:px-5 py-2 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center gap-2"
+                                            title="Imprimir / Exportar Box Score"
+                                        >
+                                            <Printer className="w-4 h-4 hidden sm:block" />
+                                            Exportar
+                                        </button>
+                                        <button
+                                            onClick={handleFinalizarJuego}
+                                            className="bg-rose-600 hover:bg-rose-700 text-white px-4 sm:px-6 py-2 rounded-xl font-bold text-xs sm:text-sm shadow-lg shadow-rose-900/20 transition-all flex items-center gap-2"
+                                        >
+                                            FINALIZAR JUEGO
+                                        </button>
+                                    </div>
                                 </div>
                                 {boxscoreLoading ? (
                                     <div className="p-20 text-center animate-pulse text-slate-500 font-bold italic">Calculando estadísticas actualizadas...</div>
@@ -426,46 +560,80 @@ export default function ScorekeeperLivePanel() {
                             Selecciona a los jugadores más destacados para cerrar el partido oficialmente.
                         </p>
 
-                        <div className="space-y-6">
-                            <div>
-                                <label className="block text-sm font-black text-sky-400 uppercase tracking-widest mb-2">Pitcher Ganador (W)</label>
-                                <select
-                                    value={selectedPitcherId}
-                                    onChange={(e) => setSelectedPitcherId(e.target.value)}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 font-bold text-white focus:ring-2 focus:ring-sky-500/50 transition-all outline-none"
-                                >
-                                    <option value="">-- No asignado --</option>
-                                    {[...(boxscore?.homeTeam.lineup ?? []), ...(boxscore?.awayTeam.lineup ?? [])]
-                                        .filter(l => l.position === 'P' || l.position === '1')
-                                        .map(p => <option key={p.playerId} value={p.playerId}>{p.firstName} {p.lastName}</option>)
-                                    }
-                                </select>
+                        <div className="space-y-4">
+                            {/* Pitching decisions */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div>
+                                    <label className="block text-xs font-black text-amber-400 uppercase tracking-widest mb-1.5">Pitcher Ganador (W)</label>
+                                    <select
+                                        value={selectedPitcherId}
+                                        onChange={(e) => setSelectedPitcherId(e.target.value)}
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm font-bold text-white focus:ring-2 focus:ring-amber-500/50 transition-all outline-none"
+                                    >
+                                        <option value="">-- No asignado --</option>
+                                        {[...(boxscore?.homeTeam.lineup ?? []), ...(boxscore?.awayTeam.lineup ?? [])]
+                                            .filter(l => l.position === 'P' || l.position === '1')
+                                            .map(p => <option key={p.playerId} value={p.playerId}>{p.firstName} {p.lastName}</option>)
+                                        }
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-black text-red-400 uppercase tracking-widest mb-1.5">Pitcher Perdedor (L)</label>
+                                    <select
+                                        value={selectedLosingPitcherId}
+                                        onChange={(e) => setSelectedLosingPitcherId(e.target.value)}
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm font-bold text-white focus:ring-2 focus:ring-red-500/50 transition-all outline-none"
+                                    >
+                                        <option value="">-- No asignado --</option>
+                                        {[...(boxscore?.homeTeam.lineup ?? []), ...(boxscore?.awayTeam.lineup ?? [])]
+                                            .filter(l => l.position === 'P' || l.position === '1')
+                                            .map(p => <option key={p.playerId} value={p.playerId}>{p.firstName} {p.lastName}</option>)
+                                        }
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-black text-emerald-400 uppercase tracking-widest mb-1.5">Salvado (SV)</label>
+                                    <select
+                                        value={selectedSavePitcherId}
+                                        onChange={(e) => setSelectedSavePitcherId(e.target.value)}
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm font-bold text-white focus:ring-2 focus:ring-emerald-500/50 transition-all outline-none"
+                                    >
+                                        <option value="">-- No asignado --</option>
+                                        {[...(boxscore?.homeTeam.lineup ?? []), ...(boxscore?.awayTeam.lineup ?? [])]
+                                            .filter(l => l.position === 'P' || l.position === '1')
+                                            .map(p => <option key={p.playerId} value={p.playerId}>{p.firstName} {p.lastName}</option>)
+                                        }
+                                    </select>
+                                </div>
                             </div>
-                            <div>
-                                <label className="block text-sm font-black text-sky-400 uppercase tracking-widest mb-2">MVP Bateador #1</label>
-                                <select
-                                    value={selectedBatter1Id}
-                                    onChange={(e) => setSelectedBatter1Id(e.target.value)}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 font-bold text-white focus:ring-2 focus:ring-sky-500/50 transition-all outline-none"
-                                >
-                                    <option value="">-- No asignado --</option>
-                                    {[...(boxscore?.homeTeam.lineup ?? []), ...(boxscore?.awayTeam.lineup ?? [])]
-                                        .map(p => <option key={p.playerId} value={p.playerId}>{p.firstName} {p.lastName}</option>)
-                                    }
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-black text-sky-400 uppercase tracking-widest mb-2">MVP Bateador #2</label>
-                                <select
-                                    value={selectedBatter2Id}
-                                    onChange={(e) => setSelectedBatter2Id(e.target.value)}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 font-bold text-white focus:ring-2 focus:ring-sky-500/50 transition-all outline-none"
-                                >
-                                    <option value="">-- No asignado --</option>
-                                    {[...(boxscore?.homeTeam.lineup ?? []), ...(boxscore?.awayTeam.lineup ?? [])]
-                                        .map(p => <option key={p.playerId} value={p.playerId}>{p.firstName} {p.lastName}</option>)
-                                    }
-                                </select>
+                            {/* MVP Batters */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-black text-sky-400 uppercase tracking-widest mb-1.5">MVP Bateador #1</label>
+                                    <select
+                                        value={selectedBatter1Id}
+                                        onChange={(e) => setSelectedBatter1Id(e.target.value)}
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm font-bold text-white focus:ring-2 focus:ring-sky-500/50 transition-all outline-none"
+                                    >
+                                        <option value="">-- No asignado --</option>
+                                        {[...(boxscore?.homeTeam.lineup ?? []), ...(boxscore?.awayTeam.lineup ?? [])]
+                                            .map(p => <option key={p.playerId} value={p.playerId}>{p.firstName} {p.lastName}</option>)
+                                        }
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-black text-sky-400 uppercase tracking-widest mb-1.5">MVP Bateador #2</label>
+                                    <select
+                                        value={selectedBatter2Id}
+                                        onChange={(e) => setSelectedBatter2Id(e.target.value)}
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm font-bold text-white focus:ring-2 focus:ring-sky-500/50 transition-all outline-none"
+                                    >
+                                        <option value="">-- No asignado --</option>
+                                        {[...(boxscore?.homeTeam.lineup ?? []), ...(boxscore?.awayTeam.lineup ?? [])]
+                                            .map(p => <option key={p.playerId} value={p.playerId}>{p.firstName} {p.lastName}</option>)
+                                        }
+                                    </select>
+                                </div>
                             </div>
                         </div>
 

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { StatsService } from './stats.service';
 
 @Controller('api')
@@ -21,5 +21,15 @@ export class StatsController {
         @Query('tournamentId') tournamentId?: string,
     ) {
         return this.statsService.getPlayerStats(id, tournamentId);
+    }
+
+    @Get('torneos/:id/standings')
+    getStandings(@Param('id') id: string) {
+        return this.statsService.getStandings(id);
+    }
+
+    @Post('torneos/:id/standings/recalculate')
+    recalculateStandings(@Param('id') id: string) {
+        return this.statsService.recalculateStandings(id);
     }
 }

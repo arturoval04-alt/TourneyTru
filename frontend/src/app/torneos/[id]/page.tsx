@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Navbar from "@/components/Navbar";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { getUser } from '@/lib/auth';
 import api from "@/lib/api";
-import { ArrowLeft, MapPin, Calendar, Users, Target, Clock, Settings, Radio, X, CheckCircle2, CheckCircle, ChevronRight, Trophy, Lock } from "lucide-react";
+import { ArrowLeft, MapPin, Calendar, Users, Target, Clock, Settings, Radio, X, CheckCircle2, CheckCircle, ChevronRight, Trophy, Lock, Download, Edit3, Check, ChevronDown, Swords } from "lucide-react";
 import CreateGameWizard from "@/components/game/CreateGameWizard";
 import ImageUploader from "@/components/ui/ImageUploader";
 
@@ -258,6 +258,52 @@ export default function TournamentProfilePage() {
 
     const [activeTab, setActiveTab] = useState<"informacion" | "equipos" | "juegos" | "posiciones" | "estadisticas">("informacion");
 
+    // ── Calendar / Jornadas ────────────────────────────────────────────────────
+    const [selectedRound, setSelectedRound] = useState<string | null>(null);
+    const [selectedDate, setSelectedDate] = useState<string | null>(null); // 'YYYY-MM-DD'
+    const [weekOffset, setWeekOffset] = useState(0);
+    const [editingGameId, setEditingGameId] = useState<string | null>(null);
+    const [editRoundValue, setEditRoundValue] = useState('');
+    const [exportingJornada, setExportingJornada] = useState(false);
+    const calendarExportRef = useRef<HTMLDivElement>(null);
+
+    const handleUpdateGameRound = async (gameId: string, round: string) => {
+        try {
+            await api.patch(`/games/${gameId}`, { round });
+            setTournament(prev => prev ? {
+                ...prev,
+                games: prev.games.map(g => g.id === gameId ? { ...g, round } : g)
+            } : null);
+            setEditingGameId(null);
+        } catch (err) {
+            console.error(err);
+            alert('Error al actualizar jornada');
+        }
+    };
+
+    const handleExportJornada = useCallback(async () => {
+        if (!calendarExportRef.current) return;
+        setExportingJornada(true);
+        try {
+            const html2canvas = (await import('html2canvas')).default;
+            const canvas = await html2canvas(calendarExportRef.current, {
+                backgroundColor: '#09090b',
+                scale: 2,
+                useCORS: true,
+                logging: false,
+            });
+            const link = document.createElement('a');
+            link.download = `${tournament?.name || 'torneo'}-${selectedRound || 'calendario'}.jpg`;
+            link.href = canvas.toDataURL('image/jpeg', 0.92);
+            link.click();
+        } catch (err) {
+            console.error(err);
+            alert('Error al exportar imagen');
+        } finally {
+            setExportingJornada(false);
+        }
+    }, [calendarExportRef, selectedRound, tournament?.name]);
+
     interface StandingRow { teamId: string; name: string; shortName: string; logoUrl?: string | null; w: number; l: number; t: number; pct: string; gb: string | number; rs: number; ra: number; gp: number }
     const [standings, setStandings] = useState<StandingRow[] | null>(null);
     const [standingsLoaded, setStandingsLoaded] = useState(false);
@@ -280,11 +326,15 @@ export default function TournamentProfilePage() {
 
     interface BattingRow {
         playerId: string; firstName: string; lastName: string; teamName: string; photoUrl?: string;
-        gp: number; ab: number; h: number; h2: number; h3: number; hr: number; rbi: number; bb: number; so: number; avg: string;
+        gp: number; ab: number; h: number; h2: number; h3: number; hr: number; r: number; rbi: number;
+        bb: number; hbp: number; so: number; sb: number; roe: number; avg: string;
+        obp: string; slg: string; ops: string; pa: number;
     }
     interface PitchingRow {
         playerId: string; firstName: string; lastName: string; teamName: string; photoUrl?: string;
-        gp: number; ip: string; ipOuts: number; h: number; r: number; er: number; bb: number; so: number; w: number; l: number; era: string;
+        gp: number; ip: string; ipOuts: number; h: number; r: number; er: number; bb: number; so: number;
+        w: number; l: number; sv: number; qs: number; cg: number; sho: number; wp: number; bk: number;
+        era: string; whip: string; k9: string; bb9: string; baa: string;
     }
     const [battingStats, setBattingStats] = useState<BattingRow[] | null>(null);
     const [pitchingStats, setPitchingStats] = useState<PitchingRow[] | null>(null);
@@ -369,151 +419,159 @@ export default function TournamentProfilePage() {
                     </Link>
 
                     {/* Unified Profile Card */}
-                    <div className="bg-surface border border-muted/30 md:rounded-xl overflow-hidden shadow-md flex flex-col relative">
+                    <div className="bg-surface border border-muted/30 md:rounded-3xl overflow-hidden shadow-sm flex flex-col relative mb-8">
 
                         {/* Top Banner */}
-                        <div className="bg-[#1a2d42] text-white py-12 md:py-20 px-6 md:px-8 text-center md:text-left md:pl-72 relative">
-                            {(tournament?.location_city || tournament?.location_state) && (
-                                <div className="flex items-center justify-center md:justify-start gap-1.5 text-[10px] text-white/50 font-black uppercase tracking-widest mb-2">
-                                    <MapPin className="w-3 h-3" />
-                                    {[tournament?.location_city, tournament?.location_state].filter(Boolean).join(', ')}
-                                </div>
-                            )}
-                            <h1 className="text-xl md:text-3xl font-black uppercase tracking-[0.15em] text-white drop-shadow-md leading-tight">
-                                {tournament?.league?.name || tournament?.name}
-                                {tournament?.isPrivate && (
-                                    <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500/20 text-amber-400 text-xs font-bold rounded-full border border-amber-500/30 normal-case tracking-normal align-middle">
-                                        <Lock className="w-3 h-3" /> Privado
-                                    </span>
+                        <div className="relative h-48 md:h-64 bg-slate-800 overflow-hidden">
+                            {/* Decorative background element */}
+                            <div className="absolute inset-0 bg-gradient-to-br from-slate-700 to-slate-850" />
+                            <div className="absolute inset-0 opacity-30 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary via-transparent to-transparent" />
+
+                            <div className="absolute inset-0 flex flex-col justify-end p-6 md:p-20 md:pl-72 bg-gradient-to-t from-slate-900/90 to-transparent">
+                                {(tournament?.location_city || tournament?.location_state) && (
+                                    <div className="flex items-center gap-2 text-[10px] md:text-xs text-primary font-black uppercase tracking-widest mb-2 drop-shadow-sm">
+                                        <MapPin className="w-3.5 h-3.5" />
+                                        {[tournament?.location_city, tournament?.location_state].filter(Boolean).join(', ')}
+                                    </div>
                                 )}
-                            </h1>
-                            {tournament?.league?.name && tournament?.name !== tournament?.league?.name && (
-                                <p className="text-white/50 text-xs font-bold mt-1.5 italic tracking-wider">{tournament?.name}</p>
-                            )}
+                                <div className="text-[10px] md:text-xs text-left font-black uppercase tracking-[0.2em] text-white/40 mb-1">Pertenece a</div>
+                                <h1 className="text-2xl md:text-4xl text-left font-black uppercase tracking-tight text-white drop-shadow-2xl leading-tight max-w-2xl">
+                                    {tournament?.league?.name || tournament?.name}
+                                    {tournament?.isPrivate && (
+                                        <span className="ml-3 inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/20 text-amber-400 text-[10px] font-black rounded-full border border-amber-500/30 uppercase tracking-widest align-middle">
+                                            <Lock className="w-3 h-3" /> Privado
+                                        </span>
+                                    )}
+                                </h1>
+                            </div>
                         </div>
 
-                        {/* Info Section */}
-                        <div className="bg-[#2a303c] p-5 pt-20 md:pt-4 flex flex-col md:flex-row items-center md:items-start gap-4 relative z-10">
+                        {/* Info Section - Now cleaner */}
+                        <div className="bg-surface p-6 pb-8 md:pb-6 flex flex-col md:flex-row items-center md:items-end gap-6 relative">
 
                             {/* Logo Overlapping */}
-                            <div className="absolute -top-8 left-1/2 -translate-x-1/2 md:translate-x-0 md:left-8 w-28 h-28 md:w-52 md:h-52 bg-white rounded-xl md:rounded-2xl border-4 border-[#2a303c] shadow-xl overflow-hidden flex items-center justify-center shrink-0 z-20">
+                            <div className="md:absolute -top-25 left-6 w-32 h-32 md:w-56 md:h-56 bg-surface rounded-2xl md:rounded-3xl border-1 md:border-1 border-surface shadow-2xl overflow-hidden flex items-center justify-center shrink-0 z-20">
                                 {tournament?.logoUrl ? (
-                                    <img src={tournament.logoUrl} alt="Logo" className="w-full h-full object-contain p-2" />
+                                    <img src={tournament.logoUrl} alt="Logo" className="w-full h-full bg-white object-contain p-2 hover:scale-110 transition-transform duration-500" />
                                 ) : (
-                                    <Image src={`https://api.dicebear.com/7.x/shapes/svg?seed=${tournamentId}`} alt="Logo" width={208} height={208} className="object-cover" />
+                                    <div className="w-full h-full bg-muted/10 flex items-center justify-center">
+                                        <Trophy className="w-12 h-12 text-muted-foreground opacity-20" />
+                                    </div>
                                 )}
-                            </div>
-
-                            {/* Mobile action buttons */}
-                            <div className="absolute top-16 right-4 md:hidden flex gap-2 z-30">
-                                {canEdit && (
-                                    <button onClick={() => setIsEditingProfile(true)} className="w-9 h-9 rounded-full border border-white/20 bg-white/10 flex items-center justify-center text-white/70" title="Configuración">
-                                        <Settings className="w-4 h-4" />
-                                    </button>
-                                )}
-                                <button className="w-9 h-9 rounded-full border border-white/20 bg-white/10 flex items-center justify-center text-white" title="Compartir">
-                                    <Radio className="w-4 h-4" />
-                                </button>
                             </div>
 
                             {/* Info */}
-                            <div className="flex-1 flex flex-col items-center md:items-start md:ml-56 w-full text-center md:text-left">
-                                <div className="flex flex-col md:flex-row justify-between w-full md:items-center gap-3">
-                                    <div className="space-y-2">
-                                        <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight tracking-tight">{tournament?.name}</h2>
-                                        <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-3 gap-y-1">
-                                            <span className="text-[10px] font-black uppercase tracking-widest text-white/60 flex items-center gap-1.5">
-                                                <span>{tournament?.rulesType?.includes('softball') ? '🥎' : '⚾'}</span>
+                            <div className="flex-1 flex flex-col items-center md:items-start md:ml-64 w-full text-center md:text-left">
+                                <div className="flex flex-col md:flex-row justify-between w-full md:items-center gap-4">
+                                    <div className="space-y-3">
+                                        <h2 className="text-3xl text-xl md:text-4xl font-black text-foreground leading-none tracking-tighter">{tournament?.name}</h2>
+                                        <div className="flex flex-wrap items-center justify-center md:justify-start gap-3">
+                                            <span className="w-32 sm:w-36 flex items-center justify-center gap-2 text-[10px] sm:text-[11px] font-black uppercase tracking-widest text-muted-foreground bg-muted/10 p-2 rounded-xl border border-muted/20 shadow-inner">
+                                                <span className="text-base">{tournament?.rulesType?.includes('softball') ? '🥎' : '⚾'}</span>
                                                 {tournament?.rulesType?.includes('softball') ? 'Softbol' : 'Béisbol'}
                                             </span>
-                                            <span className="text-white/30 text-sm">·</span>
-                                            <span className="text-[10px] font-black uppercase tracking-widest text-white/60">
-                                                {tournament?.teams?.length || 0} {(tournament?.teams?.length || 0) === 1 ? 'Equipo' : 'Equipos'}
-                                            </span>
-                                            <span className="text-white/30 text-sm">·</span>
-                                            <span className="text-[10px] font-black uppercase tracking-widest text-white/60 flex items-center gap-1.5">
-                                                <Calendar className="w-3 h-3" />
-                                                {tournament?.season || '2026'}
+                                            <span className="w-32 sm:w-36 flex items-center justify-center gap-2 text-[10px] sm:text-[11px] font-black uppercase tracking-widest text-muted-foreground bg-muted/10 p-2 rounded-xl border border-muted/20 shadow-inner">
+                                                <Users className="w-3.5 h-3.5 text-primary" />
+                                                {tournament?.teams?.length || 0} Equipos
                                             </span>
                                         </div>
                                     </div>
 
                                     {/* Desktop action buttons */}
-                                    <div className="hidden md:flex gap-3 shrink-0">
+                                    <div className="hidden md:flex gap-3 shrink-0 self-end">
+                                        <button className="h-12 w-12 rounded-2xl border border-muted/30 bg-muted/5 hover:bg-muted/10 flex items-center justify-center text-muted-foreground hover:text-foreground transition-all duration-300" title="Compartir">
+                                            <Radio className="w-5 h-5" />
+                                        </button>
                                         {canEdit && (
-                                            <button onClick={() => setIsEditingProfile(true)} className="w-10 h-10 rounded-full border border-white/20 bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/70 hover:text-white transition-colors" title="Configuración">
+                                            <button onClick={() => setIsEditingProfile(true)} className="h-12 w-12 rounded-2xl border border-muted/30 bg-muted/5 hover:bg-muted/10 flex items-center justify-center text-muted-foreground hover:text-foreground transition-all duration-300" title="Configuración">
                                                 <Settings className="w-5 h-5" />
                                             </button>
                                         )}
-                                        <button className="w-10 h-10 rounded-full border border-white/20 bg-white/5 hover:bg-white/10 flex items-center justify-center text-white transition-colors" title="Compartir">
-                                            <Radio className="w-5 h-5" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ═══ NAVIGATION & ACTIONS ROW (OUTSIDE) ═══ */}
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 px-2">
+                        {/* Mobile-First Tabs List */}
+                        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide pb-1 -mx-2 px-2 md:mx-0 md:px-0">
+                            {tabs.map((tab) => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`px-5 py-2.5 text-xs font-black uppercase tracking-widest whitespace-nowrap rounded-xl transition-all duration-300 ${activeTab === tab.id
+                                        ? "bg-primary text-white shadow-lg shadow-primary/20 scale-105"
+                                        : "text-muted-foreground hover:text-foreground hover:bg-muted/10"
+                                        }`}
+                                >
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Quick Actions Dropdown */}
+                        {(canEdit || userRole === 'scorekeeper') && (
+                            <div className="relative shrink-0">
+                                <button
+                                    onClick={() => setIsActionsOpen(!isActionsOpen)}
+                                    className={`w-full md:w-auto px-6 h-12 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 border ${isActionsOpen
+                                        ? 'bg-primary border-primary text-white shadow-xl shadow-primary/20 scale-105'
+                                        : 'bg-surface border-muted/30 text-muted-foreground hover:text-foreground hover:border-primary/50'
+                                        }`}
+                                >
+                                    <Settings className={`w-4 h-4 transition-transform duration-500 ${isActionsOpen ? 'rotate-180' : ''}`} />
+                                    Acciones del Torneo
+                                </button>
+
+                                <div className={`absolute right-0 top-full mt-3 w-64 bg-surface border border-muted/30 rounded-3xl shadow-2xl overflow-hidden transition-all duration-300 origin-top transform z-[100] ${isActionsOpen ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-4 scale-95 pointer-events-none'}`}>
+                                    <div className="p-3 space-y-1">
+                                        <button onClick={() => { setIsCreatingGame(true); setIsActionsOpen(false); }} className="w-full group flex items-center gap-4 p-3.5 rounded-2xl hover:bg-muted/10 text-muted-foreground hover:text-foreground transition-all text-xs font-black uppercase tracking-widest">
+                                            <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-500 group-hover:bg-blue-500 group-hover:text-white transition-colors">
+                                                <Calendar className="w-4 h-4" />
+                                            </div>
+                                            Programar Partido
                                         </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
 
-                        {/* ═══ TABS SECTION (inside card) ═══ */}
-                        <div className="bg-[#2a303c] border-t border-black/20 flex items-center justify-between px-4 overflow-x-auto scrollbar-hide">
-                            <div className="flex gap-1 md:gap-2 md:ml-56 overflow-x-auto scrollbar-hide">
-                                {tabs.map((tab) => (
-                                    <button
-                                        key={tab.id}
-                                        onClick={() => setActiveTab(tab.id)}
-                                        className={`px-4 sm:px-6 py-4 text-xs font-black uppercase tracking-wider whitespace-nowrap transition-colors duration-200 ${activeTab === tab.id
-                                            ? 'text-white border-b-2 border-white'
-                                            : 'text-white/40 hover:text-white/80 border-b-2 border-transparent'
-                                            }`}
-                                    >
-                                        {tab.label}
-                                    </button>
-                                ))}
-                            </div>
+                                        {canEdit && (
+                                            <>
+                                                <button onClick={() => { setIsAddingTeam(true); setIsActionsOpen(false); }} className="w-full group flex items-center gap-4 p-3.5 rounded-2xl hover:bg-muted/10 text-muted-foreground hover:text-foreground transition-all text-xs font-black uppercase tracking-widest">
+                                                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
+                                                        <Users className="w-4 h-4" />
+                                                    </div>
+                                                    Registrar Equipo
+                                                </button>
+                                                <button onClick={() => { setIsAddingField(true); setIsActionsOpen(false); }} className="w-full group flex items-center gap-4 p-3.5 rounded-2xl hover:bg-muted/10 text-muted-foreground hover:text-foreground transition-all text-xs font-black uppercase tracking-widest">
+                                                    <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-500 group-hover:bg-amber-500 group-hover:text-white transition-colors">
+                                                        <MapPin className="w-4 h-4" />
+                                                    </div>
+                                                    Gestionar Campos
+                                                </button>
+                                                <button onClick={() => { setIsCreatingNews(true); setIsActionsOpen(false); }} className="w-full group flex items-center gap-4 p-3.5 rounded-2xl hover:bg-muted/10 text-muted-foreground hover:text-foreground transition-all text-xs font-black uppercase tracking-widest">
+                                                    <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-500 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
+                                                        <Radio className="w-4 h-4" />
+                                                    </div>
+                                                    Nueva Noticia
+                                                </button>
 
-                            {/* Quick Actions Dropdown */}
-                            {(canEdit || userRole === 'scorekeeper') && (
-                                <div className="relative ml-4 shrink-0 py-2">
-                                    <button
-                                        onClick={() => setIsActionsOpen(!isActionsOpen)}
-                                        className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${isActionsOpen ? 'bg-primary text-white shadow-lg' : 'bg-white/10 text-white/70 border border-white/10 hover:bg-white/20 hover:text-white'}`}
-                                    >
-                                        <Settings className={`w-4 h-4 transition-transform duration-300 ${isActionsOpen ? 'rotate-90' : ''}`} />
-                                        <span className="hidden sm:inline">Acciones</span>
-                                    </button>
-
-                                    <div className={`absolute right-0 top-full mt-2 w-56 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden transition-all duration-300 origin-top transform z-[60] ${isActionsOpen ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-4 scale-95 pointer-events-none'}`}>
-                                        <div className="p-2 space-y-1">
-                                            <button onClick={() => { setIsCreatingGame(true); setIsActionsOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition-all text-xs font-bold">
-                                                <Calendar className="w-4 h-4 text-primary" />
-                                                Crear Nuevo Partido
-                                            </button>
-                                            {canEdit && (
-                                                <>
-                                                    <button onClick={() => { setIsAddingTeam(true); setIsActionsOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition-all text-xs font-bold">
-                                                        <Users className="w-4 h-4 text-primary" />
-                                                        Agregar Equipo
-                                                    </button>
-                                                    <button onClick={() => { setIsAddingField(true); setIsActionsOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition-all text-xs font-bold">
-                                                        <MapPin className="w-4 h-4 text-primary" />
-                                                        Añadir Campo
-                                                    </button>
-                                                    <button onClick={() => { setIsCreatingNews(true); setIsActionsOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition-all text-xs font-bold">
-                                                        <Radio className="w-4 h-4 text-primary" />
-                                                        Publicar Noticia
-                                                    </button>
-                                                    {tournament?.status !== 'completed' && (
-                                                        <button onClick={() => { setIsActionsOpen(false); handleFinalizeTournament(); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-900/40 text-red-400 hover:text-red-300 transition-all text-xs font-bold border-t border-slate-800 mt-1 pt-3">
+                                                {tournament?.status !== 'completed' && (
+                                                    <button
+                                                        onClick={() => { setIsActionsOpen(false); handleFinalizeTournament(); }}
+                                                        className="w-full group flex items-center gap-4 p-3.5 rounded-2xl hover:bg-red-500/10 text-red-500 transition-all text-xs font-black uppercase tracking-widest border-t border-muted/20 mt-2 pt-4"
+                                                    >
+                                                        <div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center text-red-500 group-hover:bg-red-500 group-hover:text-white transition-colors">
                                                             <CheckCircle className="w-4 h-4" />
-                                                            Finalizar Torneo
-                                                        </button>
-                                                    )}
-                                                </>
-                                            )}
-                                        </div>
+                                                        </div>
+                                                        Finalizar Torneo
+                                                    </button>
+                                                )}
+                                            </>
+                                        )}
                                     </div>
                                 </div>
-                            )}
-                        </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -536,68 +594,380 @@ export default function TournamentProfilePage() {
                                             {tournament?.description || 'No hay descripción disponible para este torneo.'}
                                         </p>
                                     </section>
-                                    <section className="bg-surface border border-muted/30 rounded-2xl p-6 shadow-sm">
-                                        <div className="flex items-center gap-2 mb-6">
-                                            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                                            <h3 className="text-lg font-bold text-foreground">Juegos en Vivo</h3>
-                                        </div>
-                                        {tournament?.games?.filter(g => g.status === 'in_progress').length === 0 ? (
-                                            <div className="bg-muted/5 border border-muted/20 rounded-xl p-8 text-center">
-                                                <p className="text-muted-foreground text-sm font-medium">No hay juegos en vivo en este momento.</p>
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-3">
-                                                {tournament?.games?.filter(g => g.status === 'in_progress').map(game => (
-                                                    <Link href={`/gamecast/${game.id}`} key={game.id} className="block group">
-                                                        <div className="bg-muted/5 border border-muted/20 rounded-xl p-4 flex items-center justify-between hover:border-primary/50 transition-colors">
-                                                            <div className="flex items-center gap-4">
-                                                                <div className="flex flex-col items-center">
-                                                                    <span className="text-[10px] font-black text-primary uppercase tracking-widest bg-primary/10 px-2 py-0.5 rounded mb-1">
-                                                                        {game.half === 'top' ? 'Alta' : 'Baja'} {game.currentInning}
-                                                                    </span>
-                                                                    <div className="text-sm font-black text-foreground">{game.awayTeam.name} {game.awayScore} - {game.homeScore} {game.homeTeam.name}</div>
+
+
+                                    {/* ══ CALENDARIO / TEMPORADA ACTUAL ══ */}
+                                    {(() => {
+                                        const allGames = tournament?.games || [];
+                                        // Group by round; ungrouped goes to "Sin Jornada"
+                                        const PLAYOFF_KEYWORDS = ['final', 'semi', 'cuarto', 'dieciseisavo', 'octavo', 'playoff', 'eliminacion'];
+                                        const isPlayoff = (r?: string | null) => r ? PLAYOFF_KEYWORDS.some(k => r.toLowerCase().includes(k)) : false;
+
+                                        const regularGames = allGames.filter(g => !isPlayoff(g.round));
+                                        const playoffGames = allGames.filter(g => isPlayoff(g.round));
+
+                                        // Unique rounds for regular season, sorted
+                                        const rounds = Array.from(new Set(regularGames.map(g => g.round || 'Sin Jornada'))).sort((a, b) => {
+                                            const numA = parseInt(a.replace(/\D/g, '')) || 0;
+                                            const numB = parseInt(b.replace(/\D/g, '')) || 0;
+                                            return numA - numB || a.localeCompare(b);
+                                        });
+
+                                        const activeRound = selectedRound ?? rounds[0] ?? null;
+
+                                        // ── Week navigator helpers ─────────────────────────────────────
+                                        const today = new Date();
+                                        const getWeekDays = (offset: number) => {
+                                            const monday = new Date(today);
+                                            const day = today.getDay(); // 0=Sun,1=Mon...
+                                            const diffToMon = day === 0 ? -6 : 1 - day;
+                                            monday.setDate(today.getDate() + diffToMon + offset * 7);
+                                            return Array.from({ length: 7 }, (_, i) => {
+                                                const d = new Date(monday);
+                                                d.setDate(monday.getDate() + i);
+                                                return d;
+                                            });
+                                        };
+                                        const weekDays = getWeekDays(weekOffset);
+                                        const toYMD = (d: Date) => d.toISOString().slice(0, 10);
+                                        const todayYMD = toYMD(today);
+
+                                        // Days that have games (in current jornada or all if no jornada)
+                                        const gamesInRound = activeRound ? regularGames.filter(g => (g.round || 'Sin Jornada') === activeRound) : regularGames;
+                                        const daysWithGames = new Set(gamesInRound.map(g => toYMD(new Date(g.scheduledDate))));
+
+                                        // Final visible games: filter by round then by date
+                                        const visibleGames = gamesInRound.filter(g => !selectedDate || toYMD(new Date(g.scheduledDate)) === selectedDate);
+
+                                        // Playoff bracket rounds order
+                                        const playoffRoundOrder = ['Dieciseisavos de Final', 'Octavos de Final', 'Cuartos de Final', 'Semifinal', 'Final'];
+                                        const playoffRounds = Array.from(new Set(playoffGames.map(g => g.round!))).sort((a, b) => {
+                                            const ia = playoffRoundOrder.findIndex(r => a.toLowerCase().includes(r.toLowerCase().split(' ')[0]));
+                                            const ib = playoffRoundOrder.findIndex(r => b.toLowerCase().includes(r.toLowerCase().split(' ')[0]));
+                                            return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+                                        });
+
+                                        const CompactGameCard = ({ game }: { game: typeof allGames[0] }) => {
+                                            const isEditing = editingGameId === game.id;
+                                            const dest = game.status === 'in_progress' ? `/gamecast/${game.id}` : game.status === 'finished' ? `/gamefinalizado/${game.id}` : `/gamescheduled/${game.id}`;
+                                            const fieldName = tournament?.fields?.find(f => f.id === game.field)?.name || game.field || null;
+
+                                            return (
+                                                <div className="relative group">
+                                                    <Link href={dest} className="block bg-muted/5 border border-muted/20 rounded-xl overflow-hidden hover:border-primary/40 hover:bg-muted/10 transition-all duration-200 cursor-pointer">
+                                                        {/* Card Header */}
+                                                        <div className="flex items-center justify-between px-3 py-1.5 bg-muted/10 border-b border-muted/10">
+                                                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                                                                <Clock className="w-3 h-3" />
+                                                                {new Date(game.scheduledDate).toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' })}
+                                                                &nbsp;&bull;&nbsp;
+                                                                {new Date(game.scheduledDate).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                                                            </div>
+                                                            {game.status === 'in_progress' && (
+                                                                <span className="text-[9px] font-black text-red-500 flex items-center gap-1 animate-pulse">
+                                                                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" /> EN VIVO
+                                                                </span>
+                                                            )}
+                                                            {game.status === 'finished' && (
+                                                                <span className="text-[9px] font-black text-amber-500 uppercase tracking-wider">Final</span>
+                                                            )}
+                                                        </div>
+                                                        {/* Teams Row */}
+                                                        <div className="flex items-center justify-between px-3 py-2.5 gap-2">
+                                                            {/* Away */}
+                                                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                                <div className="w-7 h-7 rounded-full bg-surface border border-muted/30 flex items-center justify-center overflow-hidden shrink-0 text-[9px] font-black">
+                                                                    {game.awayTeam.logoUrl ? <img src={game.awayTeam.logoUrl} alt="" className="w-full h-full object-cover" /> : (game.awayTeam.shortName || game.awayTeam.name.substring(0, 2))}
+                                                                </div>
+                                                                <span className="text-xs font-black truncate leading-tight">{game.awayTeam.shortName || game.awayTeam.name}</span>
+                                                            </div>
+                                                            {/* Score or VS */}
+                                                            <div className="flex items-center gap-1 shrink-0 px-1">
+                                                                {game.status === 'scheduled' ? (
+                                                                    <span className="text-[10px] font-black text-muted-foreground/60 tracking-widest">VS</span>
+                                                                ) : (
+                                                                    <span className="text-sm font-black tabular-nums">{game.awayScore} - {game.homeScore}</span>
+                                                                )}
+                                                            </div>
+                                                            {/* Home */}
+                                                            <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
+                                                                <span className="text-xs font-black truncate leading-tight text-right">{game.homeTeam.shortName || game.homeTeam.name}</span>
+                                                                <div className="w-7 h-7 rounded-full bg-surface border border-muted/30 flex items-center justify-center overflow-hidden shrink-0 text-[9px] font-black">
+                                                                    {game.homeTeam.logoUrl ? <img src={game.homeTeam.logoUrl} alt="" className="w-full h-full object-cover" /> : (game.homeTeam.shortName || game.homeTeam.name.substring(0, 2))}
                                                                 </div>
                                                             </div>
-                                                            <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
                                                         </div>
-                                                    </Link>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </section>
-
-                                    <section className="bg-surface border border-muted/30 rounded-2xl p-6 shadow-sm">
-                                        <h3 className="text-lg font-bold mb-6 text-foreground">Temporada Actual</h3>
-                                        {tournament?.games?.filter(g => g.status === 'scheduled').length === 0 ? (
-                                            <div className="bg-muted/5 border border-muted/20 rounded-xl p-8 text-center">
-                                                <p className="text-muted-foreground text-sm font-medium">Aún no hay juegos programados.</p>
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-3">
-                                                {tournament?.games?.filter(g => g.status === 'scheduled').slice(0, 3).map(game => (
-                                                    <div key={game.id} className="bg-muted/5 border border-muted/20 rounded-xl p-4 flex items-center justify-between gap-3">
-                                                        <div className="flex items-center gap-3 min-w-0">
-                                                            <Calendar className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                                                            <div className="min-w-0">
-                                                                <p className="text-sm font-bold text-foreground truncate">{game.awayTeam.name} vs {game.homeTeam.name}</p>
-                                                                <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mt-0.5">
-                                                                    {new Date(game.scheduledDate).toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                                                                </p>
+                                                        {/* Field */}
+                                                        {fieldName && (
+                                                            <div className="px-3 pb-2 flex items-center gap-1 text-[10px] text-muted-foreground font-medium">
+                                                                <MapPin className="w-3 h-3 shrink-0" />
+                                                                <span className="truncate">{fieldName}</span>
                                                             </div>
+                                                        )}
+                                                    </Link>
+                                                    {/* Organizer: Edit Jornada inline */}
+                                                    {canEdit && (
+                                                        <div className="absolute top-1.5 right-2 z-10">
+                                                            {isEditing ? (
+                                                                <div className="flex items-center gap-1" onClick={e => e.preventDefault()}>
+                                                                    <input
+                                                                        autoFocus
+                                                                        value={editRoundValue}
+                                                                        onChange={e => setEditRoundValue(e.target.value)}
+                                                                        onKeyDown={e => { if (e.key === 'Enter') handleUpdateGameRound(game.id, editRoundValue); if (e.key === 'Escape') setEditingGameId(null); }}
+                                                                        className="w-24 text-[10px] bg-background border border-primary/50 rounded-md px-1.5 py-1 text-foreground outline-none"
+                                                                        placeholder="Ej: J1"
+                                                                    />
+                                                                    <button onClick={() => handleUpdateGameRound(game.id, editRoundValue)} className="w-5 h-5 rounded bg-primary flex items-center justify-center">
+                                                                        <Check className="w-3 h-3 text-white" />
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={e => { e.preventDefault(); setEditingGameId(game.id); setEditRoundValue(game.round || ''); }}
+                                                                    className="opacity-0 group-hover:opacity-100 transition-opacity text-[9px] font-bold px-1.5 py-0.5 rounded bg-muted/20 border border-muted/30 text-muted-foreground hover:text-foreground hover:border-primary/50 flex items-center gap-0.5"
+                                                                    title="Asignar jornada"
+                                                                >
+                                                                    <Edit3 className="w-2.5 h-2.5" />
+                                                                </button>
+                                                            )}
                                                         </div>
-                                                        {canEdit && (
+                                                    )}
+                                                </div>
+                                            );
+                                        };
+
+                                        return (
+                                            <section className="bg-surface border border-muted/30 rounded-2xl p-6 shadow-sm space-y-5">
+                                                {/* ── Header ── */}
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <h3 className="text-lg font-bold text-foreground">Calendario</h3>
+                                                    <button
+                                                        onClick={handleExportJornada}
+                                                        disabled={exportingJornada || !activeRound}
+                                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border border-muted/30 text-muted-foreground hover:text-foreground hover:border-primary/50 transition-all disabled:opacity-40"
+                                                    >
+                                                        <Download className="w-3.5 h-3.5" />
+                                                        {exportingJornada ? 'Exportando...' : 'Exportar Jornada'}
+                                                    </button>
+                                                </div>
+
+                                                {/* ── Jornada Tabs ── */}
+                                                {rounds.length > 0 && (
+                                                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide -mx-1 px-1">
+                                                        <button
+                                                            onClick={() => { setSelectedRound(null); setSelectedDate(null); }}
+                                                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all duration-200 shrink-0 ${!activeRound ? 'bg-primary text-white shadow-md shadow-primary/20' : 'bg-muted/10 text-muted-foreground hover:text-foreground hover:bg-muted/20'}`}
+                                                        >
+                                                            Todas
+                                                        </button>
+                                                        {rounds.map(r => (
                                                             <button
-                                                                onClick={() => setLineupGameId(game.id)}
-                                                                className="flex-shrink-0 text-[10px] font-bold px-2.5 py-1.5 rounded-lg bg-blue-900/40 border border-blue-700 text-blue-300 hover:bg-blue-800/60 transition-colors whitespace-nowrap"
+                                                                key={r}
+                                                                onClick={() => { setSelectedRound(r); setSelectedDate(null); }}
+                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all duration-200 shrink-0 ${activeRound === r ? 'bg-primary text-white shadow-md shadow-primary/20' : 'bg-muted/10 text-muted-foreground hover:text-foreground hover:bg-muted/20'}`}
                                                             >
-                                                                Configurar Lineup
+                                                                {r}
                                                             </button>
+                                                        ))}
+                                                        {canEdit && (
+                                                            <span className="text-[9px] text-muted-foreground/50 font-medium whitespace-nowrap ml-2 shrink-0">
+                                                                Hover sobre un juego para asignar jornada
+                                                            </span>
                                                         )}
                                                     </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </section>
+                                                )}
+
+                                                {/* ── Week Date Navigator ── */}
+                                                <div className="flex items-center gap-0 border border-muted/20 rounded-xl overflow-hidden bg-muted/5">
+                                                    {/* Prev week */}
+                                                    <button
+                                                        onClick={() => { setWeekOffset(w => w - 1); setSelectedDate(null); }}
+                                                        className="flex items-center justify-center w-9 h-10 text-muted-foreground hover:text-foreground hover:bg-muted/10 transition-colors shrink-0 border-r border-muted/20"
+                                                    >
+                                                        <ChevronRight className="w-4 h-4 rotate-180" />
+                                                    </button>
+
+                                                    {/* Days */}
+                                                    <div className="flex flex-1 overflow-x-auto scrollbar-hide md:grid md:grid-cols-7">
+                                                        {weekDays.map(d => {
+                                                            const ymd = toYMD(d);
+                                                            const isToday = ymd === todayYMD;
+                                                            const isSelected = selectedDate === ymd;
+                                                            const hasGames = daysWithGames.has(ymd);
+                                                            const dayNames = ['DOM', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB'];
+                                                            return (
+                                                                <button
+                                                                    key={ymd}
+                                                                    onClick={() => setSelectedDate(isSelected ? null : ymd)}
+                                                                    className={`flex flex-col items-center justify-center px-3 py-2 min-w-[52px] transition-all duration-200 relative
+                                                                        ${isSelected ? 'bg-primary text-white' : isToday ? 'text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted/10'}`}
+                                                                >
+                                                                    <span className={`text-[9px] font-black uppercase tracking-widest ${isSelected ? 'text-white/80' : 'text-muted-foreground'}`}>
+                                                                        {dayNames[d.getDay()]}
+                                                                    </span>
+                                                                    <span className={`text-sm leading-tight ${isToday && !isSelected ? 'font-black' : 'font-bold'}`}>
+                                                                        {d.getDate()}
+                                                                    </span>
+                                                                    <span className={`text-[8px] font-bold uppercase ${isSelected ? 'text-white/70' : 'text-muted-foreground/50'}`}>
+                                                                        {d.toLocaleDateString('es-MX', { month: 'short' })}
+                                                                    </span>
+                                                                    {/* Dot indicator */}
+                                                                    {hasGames && !isSelected && (
+                                                                        <span className="absolute bottom-1 w-1 h-1 rounded-full bg-primary" />
+                                                                    )}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+
+                                                    {/* Next week */}
+                                                    <button
+                                                        onClick={() => { setWeekOffset(w => w + 1); setSelectedDate(null); }}
+                                                        className="flex items-center justify-center w-9 h-10 text-muted-foreground hover:text-foreground hover:bg-muted/10 transition-colors shrink-0 border-l border-muted/20"
+                                                    >
+                                                        <ChevronRight className="w-4 h-4" />
+                                                    </button>
+
+                                                    {/* Calendar icon / go to today */}
+                                                    <button
+                                                        onClick={() => { setWeekOffset(0); setSelectedDate(todayYMD); }}
+                                                        title="Ir a hoy"
+                                                        className="flex items-center justify-center w-9 h-10 text-muted-foreground hover:text-foreground hover:bg-muted/10 transition-colors shrink-0 border-l border-muted/20"
+                                                    >
+                                                        <Calendar className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+
+                                                {/* ── Export Template (hidden, captured by html2canvas) ── */}
+                                                <div
+                                                    ref={calendarExportRef}
+                                                    style={{
+                                                        position: 'fixed', top: '-9999px', left: '-9999px',
+                                                        width: '540px',
+                                                        backgroundImage: 'url(/schedule-bg.jpg)',
+                                                        backgroundSize: 'cover',
+                                                        backgroundPosition: 'center',
+                                                        borderRadius: '20px',
+                                                        overflow: 'hidden',
+                                                        fontFamily: 'system-ui, sans-serif',
+                                                    }}
+                                                    aria-hidden
+                                                >
+                                                    {/* Dark overlay for readability */}
+                                                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(160deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.75) 100%)' }} />
+                                                    {/* Content */}
+                                                    <div style={{ position: 'relative', padding: '36px 32px 28px' }}>
+                                                        {/* Header row */}
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '8px' }}>
+                                                            {tournament?.logoUrl && (
+                                                                <img src={tournament.logoUrl} alt="Logo" style={{ width: '52px', height: '52px', borderRadius: '10px', objectFit: 'contain', background: 'white', padding: '3px', flexShrink: 0 }} />
+                                                            )}
+                                                            <div>
+                                                                <p style={{ fontSize: '9px', fontWeight: 900, letterSpacing: '0.3em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)', margin: 0 }}>{tournament?.name}</p>
+                                                                <h2 style={{ fontSize: '28px', fontWeight: 900, color: '#ffffff', margin: 0, letterSpacing: '-0.5px', textTransform: 'uppercase', lineHeight: 1.1 }}>{activeRound}</h2>
+                                                            </div>
+                                                        </div>
+                                                        {/* Gold accent line */}
+                                                        <div style={{ height: '3px', background: 'linear-gradient(90deg, #f59e0b, transparent)', borderRadius: '2px', marginBottom: '20px', width: '160px' }} />
+                                                        {/* Games list */}
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                                            {visibleGames.map(game => {
+                                                                const fn = tournament?.fields?.find(f => f.id === game.field)?.name || game.field || null;
+                                                                return (
+                                                                    <div key={game.id} style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                                        {/* Away */}
+                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                                                                            {game.awayTeam.logoUrl && <img src={game.awayTeam.logoUrl} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', background: 'white', flexShrink: 0 }} />}
+                                                                            <span style={{ fontSize: '13px', fontWeight: 900, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{game.awayTeam.shortName || game.awayTeam.name}</span>
+                                                                        </div>
+                                                                        {/* VS */}
+                                                                        <span style={{ fontSize: '11px', fontWeight: 900, color: '#f59e0b', letterSpacing: '0.2em', flexShrink: 0 }}>VS</span>
+                                                                        {/* Home */}
+                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0, justifyContent: 'flex-end' }}>
+                                                                            <span style={{ fontSize: '13px', fontWeight: 900, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>{game.homeTeam.shortName || game.homeTeam.name}</span>
+                                                                            {game.homeTeam.logoUrl && <img src={game.homeTeam.logoUrl} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', background: 'white', flexShrink: 0 }} />}
+                                                                        </div>
+                                                                        {/* Date/Field */}
+                                                                        <div style={{ flexShrink: 0, textAlign: 'right', borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '12px', minWidth: '68px' }}>
+                                                                            <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)', fontWeight: 700, margin: 0 }}>{new Date(game.scheduledDate).toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' })}</p>
+                                                                            <p style={{ fontSize: '11px', color: '#f59e0b', fontWeight: 900, margin: '2px 0 0' }}>{new Date(game.scheduledDate).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}</p>
+                                                                            {fn && <p style={{ fontSize: '9px', color: 'rgba(255,255,255,0.4)', fontWeight: 700, margin: '2px 0 0' }}>{fn}</p>}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                        {/* Footer */}
+                                                        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '24px' }}>
+                                                            {tournament?.logoUrl && <img src={tournament.logoUrl} alt="" style={{ width: '24px', height: '24px', objectFit: 'contain', opacity: 0.3, marginRight: '8px' }} />}
+                                                            <p style={{ fontSize: '9px', color: 'rgba(255,255,255,0.25)', fontWeight: 700, letterSpacing: '0.3em', textTransform: 'uppercase', margin: 0 }}>ScoreKeeper App</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* ── Games Grid ── */}
+                                                {visibleGames.length === 0 ? (
+                                                    <div className="bg-muted/5 border border-muted/20 rounded-xl p-8 text-center">
+                                                        <p className="text-muted-foreground text-sm font-medium">
+                                                            {rounds.length === 0 ? 'Aún no hay juegos programados.' : selectedDate ? 'No hay juegos en esta fecha.' : 'No hay juegos en esta jornada.'}
+                                                        </p>
+                                                        {selectedDate && (
+                                                            <button onClick={() => setSelectedDate(null)} className="mt-2 text-[11px] text-primary font-bold hover:underline">
+                                                                Ver todos los juegos de la jornada
+                                                            </button>
+                                                        )}
+                                                        {canEdit && rounds.length === 0 && (
+                                                            <p className="text-[11px] text-muted-foreground/60 mt-1">Programa juegos y asígnales una jornada desde el menú Acciones.</p>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                        {visibleGames.map(game => (
+                                                            <CompactGameCard key={game.id} game={game} />
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {/* ── Playoffs Bracket ── */}
+                                                {playoffGames.length > 0 && (
+                                                    <div className="pt-4 border-t border-muted/20">
+                                                        <div className="flex items-center gap-2 mb-4">
+                                                            <Swords className="w-4 h-4 text-amber-500" />
+                                                            <h4 className="text-sm font-black text-foreground uppercase tracking-widest">Playoffs</h4>
+                                                        </div>
+                                                        <div className="flex gap-4 overflow-x-auto pb-2">
+                                                            {playoffRounds.map(pr => (
+                                                                <div key={pr} className="shrink-0 min-w-[180px]">
+                                                                    <p className="text-[10px] font-black uppercase tracking-widest text-primary/70 mb-2">{pr}</p>
+                                                                    <div className="space-y-2">
+                                                                        {playoffGames.filter(g => g.round === pr).map(game => {
+                                                                            const dest = game.status === 'in_progress' ? `/gamecast/${game.id}` : game.status === 'finished' ? `/gamefinalizado/${game.id}` : `/gamescheduled/${game.id}`;
+                                                                            const awayWon = game.status === 'finished' && game.awayScore > game.homeScore;
+                                                                            const homeWon = game.status === 'finished' && game.homeScore > game.awayScore;
+                                                                            return (
+                                                                                <Link key={game.id} href={dest} className="block bg-muted/5 border border-muted/20 rounded-xl overflow-hidden hover:border-amber-500/40 transition-colors">
+                                                                                    {[{ team: game.awayTeam, score: game.awayScore, won: awayWon }, { team: game.homeTeam, score: game.homeScore, won: homeWon }].map(({ team, score, won }) => (
+                                                                                        <div key={team.id} className={`flex items-center gap-2 px-3 py-1.5 border-b last:border-b-0 border-muted/10 ${won ? 'bg-amber-500/5' : ''}`}>
+                                                                                            <div className="w-5 h-5 rounded-full bg-surface border border-muted/30 flex items-center justify-center overflow-hidden shrink-0 text-[8px] font-black">
+                                                                                                {team.logoUrl ? <img src={team.logoUrl} alt="" className="w-full h-full object-cover" /> : (team.shortName || team.name.substring(0, 2))}
+                                                                                            </div>
+                                                                                            <span className={`text-xs font-black truncate flex-1 ${won ? 'text-amber-500' : 'text-foreground'}`}>{team.shortName || team.name}</span>
+                                                                                            {game.status !== 'scheduled' && <span className={`text-xs font-black tabular-nums shrink-0 ${won ? 'text-amber-500' : 'text-muted-foreground'}`}>{score}</span>}
+                                                                                        </div>
+                                                                                    ))}
+                                                                                </Link>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </section>
+                                        );
+                                    })()}
 
                                     <section className="bg-surface border border-muted/30 rounded-2xl p-6 shadow-sm">
                                         <h3 className="text-lg font-bold mb-6 text-foreground">Resultados Recientes</h3>
@@ -611,7 +981,7 @@ export default function TournamentProfilePage() {
                                                     .sort((a, b) => new Date(b.scheduledDate).getTime() - new Date(a.scheduledDate).getTime())
                                                     .slice(0, 3)
                                                     .map(game => (
-                                                        <Link href={`/gamecast/${game.id}`} key={game.id} className="block group">
+                                                        <Link href={game.status === 'in_progress' ? `/gamecast/${game.id}` : game.status === 'finished' ? `/gamefinalizado/${game.id}` : `/gamescheduled/${game.id}`} key={game.id} className="block group">
                                                             <div className="bg-muted/5 border border-muted/20 rounded-xl p-4 flex items-center justify-between hover:border-amber-500/30 transition-colors">
                                                                 <div className="flex-1">
                                                                     <div className="flex justify-between items-center mb-2">
@@ -808,7 +1178,7 @@ export default function TournamentProfilePage() {
                             const GameCard = ({ game }: { game: typeof tournament.games[0] }) => (
                                 <div
                                     key={game.id}
-                                    onClick={() => router.push(`/gamecast/${game.id}`)}
+                                    onClick={() => router.push(game.status === 'in_progress' ? `/gamecast/${game.id}` : game.status === 'finished' ? `/gamefinalizado/${game.id}` : `/gamescheduled/${game.id}`)}
                                     className="bg-gradient-to-br from-blue-500/20 to-surface border border-blue-500/20 rounded-2xl overflow-hidden shadow-sm flex flex-col hover:shadow-md hover:-translate-y-1 transition-all duration-300 cursor-pointer relative"
                                 >
                                     {game.status === 'in_progress' && (
@@ -822,7 +1192,7 @@ export default function TournamentProfilePage() {
                                         </div>
                                         <div className="text-xs font-bold opacity-50 flex items-center gap-1">
                                             <MapPin className="w-3 h-3" />
-                                            {game.field || 'Sede Local'}
+                                            {tournament?.fields?.find(f => f.id === game.field)?.name || game.field || 'Sede Local'}
                                         </div>
                                     </div>
                                     {/* Body */}
@@ -878,13 +1248,13 @@ export default function TournamentProfilePage() {
                                                             {game.winningPitcher && (
                                                                 <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
                                                                     <Link href={`/jugadores/${game.winningPitcher.id}`}>
-                                                                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-surface border-2 border-amber-500/50 overflow-hidden shadow-md shrink-0">
+                                                                        <div className="w-10 h-10 text-xs md:w-12 md:h-12 rounded-full bg-surface border-2 border-amber-500/50 overflow-hidden shadow-md shrink-0">
                                                                             <img src={game.winningPitcher.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${game.winningPitcher.firstName}`} alt="PG" className="w-full h-full object-cover" />
                                                                         </div>
                                                                     </Link>
                                                                     <div className="flex flex-col min-w-0">
-                                                                        <span className="text-[12px] font-black text-amber-500 uppercase tracking-wider flex items-center gap-1">
-                                                                            <Trophy className="w-3 h-3" /> P. Ganador
+                                                                        <span className="text-[10px] font-black text-amber-500 uppercase tracking-wider flex items-center gap-1">
+                                                                            <Trophy className="w-3 h-3" /> PG
                                                                         </span>
                                                                         <span className="text-xs md:text-sm font-bold text-foreground capitalize truncate">{game.winningPitcher.firstName.charAt(0)}. {game.winningPitcher.lastName}</span>
                                                                     </div>
@@ -921,7 +1291,7 @@ export default function TournamentProfilePage() {
                                                 ) : null}
                                             </div>
                                             <Link
-                                                href={`/gamecast/${game.id}`}
+                                                href={game.status === 'in_progress' ? `/gamecast/${game.id}` : game.status === 'finished' ? `/gamefinalizado/${game.id}` : `/gamescheduled/${game.id}`}
                                                 onClick={(e) => e.stopPropagation()}
                                                 className={`px-4 flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-wider border-l border-black/10 dark:border-white/10 transition-all hover:bg-muted/10 ${game.status === 'in_progress' ? 'bg-red-600 text-white hover:bg-red-700' : 'text-primary'}`}
                                             >
@@ -1052,9 +1422,9 @@ export default function TournamentProfilePage() {
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                                 {[
                                                     { label: 'AVG', key: 'avg', sort: (a: any, b: any) => parseFloat(b.avg) - parseFloat(a.avg) },
+                                                    { label: 'OPS', key: 'ops', sort: (a: any, b: any) => parseFloat(b.ops) - parseFloat(a.ops) },
                                                     { label: 'HR', key: 'hr', sort: (a: any, b: any) => b.hr - a.hr },
-                                                    { label: 'RBI', key: 'rbi', sort: (a: any, b: any) => b.rbi - a.rbi },
-                                                    { label: 'H (HITS)', key: 'h', sort: (a: any, b: any) => b.h - a.h }
+                                                    { label: 'RBI', key: 'rbi', sort: (a: any, b: any) => b.rbi - a.rbi }
                                                 ].map(cat => {
                                                     const top4 = [...(battingStats || [])].sort(cat.sort).slice(0, 4);
                                                     return (
@@ -1093,8 +1463,8 @@ export default function TournamentProfilePage() {
                                                         <tr>
                                                             <th className="px-4 py-3 font-bold text-muted-foreground text-[10px] uppercase tracking-wider">Jugador</th>
                                                             <th className="px-4 py-3 font-bold text-center text-muted-foreground text-[10px] uppercase tracking-wider">Equipo</th>
-                                                            {['JJ', 'AB', 'H', '2B', '3B', 'HR', 'RBI', 'BB', 'SO', 'AVG'].map(h => (
-                                                                <th key={h} className="px-4 py-3 font-bold text-center text-muted-foreground text-[10px] uppercase tracking-wider">{h}</th>
+                                                            {['JJ', 'PA', 'AB', 'H', '2B', '3B', 'HR', 'R', 'RBI', 'BB', 'HBP', 'SO', 'SB', 'ROE', 'AVG', 'OBP', 'SLG', 'OPS'].map(h => (
+                                                                <th key={h} className="px-3 py-3 font-bold text-center text-muted-foreground text-[10px] uppercase tracking-wider">{h}</th>
                                                             ))}
                                                         </tr>
                                                     </thead>
@@ -1109,17 +1479,25 @@ export default function TournamentProfilePage() {
                                                                         <span className="text-sm font-bold text-foreground whitespace-nowrap">{p.firstName} {p.lastName}</span>
                                                                     </div>
                                                                 </td>
-                                                                <td className="px-4 py-3 text-[11px] text-muted-foreground text-center font-medium">{p.teamName}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.gp}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.ab}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-bold text-foreground">{p.h}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.h2}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.h3}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-black text-primary">{p.hr}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.rbi}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.bb}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.so}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-black text-foreground bg-primary/5">{p.avg}</td>
+                                                                <td className="px-3 py-3 text-[11px] text-muted-foreground text-center font-medium">{p.teamName}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{p.gp}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{p.pa}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{p.ab}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-bold text-foreground">{p.h}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{p.h2}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{p.h3}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-black text-primary">{p.hr}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{p.r}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{p.rbi}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{p.bb}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{p.hbp}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{p.so}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{p.sb}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{(p as any).roe ?? 0}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-black text-foreground bg-primary/5">{p.avg}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-black text-foreground bg-primary/5">{p.obp}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-black text-foreground bg-primary/5">{p.slg}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-black text-primary bg-primary/10">{p.ops}</td>
                                                             </tr>
                                                         ))}
                                                     </tbody>
@@ -1131,12 +1509,14 @@ export default function TournamentProfilePage() {
                                     <div className="space-y-8">
                                         <div className="space-y-4">
                                             <h3 className="text-xl font-black text-foreground flex items-center gap-2"><Trophy className="w-5 h-5 text-amber-500" />Líderes de Pitcheo</h3>
-                                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                                 {[
                                                     { label: 'ERA', key: 'era', sort: (a: any, b: any) => parseFloat(a.era) - parseFloat(b.era) },
+                                                    { label: 'WHIP', key: 'whip', sort: (a: any, b: any) => parseFloat(a.whip) - parseFloat(b.whip) },
                                                     { label: 'K (PONCHES)', key: 'so', sort: (a: any, b: any) => b.so - a.so },
-                                                    { label: 'IP (INNINGS)', key: 'ip', sort: (a: any, b: any) => parseFloat(b.ip) - parseFloat(a.ip) },
-                                                    { label: 'W (VICTORIAS)', key: 'w', sort: (a: any, b: any) => b.w - a.w }
+                                                    { label: 'W (VICTORIAS)', key: 'w', sort: (a: any, b: any) => b.w - a.w },
+                                                    { label: 'SV (SALVADOS)', key: 'sv', sort: (a: any, b: any) => (b.sv || 0) - (a.sv || 0) },
+                                                    { label: 'QS (ARRANQUES)', key: 'qs', sort: (a: any, b: any) => (b.qs || 0) - (a.qs || 0) },
                                                 ].map(cat => {
                                                     const top4 = [...(pitchingStats || [])].sort(cat.sort).slice(0, 4);
                                                     return (
@@ -1174,8 +1554,8 @@ export default function TournamentProfilePage() {
                                                     <thead className="bg-muted/5">
                                                         <tr>
                                                             <th className="px-4 py-3 font-bold text-muted-foreground text-[10px] uppercase tracking-wider">Lanzador</th>
-                                                            {['Equipo', 'JJ', 'IP', 'H', 'CL', 'BB', 'K', 'W', 'ERA'].map(h => (
-                                                                <th key={h} className="px-4 py-3 font-bold text-center text-muted-foreground text-[10px] uppercase tracking-wider">{h}</th>
+                                                            {['Equipo', 'JJ', 'W', 'L', 'SV', 'IP', 'H', 'CL', 'CL-L', 'BB', 'K', 'QS', 'CG', 'SHO', 'WP', 'BK', 'ERA', 'WHIP', 'K/9', 'BB/9'].map(h => (
+                                                                <th key={h} className="px-3 py-3 font-bold text-center text-muted-foreground text-[10px] uppercase tracking-wider">{h}</th>
                                                             ))}
                                                         </tr>
                                                     </thead>
@@ -1190,15 +1570,26 @@ export default function TournamentProfilePage() {
                                                                         <span className="text-sm font-bold text-foreground whitespace-nowrap">{p.firstName} {p.lastName}</span>
                                                                     </div>
                                                                 </td>
-                                                                <td className="px-4 py-3 text-[11px] text-muted-foreground text-center font-medium">{p.teamName}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.gp}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-bold text-foreground">{p.ip}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.h}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.er}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-medium text-muted-foreground">{p.bb}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-bold text-foreground">{p.so}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-black text-emerald-600">{p.w}</td>
-                                                                <td className="px-4 py-3 text-sm text-center font-black text-foreground bg-primary/5">{p.era}</td>
+                                                                <td className="px-3 py-3 text-[11px] text-muted-foreground text-center font-medium">{p.teamName}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{p.gp}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-black text-emerald-600">{(p as any).w ?? 0}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-black text-red-500">{(p as any).l ?? 0}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-black text-amber-500">{(p as any).sv ?? 0}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-bold text-foreground">{p.ip}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{p.h}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{p.r}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{p.er}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{p.bb}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-bold text-foreground">{p.so}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{(p as any).qs ?? 0}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{(p as any).cg ?? 0}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{(p as any).sho ?? 0}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{(p as any).wp ?? 0}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{(p as any).bk ?? 0}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-black text-foreground bg-primary/5">{p.era}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-black text-foreground bg-primary/5">{p.whip}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{p.k9}</td>
+                                                                <td className="px-3 py-3 text-sm text-center font-medium text-muted-foreground">{p.bb9}</td>
                                                             </tr>
                                                         ))}
                                                     </tbody>

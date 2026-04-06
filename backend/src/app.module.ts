@@ -16,6 +16,7 @@ import { UsersModule } from './users/users.module';
 import { StatsModule } from './stats/stats.module';
 import { VisionModule } from './vision/vision.module';
 import { RosterModule } from './roster/roster.module';
+import { StreamerModule } from './streamer/streamer.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { RosterModule } from './roster/roster.module';
     StatsModule,
     VisionModule,
     RosterModule,
+    StreamerModule,
   ],
   controllers: [AppController],
   providers: [

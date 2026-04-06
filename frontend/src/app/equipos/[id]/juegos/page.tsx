@@ -232,7 +232,7 @@ export default function TeamGamesHistoryPage() {
                                     </div>
 
                                     {/* Main button */}
-                                    <Link href={`/gamecast/${game.id}`} className="w-full">
+                                    <Link href={game.status === 'in_progress' ? `/gamecast/${game.id}` : game.status === 'finished' ? `/gamefinalizado/${game.id}` : `/gamescheduled/${game.id}`} className="w-full">
                                         <button className={`w-full px-4 py-2.5 text-[10px] md:text-xs font-black rounded-lg uppercase tracking-widest transition shadow-sm border ${winStatus === 'live' ? 'bg-red-600 hover:bg-red-500 text-white border-red-500' : 'bg-surface hover:bg-muted/5 border-muted/30 text-foreground hover:border-primary/50'
                                             }`}>
                                             {winStatus === 'live' ? 'Ver en Vivo' : 'Boxscore'}

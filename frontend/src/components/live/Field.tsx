@@ -195,7 +195,7 @@ export default function Field({ forceStoreData, readOnly = false }: { forceStore
                     }}
                 >
                     <div className="bg-slate-900/95 border border-slate-600 px-2 py-1 rounded text-[12px] font-medium text-slate-100 whitespace-nowrap shadow-lg backdrop-blur-sm">
-                        <span className="text-cyan-400 font-bold mr-1">{player.pos}</span>
+                        <span className="xs:text-xs text-cyan-400 font-bold mr-1">{player.pos}</span>
                         <span className="text-slate-300">{player.name}</span>
                     </div>
                 </div>

@@ -34,14 +34,16 @@ export class TournamentsController {
 
     @Patch(':id')
     @UseGuards(JwtAuthGuard)
-    update(@Param('id') id: string, @Body() updateTournamentDto: UpdateTournamentDto) {
-        return this.tournamentsService.update(id, updateTournamentDto);
+    update(@Param('id') id: string, @Body() updateTournamentDto: UpdateTournamentDto, @Req() req: any) {
+        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
+        return this.tournamentsService.update(id, updateTournamentDto, requestor);
     }
 
     @Delete(':id')
     @UseGuards(JwtAuthGuard)
-    remove(@Param('id') id: string) {
-        return this.tournamentsService.remove(id);
+    remove(@Param('id') id: string, @Req() req: any) {
+        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
+        return this.tournamentsService.remove(id, requestor);
     }
 
     @Get(':id/teams')

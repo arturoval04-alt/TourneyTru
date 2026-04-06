@@ -25,6 +25,7 @@ export interface BoxscoreBatterProps {
     so: number;
     pitchingHits?: number;
     pitchingRuns?: number;
+    pitchingEarnedRuns?: number;
     pitchingBB?: number;
     pitchingSO?: number;
     pitchingIPOuts?: number;

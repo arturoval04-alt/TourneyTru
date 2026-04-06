@@ -71,7 +71,10 @@ export const ScorebookTable: React.FC<ScorebookTableProps> = ({ teamBoxscore, ba
                         
                         if (isFlexGroup) return null;
 
-                        return group.map((batter, idx) => {
+                        return group
+                        .slice()
+                        .sort((a, b) => (b.isStarter ? 1 : 0) - (a.isStarter ? 1 : 0))
+                        .map((batter, idx) => {
                             // Obtener la base actual de este corredor para el live tracking
                             const runnerCurrentBase = getCurrentBaseForPlayer(batter.playerId, baseIds);
     

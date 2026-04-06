@@ -41,6 +41,12 @@ export class GamesController {
         return this.gamesService.remove(id);
     }
 
+    @Delete(':id/plays')
+    @UseGuards(JwtAuthGuard)
+    deletePlays(@Param('id') id: string, @Body() body: { playIds: string[] }) {
+        return this.gamesService.deletePlays(id, body.playIds);
+    }
+
     @Post(':id/team/:teamId/lineup')
     @UseGuards(JwtAuthGuard)
     setLineup(
