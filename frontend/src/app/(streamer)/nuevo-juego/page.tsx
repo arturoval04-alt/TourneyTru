@@ -207,6 +207,7 @@ function AIPhotoButton({ onResults }: { onResults: (rows: PlayerRow[]) => void }
                 lastName: p.name?.split(' ').slice(1).join(' ') ?? '',
                 number: '',
                 position: p.position ?? '',
+                dhForPosition: '',
             }));
             if (rows.length > 0) onResults(rows);
             else toast.warning('La IA no detectó jugadores en la imagen.');
