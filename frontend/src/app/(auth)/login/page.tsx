@@ -12,35 +12,35 @@ const PLANS = [
     {
         key: "demo",
         label: "Demo",
-        badge: "Con aprobación",
+        badge: "Gratis",
         highlight: false,
-        priceNote: "Solicitud por correo",
-        limits: ["1 liga", "1 torneo", "6 equipos por torneo", "25 jugadores por equipo"],
-        cta: "Solicitar acceso",
+        priceNote: "$0",
+        limits: ["1 liga", "1 torneo", "8 equipos", "16 jugadores / equipo", "Máx. 40 juegos / mes"],
+        cta: "Crear cuenta gratis",
         ctaHref: "/register",
         available: true,
     },
     {
-        key: "standard",
-        label: "Estándar",
-        badge: "Próximamente",
+        key: "organizador",
+        label: "Organizador",
+        badge: "Más popular",
         highlight: true,
-        priceNote: "Precio por definir / mes",
-        limits: ["1 liga", "3 torneos por liga", "10 equipos por torneo", "30 jugadores por equipo"],
-        cta: "Próximamente",
-        ctaHref: null,
-        available: false,
+        priceNote: "$800 MXN / mes",
+        limits: ["1 liga", "1 torneo", "20 equipos", "Jugadores ilimitados", "Juegos ilimitados"],
+        cta: "Contratar",
+        ctaHref: "mailto:admin@tourneytru.com?subject=Solicitud Plan Organizador",
+        available: true,
     },
     {
-        key: "pro",
-        label: "Pro",
-        badge: "Próximamente",
+        key: "streamer",
+        label: "Streamer",
+        badge: "Por uso",
         highlight: false,
-        priceNote: "Precio por definir / mes",
-        limits: ["1 liga", "10 torneos por liga", "50 equipos por torneo", "50 jugadores por equipo"],
-        cta: "Próximamente",
-        ctaHref: null,
-        available: false,
+        priceNote: "$500 MXN / 50 juegos",
+        limits: ["Overlay profesional", "Panel de control", "Facebook Live", "Sin suscripción mensual"],
+        cta: "Contratar",
+        ctaHref: "mailto:admin@tourneytru.com?subject=Solicitud Plan Streamer",
+        available: true,
     },
 ];
 
@@ -56,7 +56,7 @@ export default function LoginPage() {
     const [resendMessage, setResendMessage]     = useState("");
     const router = useRouter();
 
-    const handleLogin = async (e: React.FormEvent) => {
+    const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         setError("");
         setLoading(true);
