@@ -43,12 +43,12 @@ export default function PublicGamecast() {
     // Live base tracking
     const {
         baseIds, inning, half, currentBatter, currentBatterId,
-        homeLineup, awayLineup, homeScore, awayScore, playLogs, status,
+        homeLineup, awayLineup, homeFullLineup, awayFullLineup, homeScore, awayScore, playLogs, status,
         winningPitcher, mvpBatter1, mvpBatter2, pendingPlays
     } = useGameStore();
 
     const pitcherInfo = useMemo(() => {
-        const defLineup = half === 'top' ? homeLineup : awayLineup;
+        const defLineup = half === 'top' ? homeFullLineup : awayFullLineup;
         const p = defLineup.find((item: LineupItem) => item.position === '1' || item.position === 'P');
         const name = p?.player ? `${p.player.firstName} ${p.player.lastName}` : 'Pitcher Desconocido';
         const photoUrl = p?.player?.photoUrl || undefined;
@@ -64,7 +64,7 @@ export default function PublicGamecast() {
         }
         if (!stats) stats = 'Sin datos aún';
         return { name, stats, photoUrl };
-    }, [half, homeLineup, awayLineup, boxscore]);
+    }, [half, homeFullLineup, awayFullLineup, boxscore]);
 
     const batterPhotoUrl = useMemo(() => {
         if (!currentBatterId) return undefined;
@@ -186,7 +186,7 @@ export default function PublicGamecast() {
                     {/* TAB: ALINEACIONES */}
                     {activeTab === 'alineaciones' && (
                         <div className="animate-fade-in-up">
-                            {homeLineup.length === 0 && awayLineup.length === 0 ? (
+                            {homeFullLineup.length === 0 && awayFullLineup.length === 0 ? (
                                 <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-700/40 rounded-2xl p-12 text-center shadow-lg min-h-[500px] flex flex-col items-center justify-center">
                                     <Users className="w-16 h-16 text-slate-600 mb-4" />
                                     <h2 className="text-2xl font-black text-white mb-4">Alineación y Configuración del Juego</h2>
@@ -194,7 +194,16 @@ export default function PublicGamecast() {
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                    {[{ label: 'Visitante', lineup: awayLineup }, { label: 'Local', lineup: homeLineup }].map(({ label, lineup }) => (
+                                    {[{ label: 'Visitante', lineup: awayFullLineup }, { label: 'Local', lineup: homeFullLineup }].map(({ label, lineup }) => {
+                                        const dhCovered = new Set(
+                                            lineup.filter((l: LineupItem) => l.position === 'DH' && l.dhForPosition)
+                                                  .map((l: LineupItem) => (l.dhForPosition as string).toUpperCase().trim())
+                                        );
+                                        const isDefenseOnly = (item: LineupItem) => {
+                                            const pos = item.position?.toUpperCase().trim() === '1' ? 'P' : item.position?.toUpperCase().trim();
+                                            return dhCovered.size > 0 && !!pos && dhCovered.has(pos);
+                                        };
+                                        return (
                                         <div key={label} className="bg-slate-900/60 backdrop-blur-sm border border-slate-700/40 rounded-2xl p-6 shadow-lg">
                                             <h3 className="text-lg font-black text-sky-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                                                 <Users className="w-5 h-5" /> {label}
@@ -209,8 +218,10 @@ export default function PublicGamecast() {
                                                 </thead>
                                                 <tbody>
                                                     {lineup.map((item: LineupItem) => (
-                                                        <tr key={item.playerId} className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
-                                                            <td className="py-2.5 text-slate-500 font-bold">{item.battingOrder}</td>
+                                                        <tr key={item.playerId} className={`border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors ${isDefenseOnly(item) ? 'opacity-60' : ''}`}>
+                                                            <td className="py-2.5 text-slate-500 font-bold">
+                                                                {isDefenseOnly(item) ? <span className="text-xs text-slate-600">DEF</span> : item.battingOrder}
+                                                            </td>
                                                             <td className="py-2.5 text-white font-semibold">
                                                                 {item.player ? `${item.player.firstName} ${item.player.lastName}` : 'Desconocido'}
                                                             </td>
@@ -224,7 +235,8 @@ export default function PublicGamecast() {
                                                 </tbody>
                                             </table>
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>

@@ -52,6 +52,8 @@ type BaseState = {
     playLogs: PlayLog[];
     homeLineup: LineupItem[];
     awayLineup: LineupItem[];
+    homeFullLineup: LineupItem[];
+    awayFullLineup: LineupItem[];
     homeBatterIndex: number;
     awayBatterIndex: number;
     homeTeamName: string;
@@ -189,8 +191,9 @@ const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsSc
     if (!stateSnapshot.gameId) return;
 
     const activeBatterId = currentBatterIdOverride || stateSnapshot.currentBatterId;
-    const defensiveLineup = stateSnapshot.half === 'top' ? stateSnapshot.homeLineup : stateSnapshot.awayLineup;
-    const currentPitcher = defensiveLineup.find((item: LineupItem) => item.position === "1" || item.position === "P");
+    const defensiveLineup = stateSnapshot.half === 'top' ? stateSnapshot.homeFullLineup : stateSnapshot.awayFullLineup;
+    const currentPitcher = defensiveLineup.find((item: LineupItem) => item.position === "1" || item.position === "P") ||
+        (stateSnapshot.half === 'top' ? stateSnapshot.homeLineup : stateSnapshot.awayLineup).find((item: LineupItem) => item.position === "1" || item.position === "P");
     const activePitcherId = currentPitcher ? currentPitcher.playerId : null;
 
     const payloadInning = inningOverride !== null ? inningOverride : stateSnapshot.inning;
@@ -342,6 +345,8 @@ export const useGameStore = create<GameState>()(
             playLogs: [{ text: "Inicio del partido", inningString: "▲ 1" }],
             homeLineup: [],
             awayLineup: [],
+            homeFullLineup: [],
+            awayFullLineup: [],
             homeBatterIndex: 0,
             awayBatterIndex: 0,
             history: [],
@@ -413,7 +418,8 @@ export const useGameStore = create<GameState>()(
                     currentBatter: state.currentBatter, currentBatterId: state.currentBatterId,
                     currentPitcher: state.currentPitcher,
                     playLogs: [...state.playLogs], homeLineup: [...state.homeLineup],
-                    awayLineup: [...state.awayLineup], homeBatterIndex: state.homeBatterIndex,
+                    awayLineup: [...state.awayLineup], homeFullLineup: [...state.homeFullLineup],
+                    awayFullLineup: [...state.awayFullLineup], homeBatterIndex: state.homeBatterIndex,
                     awayBatterIndex: state.awayBatterIndex,
                     homeTeamName: state.homeTeamName, awayTeamName: state.awayTeamName,
                     homeTeamLogoUrl: state.homeTeamLogoUrl, awayTeamLogoUrl: state.awayTeamLogoUrl,
@@ -479,12 +485,16 @@ export const useGameStore = create<GameState>()(
                         };
 
                         // Solo jugadores activos en el lineup (excluir sustituidos/inactivos)
-                        const homeLp = filterBattingLineup(sanitizeLineup(gameData.lineups?.filter((l: any) => l.team_id === gameData.home_team_id && l.is_active !== false) || []).sort((a,b) => a.battingOrder - b.battingOrder));
-                        const awayLp = filterBattingLineup(sanitizeLineup(gameData.lineups?.filter((l: any) => l.team_id === gameData.away_team_id && l.is_active !== false) || []).sort((a,b) => a.battingOrder - b.battingOrder));
+                        const homeActiveLp = sanitizeLineup(gameData.lineups?.filter((l: any) => l.team_id === gameData.home_team_id && l.is_active !== false) || []).sort((a,b) => a.battingOrder - b.battingOrder);
+                        const awayActiveLp = sanitizeLineup(gameData.lineups?.filter((l: any) => l.team_id === gameData.away_team_id && l.is_active !== false) || []).sort((a,b) => a.battingOrder - b.battingOrder);
+                        const homeLp = filterBattingLineup(homeActiveLp);
+                        const awayLp = filterBattingLineup(awayActiveLp);
 
                         set({
                             homeLineup: homeLp,
                             awayLineup: awayLp,
+                            homeFullLineup: homeActiveLp,
+                            awayFullLineup: awayActiveLp,
                             homeTeamId: gameData.home_team_id,
                             awayTeamId: gameData.away_team_id,
                             homeTeamName: gameData.home_team_name || 'HOME',
