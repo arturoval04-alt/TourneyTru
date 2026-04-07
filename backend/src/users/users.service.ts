@@ -372,19 +372,30 @@ export class UsersService {
 
     // Eliminar una cuenta de usuario (admin only) — cascade completo
     async deleteStaff(requesterId: string, staffId: string) {
-        const requester = await this.prisma.user.findUnique({ where: { id: requesterId } }) as any;
+        const requester = await this.prisma.user.findUnique({
+            where: { id: requesterId },
+            include: { role: true },
+        }) as any;
         if (!requester) throw new NotFoundException('Solicitante no encontrado');
 
-        const staff = await this.prisma.user.findUnique({ where: { id: staffId } }) as any;
+        const staff = await this.prisma.user.findUnique({
+            where: { id: staffId },
+            include: { role: true },
+        }) as any;
         if (!staff) throw new NotFoundException('Usuario no encontrado');
 
+        const staffRoleName: string = staff.role.name;
         const allowedRoles = ['scorekeeper', 'presi'];
-        if (!allowedRoles.includes(staff.roleId)) {
+        if (!allowedRoles.includes(staffRoleName)) {
             throw new ForbiddenException('Solo puedes eliminar cuentas de scorekeeper o presidente');
         }
 
-        // Organizer can delete staff from their own leagues
-        if (requester.roleId === 'organizer') {
+        const requesterRole: string = requester.role.name;
+
+        if (requesterRole === 'admin') {
+            // Admin puede eliminar cualquier cuenta de staff sin restricción adicional
+        } else if (requesterRole === 'organizer') {
+            // Organizer: solo puede eliminar staff de sus propias ligas
             const requesterLeagues = await this.prisma.league.findMany({
                 where: { adminId: requesterId },
                 select: { id: true },
@@ -393,9 +404,9 @@ export class UsersService {
             if (!leagueIds.includes(staff.scorekeeperLeagueId)) {
                 throw new ForbiddenException('Este usuario no pertenece a tu liga');
             }
-        } else if (requester.roleId === 'presi') {
-            // Presi can only delete scorekeepers from their same league
-            if (staff.roleId !== 'scorekeeper') {
+        } else if (requesterRole === 'presi') {
+            // Presi: solo puede eliminar scorekeepers de su misma liga
+            if (staffRoleName !== 'scorekeeper') {
                 throw new ForbiddenException('Un presidente solo puede eliminar cuentas de scorekeeper');
             }
             if (requester.scorekeeperLeagueId !== staff.scorekeeperLeagueId) {

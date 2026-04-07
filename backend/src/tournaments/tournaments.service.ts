@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTournamentDto, UpdateTournamentDto } from './dto/tournament.dto';
 
-type Requestor = { userId?: string; role?: string };
+type Requestor = { userId?: string; role?: string; scorekeeperLeagueId?: string | null };
 
 @Injectable()
 export class TournamentsService {
@@ -76,6 +76,10 @@ export class TournamentsService {
             const tournPrivate = t.isPrivate ?? false;
             if (requestor?.userId) {
                 const isLeagueAdmin = t.league?.adminId === requestor.userId;
+                // Scorekeeper asignado a esta liga puede ver todos sus torneos
+                const isAssignedScorekeeper = requestor.role === 'scorekeeper' &&
+                    requestor.scorekeeperLeagueId === t.leagueId;
+                if (isAssignedScorekeeper) return true;
                 if (leaguePrivate && !isLeagueAdmin) return false;
                 if (tournPrivate && !isLeagueAdmin) return false;
                 return true;

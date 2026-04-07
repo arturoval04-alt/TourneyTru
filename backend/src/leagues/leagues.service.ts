@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLeagueDto, UpdateLeagueDto } from './dto/league.dto';
 
-type Requestor = { userId?: string; role?: string };
+type Requestor = { userId?: string; role?: string; scorekeeperLeagueId?: string | null };
 
 @Injectable()
 export class LeaguesService {
@@ -89,7 +89,9 @@ export class LeaguesService {
         if (league.isPrivate) {
             const isSystemAdmin = requestor?.role === 'admin';
             const isOwner = requestor?.userId === league.adminId;
-            if (!isSystemAdmin && !isOwner) {
+            const isAssignedScorekeeper = requestor?.role === 'scorekeeper' &&
+                requestor?.scorekeeperLeagueId === league.id;
+            if (!isSystemAdmin && !isOwner && !isAssignedScorekeeper) {
                 throw new ForbiddenException({
                     code: 'PRIVATE',
                     message: 'Esta liga es privada.',

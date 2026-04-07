@@ -45,7 +45,11 @@ export class LeaguesController {
     @Get(':id/torneos')
     @UseGuards(OptionalJwtAuthGuard)
     async getTournaments(@Param('id') id: string, @Req() req?: any) {
-        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
+        const requestor = req?.user ? {
+            userId: req.user.id,
+            role: req.user.role,
+            scorekeeperLeagueId: req.user.scorekeeperLeagueId ?? null,
+        } : undefined;
         const league = await this.leaguesService.findOne(id, requestor);
         return league.tournaments;
     }

@@ -29,6 +29,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
             lastName: user.lastName,
             phone: user.phone,
             profilePicture: user.profilePicture,
+            scorekeeperLeagueId: (user as any).scorekeeperLeagueId ?? null,
         };
     }
 }

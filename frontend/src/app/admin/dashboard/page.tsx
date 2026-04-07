@@ -2288,7 +2288,7 @@ export default function AdminDashboard() {
             {showGameModal && (
                 <CreateGameWizard
                     context={userRole === 'scorekeeper' ? 'scorekeeper' : 'admin'}
-                    tournamentId={userRole === 'scorekeeper' && userTournamentId ? userTournamentId : undefined}
+                    leagueId={userRole === 'scorekeeper' ? (currentUser?.scorekeeperLeagueId ?? undefined) : undefined}
                     onClose={() => setShowGameModal(false)}
                 />
             )}
