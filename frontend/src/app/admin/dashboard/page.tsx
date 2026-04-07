@@ -99,6 +99,7 @@ export default function AdminDashboard() {
     const [lineupGameId, setLineupGameId] = useState<string | null>(null);
     const [showTournamentModal, setShowTournamentModal] = useState(false);
     const [showTeamModal, setShowTeamModal] = useState(false);
+    const [editingTeam, setEditingTeam] = useState<any>(null);
     const [showPlayerModal, setShowPlayerModal] = useState(false);
     const [showUserModal, setShowUserModal] = useState(false);
     const [showAccessModal, setShowAccessModal] = useState(false);
@@ -265,6 +266,18 @@ export default function AdminDashboard() {
             const { data } = await api.get('/users/my-scorekeepers');
             setMyScorekeepers(data || []);
         } catch (err) { console.error("Error fetching scorekeepers:", err); }
+    };
+
+    const handleDeleteStaff = async (user: UserData) => {
+        const name = `${user.firstName} ${user.lastName}`;
+        const roleLabel = user.role === 'presi' ? 'Presidente' : 'ScoreKeeper';
+        if (!confirm(`¿Eliminar la cuenta de ${roleLabel} "${name}"?\nEsta acción no se puede deshacer.`)) return;
+        try {
+            await api.delete(`/users/staff/${user.id}`);
+            setMyScorekeepers(prev => prev.filter(u => u.id !== user.id));
+        } catch (err: any) {
+            alert(err?.response?.data?.message || 'Error al eliminar la cuenta');
+        }
     };
 
     useEffect(() => {
@@ -517,6 +530,36 @@ export default function AdminDashboard() {
         } finally { setSaving(false); }
     };
 
+    const openEditTeam = (team: any) => {
+        setEditingTeam(team);
+        setTeamForm({ name: team.name, manager: team.managerName || '', logoUrl: team.logoUrl || '', tournament_id: team.tournament?.id || '' });
+        setShowTeamModal(true);
+    };
+
+    const handleUpdateTeam = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingTeam) return;
+        setSaving(true);
+        try {
+            await api.patch(`/teams/${editingTeam.id}`, {
+                name: teamForm.name,
+                managerName: teamForm.manager || null,
+                logoUrl: teamForm.logoUrl || null,
+            });
+            alert('Equipo Actualizado');
+            setShowTeamModal(false);
+            setEditingTeam(null);
+            setTeamForm({ name: '', manager: '', logoUrl: '', tournament_id: '' });
+            if (selectedTournament) {
+                api.get('/teams', { params: { tournamentId: selectedTournament } })
+                    .then(({ data }) => setTeams(data || []))
+                    .catch(console.error);
+            }
+        } catch (err) {
+            alert('Error al actualizar equipo');
+        } finally { setSaving(false); }
+    };
+
     const handleCreatePlayer = async (e: React.FormEvent) => {
         e.preventDefault();
         setSaving(true);
@@ -527,6 +570,7 @@ export default function AdminDashboard() {
                 number: playerForm.number ? parseInt(playerForm.number) : null,
                 teamId: playerForm.team_id,
                 position: playerForm.position,
+                photoUrl: playerForm.photoUrl || null,
             });
             alert('Jugador Registrado Satisfactoriamente');
             setShowPlayerModal(false);
@@ -1267,7 +1311,7 @@ export default function AdminDashboard() {
                                                     <td className="px-6 py-4 text-right">
                                                         <button className="text-primary hover:underline font-bold text-xs mr-4" onClick={() => router.push(`/equipos/${team.id}`)}>Ver Perfil</button>
                                                         {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (
-                                                            <button className="text-muted-foreground hover:text-foreground font-bold text-xs">Editar</button>
+                                                            <button className="text-muted-foreground hover:text-foreground font-bold text-xs" onClick={() => openEditTeam(team)}>Editar</button>
                                                         )}
                                                     </td>
                                                 </tr>
@@ -1576,66 +1620,108 @@ export default function AdminDashboard() {
                         )}
 
                         {/* TAB: USUARIOS — CONTROL DE ACCESOS (admin) / MIS SCOREKEEPERS (organizer) */}
-                        {activeTab === 'usuarios' && (userRole === 'organizer' || userRole === 'presi') && (
-                            <section className="animate-fade-in-up">
-                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3">
-                                    <h2 className="text-xl font-black text-foreground flex items-center gap-2">
-                                        <span className="w-2 h-4 bg-primary rounded-full"></span> Mi Personal
-                                    </h2>
-                                    <button
-                                        onClick={() => setShowUserModal(true)}
-                                        className="px-5 py-2 bg-primary hover:bg-primary-light text-white font-bold rounded-lg transition shadow-md hover:shadow-primary/40 text-sm flex items-center gap-2 shrink-0"
-                                    >
-                                        + Nuevo Personal
-                                    </button>
-                                </div>
+                        {activeTab === 'usuarios' && (userRole === 'organizer' || userRole === 'presi') && (() => {
+                            const numTournaments = tournaments.length;
+                            const maxTeams = currentUser?.maxTeamsPerTournament ?? 0;
 
-                                {myScorekeepers.length === 0 ? (
-                                    <div className="bg-surface border border-muted/30 rounded-2xl p-12 text-center">
-                                        <p className="text-4xl mb-3">🔑</p>
-                                        <p className="text-muted-foreground mb-2 font-bold">No tienes personal agregado todavía.</p>
-                                        <p className="text-sm text-muted-foreground mb-6">Agrega presidentes de liga o scorekeepers para delegar responsabilidades.</p>
+                            // Cuotas según rol
+                            const maxPresis = userRole === 'organizer' ? numTournaments : 0;
+                            const maxSKOrganizer = userRole === 'organizer' ? Math.floor(maxTeams / 2) * numTournaments : 0;
+                            const maxSKPresi = userRole === 'presi' ? 3 * numTournaments : 0;
+                            const maxSK = userRole === 'organizer' ? maxSKOrganizer : maxSKPresi;
+
+                            const currentPresis = myScorekeepers.filter(u => u.role === 'presi').length;
+                            const currentSK = myScorekeepers.filter(u => u.role === 'scorekeeper').length;
+
+                            const QuotaBadge = ({ label, used, max, color }: { label: string; used: number; max: number; color: string }) => {
+                                const atLimit = max > 0 && used >= max;
+                                return (
+                                    <div className={`flex flex-col items-center px-4 py-3 rounded-xl border ${atLimit ? 'border-red-500/30 bg-red-500/5' : 'border-muted/20 bg-muted/5'}`}>
+                                        <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">{label}</span>
+                                        <span className={`text-lg font-black ${atLimit ? 'text-red-400' : color}`}>{used}<span className="text-muted-foreground font-normal text-sm">/{max === 0 ? '—' : max}</span></span>
+                                    </div>
+                                );
+                            };
+
+                            return (
+                                <section className="animate-fade-in-up">
+                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 gap-3">
+                                        <h2 className="text-xl font-black text-foreground flex items-center gap-2">
+                                            <span className="w-2 h-4 bg-primary rounded-full"></span> Mi Personal
+                                        </h2>
                                         <button
                                             onClick={() => setShowUserModal(true)}
-                                            className="px-5 py-2 bg-primary hover:bg-primary-light text-white font-bold rounded-lg transition text-sm"
+                                            className="px-5 py-2 bg-primary hover:bg-primary-light text-white font-bold rounded-lg transition shadow-md hover:shadow-primary/40 text-sm flex items-center gap-2 shrink-0"
                                         >
-                                            + Agregar Personal
+                                            + Nuevo Personal
                                         </button>
                                     </div>
-                                ) : (
-                                    <div className="space-y-3">
-                                        {myScorekeepers.map((u: UserData) => (
-                                            <div key={u.id} className="bg-surface border border-muted/30 rounded-2xl p-4 sm:p-5">
-                                                <div className="flex items-start justify-between gap-3">
-                                                    <div className="min-w-0">
-                                                        <div className="flex flex-wrap items-center gap-2 mb-1">
-                                                            <span className="font-black text-foreground">{u.firstName} {u.lastName}</span>
-                                                            <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${
-                                                                u.role === 'presi' ? 'bg-amber-500/10 text-amber-500' :
-                                                                u.role === 'streamer' ? 'bg-purple-500/10 text-purple-400' :
-                                                                'bg-primary/10 text-primary'
-                                                            }`}>
-                                                                {u.role === 'presi' ? 'Presidente' : u.role === 'streamer' ? 'Streamer' : 'ScoreKeeper'}
-                                                            </span>
-                                                        </div>
-                                                        <div className="text-xs text-muted-foreground">{u.email}</div>
-                                                        {/* Torneos asignados */}
-                                                        {u.assignedTournaments && u.assignedTournaments.length > 0 && (
-                                                            <div className="mt-1.5 flex flex-wrap gap-1">
-                                                                {u.assignedTournaments.map((t: any) => (
-                                                                    <span key={t.id} className="text-[10px] border border-muted/30 px-1.5 py-0.5 rounded-md bg-muted/10 text-muted-foreground">🏆 {t.name}</span>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    <div className="w-2 h-2 rounded-full bg-green-500 shrink-0 mt-1.5" title="Activo" />
-                                                </div>
-                                            </div>
-                                        ))}
+
+                                    {/* Contador de cuotas */}
+                                    <div className={`grid gap-3 mb-6 ${userRole === 'organizer' ? 'grid-cols-2' : 'grid-cols-1 max-w-xs'}`}>
+                                        {userRole === 'organizer' && (
+                                            <QuotaBadge label="Presidentes" used={currentPresis} max={maxPresis} color="text-amber-400" />
+                                        )}
+                                        <QuotaBadge label="Scorekeepers" used={currentSK} max={maxSK} color="text-primary" />
                                     </div>
-                                )}
-                            </section>
-                        )}
+                                    {numTournaments === 0 && (
+                                        <p className="text-xs text-muted-foreground mb-4">⚠️ Crea un torneo primero para calcular cuántas cuentas puedes crear.</p>
+                                    )}
+
+                                    {myScorekeepers.length === 0 ? (
+                                        <div className="bg-surface border border-muted/30 rounded-2xl p-12 text-center">
+                                            <p className="text-4xl mb-3">🔑</p>
+                                            <p className="text-muted-foreground mb-2 font-bold">No tienes personal agregado todavía.</p>
+                                            <p className="text-sm text-muted-foreground mb-6">Agrega presidentes de liga o scorekeepers para delegar responsabilidades.</p>
+                                            <button onClick={() => setShowUserModal(true)} className="px-5 py-2 bg-primary hover:bg-primary-light text-white font-bold rounded-lg transition text-sm">
+                                                + Agregar Personal
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {myScorekeepers.map((u: UserData) => (
+                                                <div key={u.id} className="bg-surface border border-muted/30 rounded-2xl p-4 sm:p-5">
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                                                                <span className="font-black text-foreground">{u.firstName} {u.lastName}</span>
+                                                                <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${
+                                                                    u.role === 'presi' ? 'bg-amber-500/10 text-amber-500' :
+                                                                    u.role === 'streamer' ? 'bg-purple-500/10 text-purple-400' :
+                                                                    'bg-primary/10 text-primary'
+                                                                }`}>
+                                                                    {u.role === 'presi' ? 'Presidente' : u.role === 'streamer' ? 'Streamer' : 'ScoreKeeper'}
+                                                                </span>
+                                                            </div>
+                                                            <div className="text-xs text-muted-foreground">{u.email}</div>
+                                                            {u.assignedTournaments && u.assignedTournaments.length > 0 && (
+                                                                <div className="mt-1.5 flex flex-wrap gap-1">
+                                                                    {u.assignedTournaments.map((t: any) => (
+                                                                        <span key={t.id} className="text-[10px] border border-muted/30 px-1.5 py-0.5 rounded-md bg-muted/10 text-muted-foreground">🏆 {t.name}</span>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex items-center gap-3 shrink-0">
+                                                            <div className="w-2 h-2 rounded-full bg-green-500" title="Activo" />
+                                                            {(userRole === 'organizer' || (userRole === 'presi' && u.role === 'scorekeeper')) && (
+                                                                <button
+                                                                    onClick={() => handleDeleteStaff(u)}
+                                                                    className="text-red-500/50 hover:text-red-500 text-xs font-bold transition-colors"
+                                                                    title="Eliminar cuenta"
+                                                                >
+                                                                    Eliminar
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </section>
+                            );
+                        })()}
 
                         {/* TAB: MI PLAN (organizer) */}
                         {activeTab === 'plan' && userRole === 'organizer' && (() => {
@@ -2171,25 +2257,27 @@ export default function AdminDashboard() {
             {showTeamModal && (
                 <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
                     <div className="bg-surface border border-muted/30 p-5 sm:p-8 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl relative animate-fade-in-up">
-                        <button onClick={() => setShowTeamModal(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
+                        <button onClick={() => { setShowTeamModal(false); setEditingTeam(null); setTeamForm({ name: '', manager: '', logoUrl: '', tournament_id: '' }); }} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
                         <h2 className="text-2xl font-black text-foreground mb-6 uppercase tracking-tight pb-4 border-b border-muted/20">
-                            Alta de Equipo
+                            {editingTeam ? 'Editar Equipo' : 'Alta de Equipo'}
                         </h2>
-                        <form onSubmit={handleCreateTeam} className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Torneo Destino</label>
-                                <select
-                                    required
-                                    value={teamForm.tournament_id}
-                                    onChange={e => setTeamForm({ ...teamForm, tournament_id: e.target.value })}
-                                    className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition"
-                                >
-                                    <option value="">-- Seleccionar Torneo --</option>
-                                    {tournaments.map((t: TournamentData) => <option key={t.id} value={t.id}>{t.name} ({t.season})</option>)}
-                                </select>
-                            </div>
+                        <form onSubmit={editingTeam ? handleUpdateTeam : handleCreateTeam} className="space-y-4">
+                            {!editingTeam && (
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Torneo Destino</label>
+                                    <select
+                                        required
+                                        value={teamForm.tournament_id}
+                                        onChange={e => setTeamForm({ ...teamForm, tournament_id: e.target.value })}
+                                        className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition"
+                                    >
+                                        <option value="">-- Seleccionar Torneo --</option>
+                                        {tournaments.map((t: TournamentData) => <option key={t.id} value={t.id}>{t.name} ({t.season})</option>)}
+                                    </select>
+                                </div>
+                            )}
                             <div>
                                 <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Nombre del Equipo</label>
                                 <input required type="text" value={teamForm.name} onChange={e => setTeamForm({ ...teamForm, name: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Diablos Rojos" />
@@ -2210,7 +2298,7 @@ export default function AdminDashboard() {
                             </div>
 
                             <button type="submit" disabled={saving} className={`w-full py-3 mt-4 font-bold rounded-xl transition shadow-lg ${saving ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-primary/20 cursor-pointer active:scale-95'}`}>
-                                {saving ? 'Verificando...' : 'Crear Equipo'}
+                                {saving ? 'Guardando...' : editingTeam ? 'Guardar Cambios' : 'Crear Equipo'}
                             </button>
                         </form>
                     </div>

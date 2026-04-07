@@ -82,6 +82,13 @@ export class UsersController {
         return this.usersService.updateProfile(req.user.id, updateDto);
     }
 
+    // Organizer / Presi: eliminar un cuenta de su personal (scorekeeper o presi)
+    @Delete('staff/:id')
+    @Roles('organizer', 'admin', 'presi')
+    async deleteStaff(@Param('id') id: string, @Request() req: any) {
+        return this.usersService.deleteStaff(req.user.id, id);
+    }
+
     // Admin: eliminar una cuenta de usuario
     @Delete(':id')
     @Roles('admin')

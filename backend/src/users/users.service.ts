@@ -371,6 +371,45 @@ export class UsersService {
     }
 
     // Eliminar una cuenta de usuario (admin only) — cascade completo
+    async deleteStaff(requesterId: string, staffId: string) {
+        const requester = await this.prisma.user.findUnique({ where: { id: requesterId } }) as any;
+        if (!requester) throw new NotFoundException('Solicitante no encontrado');
+
+        const staff = await this.prisma.user.findUnique({ where: { id: staffId } }) as any;
+        if (!staff) throw new NotFoundException('Usuario no encontrado');
+
+        const allowedRoles = ['scorekeeper', 'presi'];
+        if (!allowedRoles.includes(staff.roleId)) {
+            throw new ForbiddenException('Solo puedes eliminar cuentas de scorekeeper o presidente');
+        }
+
+        // Organizer can delete staff from their own leagues
+        if (requester.roleId === 'organizer') {
+            const requesterLeagues = await this.prisma.league.findMany({
+                where: { adminId: requesterId },
+                select: { id: true },
+            });
+            const leagueIds = requesterLeagues.map((l: any) => l.id);
+            if (!leagueIds.includes(staff.scorekeeperLeagueId)) {
+                throw new ForbiddenException('Este usuario no pertenece a tu liga');
+            }
+        } else if (requester.roleId === 'presi') {
+            // Presi can only delete scorekeepers from their same league
+            if (staff.roleId !== 'scorekeeper') {
+                throw new ForbiddenException('Un presidente solo puede eliminar cuentas de scorekeeper');
+            }
+            if (requester.scorekeeperLeagueId !== staff.scorekeeperLeagueId) {
+                throw new ForbiddenException('Este scorekeeper no pertenece a tu liga');
+            }
+        } else {
+            throw new ForbiddenException('No tienes permisos para eliminar personal');
+        }
+
+        await this.prisma.tournamentOrganizer.deleteMany({ where: { userId: staffId } });
+        await this.prisma.user.delete({ where: { id: staffId } });
+        return { message: 'Cuenta eliminada correctamente.' };
+    }
+
     async deleteUser(userId: string) {
         const user = await this.prisma.user.findUnique({ where: { id: userId } });
         if (!user) throw new NotFoundException('Usuario no encontrado');
