@@ -1369,8 +1369,8 @@ export default function AdminDashboard() {
                                         <span className="w-2 h-4 bg-primary rounded-full"></span> Calendario & Partidos
                                     </h2>
                                     <div className="flex gap-2">
-                                        {userRole === 'admin' && (
-                                            <button className="hidden sm:block px-4 py-2 bg-surface hover:bg-muted/10 border border-muted/30 text-foreground font-bold rounded-lg transition text-sm">
+                                        {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi' || userRole === 'scorekeeper') && (
+                                            <button onClick={() => router.push('/manual-stats/new')} className="hidden sm:block px-4 py-2 bg-surface hover:bg-muted/10 border border-muted/30 text-foreground font-bold rounded-lg transition text-sm">
                                                 Añadir Estadísticas Manuales
                                             </button>
                                         )}
@@ -1514,6 +1514,12 @@ export default function AdminDashboard() {
                                                                     className="px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-lg transition text-xs font-bold"
                                                                 >
                                                                     Lanzar Scorekeeper
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => router.push(`/manual-stats/${game.id}`)}
+                                                                    className="px-3 py-1.5 bg-emerald-900/40 border border-emerald-700 text-emerald-300 hover:bg-emerald-800/60 transition text-xs font-bold rounded-lg"
+                                                                >
+                                                                    📋 Stats Manuales
                                                                 </button>
                                                             </>
                                                         )}

@@ -118,9 +118,62 @@ export class LeaguesService {
     }
 
     async remove(id: string, requestor?: Requestor) {
-        await this.findOne(id, requestor);
-        return this.prisma.league.delete({
-            where: { id },
+        const league = await this.prisma.league.findUnique({ where: { id } }) as any;
+        if (!league) throw new NotFoundException(`Liga no encontrada`);
+
+        const isSystemAdmin = requestor?.role === 'admin';
+        const isOwner = requestor?.userId === league.adminId;
+        if (!isSystemAdmin && !isOwner) {
+            throw new ForbiddenException('No tienes permiso para eliminar esta liga.');
+        }
+
+        await this.cascadeDeleteLeague(id);
+        return { message: 'Liga eliminada correctamente.' };
+    }
+
+    // Cascade delete manual — SQL Server no propaga todos los FK automáticamente
+    async cascadeDeleteLeague(leagueId: string) {
+        const tournaments = await this.prisma.tournament.findMany({
+            where: { leagueId },
+            select: { id: true },
         });
+        const tournamentIds = tournaments.map(t => t.id);
+
+        if (tournamentIds.length > 0) {
+            const teams = await this.prisma.team.findMany({
+                where: { tournamentId: { in: tournamentIds } },
+                select: { id: true },
+            });
+            const teamIds = teams.map(t => t.id);
+
+            // 1. Limpiar FKs de jugadores en juegos (onDelete: NoAction en el schema)
+            await this.prisma.game.updateMany({
+                where: { tournamentId: { in: tournamentIds } },
+                data: {
+                    mvpBatter1Id: null,
+                    mvpBatter2Id: null,
+                    winningPitcherId: null,
+                    losingPitcherId: null,
+                    savePitcherId: null,
+                },
+            });
+
+            if (teamIds.length > 0) {
+                // 2. PlayerStats y RosterEntries referencian Team con NoAction
+                await this.prisma.playerStat.deleteMany({ where: { teamId: { in: teamIds } } });
+                await this.prisma.rosterEntry.deleteMany({ where: { teamId: { in: teamIds } } });
+            }
+
+            // 3. TournamentOrganizer no tiene Cascade desde Tournament
+            await this.prisma.tournamentOrganizer.deleteMany({
+                where: { tournamentId: { in: tournamentIds } },
+            });
+
+            // 4. Juegos — cascadea automáticamente: Lineup, LineupChange, Play, GameUmpire
+            await this.prisma.game.deleteMany({ where: { tournamentId: { in: tournamentIds } } });
+        }
+
+        // 5. Liga — cascadea: Tournament → Field, Team → Player, TournamentNews, Standing, Umpire, Subscription
+        await this.prisma.league.delete({ where: { id: leagueId } });
     }
 }

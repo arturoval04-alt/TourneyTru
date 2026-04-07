@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsUUID, IsDateString, MaxLength, IsIn, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsDateString, MaxLength, IsIn, IsBoolean, IsInt, Min } from 'class-validator';
 
 export class CreateTournamentDto {
     @IsString()
@@ -110,4 +110,14 @@ export class UpdateTournamentDto {
     @IsOptional()
     @IsBoolean()
     isPrivate?: boolean;
+
+    @IsOptional()
+    @IsInt()
+    @Min(0)
+    minAB?: number;
+
+    @IsOptional()
+    @IsInt()
+    @Min(0)
+    minIPOuts?: number;
 }

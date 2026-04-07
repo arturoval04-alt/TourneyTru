@@ -56,6 +56,11 @@ type BaseState = {
     awayBatterIndex: number;
     homeTeamName: string;
     awayTeamName: string;
+    homeTeamLogoUrl: string | null;
+    awayTeamLogoUrl: string | null;
+    homeTeamShort: string;
+    awayTeamShort: string;
+    tournamentName: string;
 };
 
 export interface GameState extends BaseState {
@@ -327,6 +332,11 @@ export const useGameStore = create<GameState>()(
             awayTeamId: null,
             homeTeamName: 'HOME',
             awayTeamName: 'AWAY',
+            homeTeamLogoUrl: null,
+            awayTeamLogoUrl: null,
+            homeTeamShort: 'HOM',
+            awayTeamShort: 'AWA',
+            tournamentName: '',
             playbackId: null,
             plays: [],
             playLogs: [{ text: "Inicio del partido", inningString: "▲ 1" }],
@@ -362,6 +372,11 @@ export const useGameStore = create<GameState>()(
                     awayTeamId: null,
                     homeTeamName: 'HOME',
                     awayTeamName: 'AWAY',
+                    homeTeamLogoUrl: null,
+                    awayTeamLogoUrl: null,
+                    homeTeamShort: 'HOM',
+                    awayTeamShort: 'AWA',
+                    tournamentName: '',
                     playbackId: null,
                     inning: 1,
                     half: 'top',
@@ -401,6 +416,9 @@ export const useGameStore = create<GameState>()(
                     awayLineup: [...state.awayLineup], homeBatterIndex: state.homeBatterIndex,
                     awayBatterIndex: state.awayBatterIndex,
                     homeTeamName: state.homeTeamName, awayTeamName: state.awayTeamName,
+                    homeTeamLogoUrl: state.homeTeamLogoUrl, awayTeamLogoUrl: state.awayTeamLogoUrl,
+                    homeTeamShort: state.homeTeamShort, awayTeamShort: state.awayTeamShort,
+                    tournamentName: state.tournamentName,
                 };
                 // Resetear el tracking de IDs de la nueva acción que está por comenzar
                 currentActionPlayIds = [];
@@ -471,6 +489,11 @@ export const useGameStore = create<GameState>()(
                             awayTeamId: gameData.away_team_id,
                             homeTeamName: gameData.home_team_name || 'HOME',
                             awayTeamName: gameData.away_team_name || 'AWAY',
+                            homeTeamLogoUrl: gameData.home_team_logo || null,
+                            awayTeamLogoUrl: gameData.away_team_logo || null,
+                            homeTeamShort: gameData.home_team_short || 'HOM',
+                            awayTeamShort: gameData.away_team_short || 'AWA',
+                            tournamentName: gameData.tournament_name || '',
                             playbackId: gameData.playback_id,
                             plays: gameData.plays || []
                         });
@@ -509,7 +532,7 @@ export const useGameStore = create<GameState>()(
                                 mvpBatter2: gameData.mvpBatter2,
                                 status: gameData.status,
                                 playLogs: plays.map((p: any) => {
-                                    const logText = (p.result || '').includes('|') ? p.result.split('|')[1] : p.result;
+                                    const logText = p.description || ((p.result || '').includes('|') ? p.result.split('|')[1] : p.result);
                                     return { text: `Inning ${p.inning}: ${logText}` };
                                 }).reverse()
                             });
@@ -841,20 +864,21 @@ export const useGameStore = create<GameState>()(
                 const totalOuts = state.outs + 1;
                 const activeBatterId = state.currentBatterId;
                 
-                // 1. Emit the play BEFORE resetting the state (important for the 3rd out context)
+                // 1. Update local state temporarly so `nextState.outs` inside emitPlayToBackend reads the updated value
+                set({ outs: totalOuts, balls: 0, strikes: 0 });
+                get().cycleBatter();
+                
+                // 2. Emit the play (will broadcast fullState with outs = totalOuts)
                 if (emitPlay) {
                     emitPlayToBackend(get, customLogText || "OUT", 0, 1, activeBatterId, state.inning, state.half, state.outs);
                 }
 
-                // 2. Update local state
+                // 3. Reset inning if 3 outs (this creates a new log divider, allowing the syncState broadcast to reach OBS properly)
                 if (totalOuts >= 3) {
-                    get().cycleBatter(); // advance past the batter who made the 3rd out
                     get().nextHalfInning();
-                    // Force a broadcast of the newly wiped clean inning so fans don't get stuck on "2 outs pre-strikeout"
+                    // Force a broadcast of the newly wiped clean inning so fans don't get stuck on "3 outs"
                     syncStateToBackend(get);
                 } else {
-                    set({ outs: totalOuts, balls: 0, strikes: 0 });
-                    get().cycleBatter();
                     // Just 1 or 2 outs: sync so fans see the new count and batter
                     syncStateToBackend(get);
                 }

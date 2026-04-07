@@ -298,6 +298,20 @@ export default function CambiosModal({ isOpen, onClose }: Props) {
                 await api.post(`/games/${gameId}/cambios/posicion`, { teamId, swaps: posSwaps });
             } else if (changeType === 'REINGRESO') {
                 await api.post(`/games/${gameId}/cambios/reingreso`, { teamId, starterPlayerId: reingresoPId });
+
+                // Si el sustituto que sale estaba en base, reemplazarlo con el titular que reingresa
+                const reingresoStarter = elegibles?.puedenReingresar.find(p => p.playerId === reingresoPId);
+                const sustitutoId = reingresoStarter?.sustitutoActual?.playerId;
+                if (reingresoStarter && sustitutoId) {
+                    const { baseIds, bases } = useGameStore.getState();
+                    const newBaseIds = { ...baseIds };
+                    const newBases = { ...bases };
+                    const inName = `${reingresoStarter.firstName} ${reingresoStarter.lastName}`;
+                    if (newBaseIds.first === sustitutoId)  { newBaseIds.first  = reingresoPId; newBases.first  = inName; }
+                    if (newBaseIds.second === sustitutoId) { newBaseIds.second = reingresoPId; newBases.second = inName; }
+                    if (newBaseIds.third === sustitutoId)  { newBaseIds.third  = reingresoPId; newBases.third  = inName; }
+                    useGameStore.setState({ baseIds: newBaseIds, bases: newBases });
+                }
             }
             await fetchGameConfig();
             syncStateToBackend();

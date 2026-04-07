@@ -6,13 +6,21 @@ export class StatsController {
     constructor(private readonly statsService: StatsService) {}
 
     @Get('torneos/:id/stats/batting')
-    getBattingLeaderboard(@Param('id') id: string) {
-        return this.statsService.getBattingLeaderboard(id);
+    async getBattingLeaderboard(@Param('id') id: string) {
+        const [rows, config] = await Promise.all([
+            this.statsService.getBattingLeaderboard(id),
+            this.statsService.getStatsConfig(id),
+        ]);
+        return { rows, minAB: config.minAB, minIPOuts: config.minIPOuts };
     }
 
     @Get('torneos/:id/stats/pitching')
-    getPitchingLeaderboard(@Param('id') id: string) {
-        return this.statsService.getPitchingLeaderboard(id);
+    async getPitchingLeaderboard(@Param('id') id: string) {
+        const [rows, config] = await Promise.all([
+            this.statsService.getPitchingLeaderboard(id),
+            this.statsService.getStatsConfig(id),
+        ]);
+        return { rows, minAB: config.minAB, minIPOuts: config.minIPOuts };
     }
 
     @Get('players/:id/stats')

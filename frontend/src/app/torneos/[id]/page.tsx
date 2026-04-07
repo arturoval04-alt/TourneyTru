@@ -339,18 +339,23 @@ export default function TournamentProfilePage() {
         playerId: string; firstName: string; lastName: string; teamName: string; photoUrl?: string;
         gp: number; ab: number; h: number; h2: number; h3: number; hr: number; r: number; rbi: number;
         bb: number; hbp: number; so: number; sb: number; roe: number; avg: string;
-        obp: string; slg: string; ops: string; pa: number;
+        obp: string; slg: string; ops: string; pa: number; qualified: boolean;
     }
     interface PitchingRow {
         playerId: string; firstName: string; lastName: string; teamName: string; photoUrl?: string;
         gp: number; ip: string; ipOuts: number; h: number; r: number; er: number; bb: number; so: number;
         w: number; l: number; sv: number; qs: number; cg: number; sho: number; wp: number; bk: number;
-        era: string; whip: string; k9: string; bb9: string; baa: string;
+        era: string; whip: string; k9: string; bb9: string; baa: string; qualified: boolean;
     }
     const [battingStats, setBattingStats] = useState<BattingRow[] | null>(null);
     const [pitchingStats, setPitchingStats] = useState<PitchingRow[] | null>(null);
     const [statsLoaded, setStatsLoaded] = useState(false);
     const [statsView, setStatsView] = useState<'batting' | 'pitching'>('batting');
+    const [statsMinAB, setStatsMinAB] = useState(0);
+    const [statsMinIPOuts, setStatsMinIPOuts] = useState(0);
+    const [editingMinAB, setEditingMinAB] = useState('');
+    const [editingMinIP, setEditingMinIP] = useState('');
+    const [savingStatsConfig, setSavingStatsConfig] = useState(false);
 
     useEffect(() => {
         const fetchTournamentStats = async () => {
@@ -360,8 +365,14 @@ export default function TournamentProfilePage() {
                         api.get(`/torneos/${tournamentId}/stats/batting`),
                         api.get(`/torneos/${tournamentId}/stats/pitching`),
                     ]);
-                    setBattingStats(battingRes.data || []);
-                    setPitchingStats(pitchingRes.data || []);
+                    setBattingStats(battingRes.data?.rows || []);
+                    setPitchingStats(pitchingRes.data?.rows || []);
+                    const minAB = battingRes.data?.minAB ?? 0;
+                    const minIPOuts = battingRes.data?.minIPOuts ?? 0;
+                    setStatsMinAB(minAB);
+                    setStatsMinIPOuts(minIPOuts);
+                    setEditingMinAB(String(minAB));
+                    setEditingMinIP(String(Math.floor(minIPOuts / 3)));
                     setStatsLoaded(true);
                 } catch (err: any) {
                     console.error("Error fetching tournament stats:", err);
@@ -371,6 +382,22 @@ export default function TournamentProfilePage() {
         };
         fetchTournamentStats();
     }, [activeTab, statsLoaded, tournamentId]);
+
+    const handleSaveStatsConfig = async () => {
+        setSavingStatsConfig(true);
+        try {
+            const minAB = parseInt(editingMinAB) || 0;
+            const minIPOuts = (parseInt(editingMinIP) || 0) * 3;
+            await api.patch(`/torneos/${tournamentId}`, { minAB, minIPOuts });
+            setStatsMinAB(minAB);
+            setStatsMinIPOuts(minIPOuts);
+            setStatsLoaded(false); // reload stats with new filters
+        } catch (e) {
+            console.error('Error saving stats config', e);
+        } finally {
+            setSavingStatsConfig(false);
+        }
+    };
 
     useEffect(() => {
         const user = getUser();
@@ -1473,6 +1500,41 @@ export default function TournamentProfilePage() {
 
                         {activeTab === 'estadisticas' && (
                             <div className="space-y-8 animate-fade-in-up">
+                                {/* Stats config for organizers/presi/admin */}
+                                {canEdit && (
+                                    <div className="bg-surface border border-muted/30 rounded-2xl p-5 shadow-sm">
+                                        <h4 className="text-xs font-black text-muted-foreground uppercase tracking-widest mb-4">Mínimos para Lideratos</h4>
+                                        <div className="flex flex-wrap gap-4 items-end">
+                                            <div>
+                                                <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Mín. AB (bateo)</label>
+                                                <input
+                                                    type="number" min="0" value={editingMinAB}
+                                                    onChange={e => setEditingMinAB(e.target.value)}
+                                                    className="w-24 px-3 py-2 bg-background border border-muted/30 rounded-lg text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                                                    placeholder="0"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Mín. IP (picheo)</label>
+                                                <input
+                                                    type="number" min="0" value={editingMinIP}
+                                                    onChange={e => setEditingMinIP(e.target.value)}
+                                                    className="w-24 px-3 py-2 bg-background border border-muted/30 rounded-lg text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                                                    placeholder="0"
+                                                />
+                                            </div>
+                                            <button
+                                                onClick={handleSaveStatsConfig}
+                                                disabled={savingStatsConfig}
+                                                className="px-5 py-2 bg-primary rounded-xl text-xs font-black text-white hover:bg-primary-light transition-all disabled:opacity-50"
+                                            >
+                                                {savingStatsConfig ? 'Guardando...' : 'Guardar'}
+                                            </button>
+                                            <p className="text-[10px] text-muted-foreground self-end pb-2">SV (salvamentos) no requieren mínimo de IP.</p>
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div className="flex justify-center">
                                     <div className="bg-surface border border-muted/30 p-1.5 rounded-2xl flex gap-1 shadow-sm">
                                         <button onClick={() => setStatsView('batting')} className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${statsView === 'batting' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted/5'}`}>Bateo</button>
@@ -1483,7 +1545,12 @@ export default function TournamentProfilePage() {
                                 {statsView === 'batting' ? (
                                     <div className="space-y-8">
                                         <div className="space-y-4">
-                                            <h3 className="text-xl font-black text-foreground flex items-center gap-2"><Trophy className="w-5 h-5 text-amber-500" /> Líderes de Bateo</h3>
+                                            <div className="flex items-center justify-between flex-wrap gap-2">
+                                                <h3 className="text-xl font-black text-foreground flex items-center gap-2"><Trophy className="w-5 h-5 text-amber-500" /> Líderes de Bateo</h3>
+                                                {statsMinAB > 0 && (
+                                                    <span className="text-[10px] font-bold text-muted-foreground bg-muted/10 border border-muted/20 px-3 py-1 rounded-full uppercase tracking-wider">Mín. {statsMinAB} AB calificados</span>
+                                                )}
+                                            </div>
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                                 {[
                                                     { label: 'AVG', key: 'avg', sort: (a: any, b: any) => parseFloat(b.avg) - parseFloat(a.avg) },
@@ -1491,7 +1558,8 @@ export default function TournamentProfilePage() {
                                                     { label: 'HR', key: 'hr', sort: (a: any, b: any) => b.hr - a.hr },
                                                     { label: 'RBI', key: 'rbi', sort: (a: any, b: any) => b.rbi - a.rbi }
                                                 ].map(cat => {
-                                                    const top4 = [...(battingStats || [])].sort(cat.sort).slice(0, 4);
+                                                    const qualified = (battingStats || []).filter(p => p.qualified);
+                                                    const top4 = [...qualified].sort(cat.sort).slice(0, 4);
                                                     return (
                                                         <div key={cat.label} className="bg-surface border border-muted/30 rounded-2xl p-4 shadow-sm hover:border-primary/30 transition-all">
                                                             <h4 className="text-[10px] font-black text-primary uppercase tracking-widest mb-3 pb-2 border-b border-muted/10">{cat.label}</h4>
@@ -1519,8 +1587,9 @@ export default function TournamentProfilePage() {
                                         </div>
 
                                         <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm">
-                                            <div className="p-6 border-b border-muted/20">
+                                            <div className="p-6 border-b border-muted/20 flex items-center justify-between flex-wrap gap-2">
                                                 <h3 className="text-lg font-bold text-foreground">Estadísticas Detalladas de Bateo</h3>
+                                                {statsMinAB > 0 && <span className="text-[10px] text-muted-foreground">* No calificado (menos de {statsMinAB} AB)</span>}
                                             </div>
                                             <div className="overflow-x-auto">
                                                 <table className="w-full text-left">
@@ -1535,13 +1604,13 @@ export default function TournamentProfilePage() {
                                                     </thead>
                                                     <tbody className="divide-y divide-muted/10">
                                                         {battingStats?.map((p, i) => (
-                                                            <tr key={`${p.playerId}-${i}`} className="hover:bg-muted/5 transition-colors">
+                                                            <tr key={`${p.playerId}-${i}`} className={`hover:bg-muted/5 transition-colors ${!p.qualified && statsMinAB > 0 ? 'opacity-50' : ''}`}>
                                                                 <td className="px-4 py-3">
                                                                     <div className="flex items-center gap-3">
                                                                         <div className="w-8 h-8 rounded-full overflow-hidden bg-muted/20 border border-muted/30 shrink-0">
                                                                             <img src={p.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="" className="w-full object-cover h-full" />
                                                                         </div>
-                                                                        <span className="text-sm font-bold text-foreground whitespace-nowrap">{p.firstName} {p.lastName}</span>
+                                                                        <span className="text-sm font-bold text-foreground whitespace-nowrap">{p.firstName} {p.lastName}{!p.qualified && statsMinAB > 0 ? ' *' : ''}</span>
                                                                     </div>
                                                                 </td>
                                                                 <td className="px-3 py-3 text-[11px] text-muted-foreground text-center font-medium">{p.teamName}</td>
@@ -1573,17 +1642,25 @@ export default function TournamentProfilePage() {
                                 ) : (
                                     <div className="space-y-8">
                                         <div className="space-y-4">
-                                            <h3 className="text-xl font-black text-foreground flex items-center gap-2"><Trophy className="w-5 h-5 text-amber-500" />Líderes de Pitcheo</h3>
+                                            <div className="flex items-center justify-between flex-wrap gap-2">
+                                                <h3 className="text-xl font-black text-foreground flex items-center gap-2"><Trophy className="w-5 h-5 text-amber-500" />Líderes de Pitcheo</h3>
+                                                {statsMinIPOuts > 0 && (
+                                                    <span className="text-[10px] font-bold text-muted-foreground bg-muted/10 border border-muted/20 px-3 py-1 rounded-full uppercase tracking-wider">Mín. {Math.floor(statsMinIPOuts / 3)} IP calificados · SV sin mínimo</span>
+                                                )}
+                                            </div>
                                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                                 {[
-                                                    { label: 'ERA', key: 'era', sort: (a: any, b: any) => parseFloat(a.era) - parseFloat(b.era) },
-                                                    { label: 'WHIP', key: 'whip', sort: (a: any, b: any) => parseFloat(a.whip) - parseFloat(b.whip) },
-                                                    { label: 'K (PONCHES)', key: 'so', sort: (a: any, b: any) => b.so - a.so },
-                                                    { label: 'W (VICTORIAS)', key: 'w', sort: (a: any, b: any) => b.w - a.w },
-                                                    { label: 'SV (SALVADOS)', key: 'sv', sort: (a: any, b: any) => (b.sv || 0) - (a.sv || 0) },
-                                                    { label: 'QS (ARRANQUES)', key: 'qs', sort: (a: any, b: any) => (b.qs || 0) - (a.qs || 0) },
+                                                    { label: 'ERA', key: 'era', sort: (a: any, b: any) => parseFloat(a.era) - parseFloat(b.era), requiresIP: true },
+                                                    { label: 'WHIP', key: 'whip', sort: (a: any, b: any) => parseFloat(a.whip) - parseFloat(b.whip), requiresIP: true },
+                                                    { label: 'K (PONCHES)', key: 'so', sort: (a: any, b: any) => b.so - a.so, requiresIP: true },
+                                                    { label: 'W (VICTORIAS)', key: 'w', sort: (a: any, b: any) => b.w - a.w, requiresIP: true },
+                                                    { label: 'SV (SALVADOS)', key: 'sv', sort: (a: any, b: any) => (b.sv || 0) - (a.sv || 0), requiresIP: false },
+                                                    { label: 'QS (ARRANQUES)', key: 'qs', sort: (a: any, b: any) => (b.qs || 0) - (a.qs || 0), requiresIP: true },
                                                 ].map(cat => {
-                                                    const top4 = [...(pitchingStats || [])].sort(cat.sort).slice(0, 4);
+                                                    const pool = cat.requiresIP
+                                                        ? (pitchingStats || []).filter(p => p.qualified)
+                                                        : (pitchingStats || []);
+                                                    const top4 = [...pool].sort(cat.sort).slice(0, 4);
                                                     return (
                                                         <div key={cat.label} className="bg-surface border border-muted/30 rounded-2xl p-4 shadow-sm">
                                                             <h4 className="text-[10px] font-black text-primary uppercase tracking-widest mb-3 pb-2 border-b border-muted/10">{cat.label}</h4>
@@ -1611,8 +1688,9 @@ export default function TournamentProfilePage() {
                                         </div>
 
                                         <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm mt-8">
-                                            <div className="p-6 border-b border-muted/20">
+                                            <div className="p-6 border-b border-muted/20 flex items-center justify-between flex-wrap gap-2">
                                                 <h3 className="text-lg font-bold text-foreground">Estadísticas Detalladas de Pitcheo</h3>
+                                                {statsMinIPOuts > 0 && <span className="text-[10px] text-muted-foreground">* No calificado (menos de {Math.floor(statsMinIPOuts / 3)} IP)</span>}
                                             </div>
                                             <div className="overflow-x-auto">
                                                 <table className="w-full text-left">
@@ -1626,13 +1704,13 @@ export default function TournamentProfilePage() {
                                                     </thead>
                                                     <tbody className="divide-y divide-muted/10">
                                                         {pitchingStats?.map((p, i) => (
-                                                            <tr key={`${p.playerId}-${i}`} className="hover:bg-muted/5 transition-colors">
+                                                            <tr key={`${p.playerId}-${i}`} className={`hover:bg-muted/5 transition-colors ${!p.qualified && statsMinIPOuts > 0 ? 'opacity-50' : ''}`}>
                                                                 <td className="px-4 py-3">
                                                                     <div className="flex items-center gap-3">
                                                                         <div className="w-8 h-8 rounded-full overflow-hidden bg-muted/20 border border-muted/30 shrink-0">
                                                                             <img src={p.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="" className="w-full object-cover h-full" />
                                                                         </div>
-                                                                        <span className="text-sm font-bold text-foreground whitespace-nowrap">{p.firstName} {p.lastName}</span>
+                                                                        <span className="text-sm font-bold text-foreground whitespace-nowrap">{p.firstName} {p.lastName}{!p.qualified && statsMinIPOuts > 0 ? ' *' : ''}</span>
                                                                     </div>
                                                                 </td>
                                                                 <td className="px-3 py-3 text-[11px] text-muted-foreground text-center font-medium">{p.teamName}</td>

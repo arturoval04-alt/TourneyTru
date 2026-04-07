@@ -98,6 +98,8 @@ model Tournament {
   locationCity    String?               @map("location_city")
   locationState   String?               @map("location_state")
   locationCountry String?               @map("location_country")
+  minAB           Int                   @default(0) @map("min_ab")
+  minIPOuts       Int                   @default(0) @map("min_ip_outs")
   createdAt       DateTime              @default(now()) @map("created_at")
   fields        Field[]
   games         Game[]

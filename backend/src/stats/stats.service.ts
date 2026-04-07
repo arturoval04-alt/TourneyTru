@@ -9,7 +9,17 @@ const NON_PA_RESULTS = ['SB', 'CS', 'ADV', 'WP_RUN', 'PB_RUN', 'BK_RUN', 'RUN_SC
 export class StatsService {
     constructor(private prisma: PrismaService) {}
 
+    async getStatsConfig(tournamentId: string): Promise<{ minAB: number; minIPOuts: number }> {
+        const t = await (this.prisma.tournament.findUnique as any)({
+            where: { id: tournamentId },
+            select: { minAB: true, minIPOuts: true },
+        });
+        return { minAB: t?.minAB ?? 0, minIPOuts: t?.minIPOuts ?? 0 };
+    }
+
     async getBattingLeaderboard(tournamentId: string) {
+        const { minAB } = await this.getStatsConfig(tournamentId);
+
         const plays = await this.prisma.play.findMany({
             where: {
                 game: { tournamentId, status: 'finished' },
@@ -95,12 +105,15 @@ export class StatsService {
                     ...s,
                     gp, pa, tb,
                     avg, obp, slg, ops,
+                    qualified: minAB === 0 || s.ab >= minAB,
                 };
             })
             .sort((a, b) => parseFloat(b.avg) - parseFloat(a.avg) || b.h - a.h);
     }
 
     async getPitchingLeaderboard(tournamentId: string) {
+        const { minIPOuts } = await this.getStatsConfig(tournamentId);
+
         const plays = await this.prisma.play.findMany({
             where: {
                 game: { tournamentId, status: 'finished' },
@@ -258,6 +271,7 @@ export class StatsService {
                     qs: qsCounts[s.playerId] || 0,
                     cg: cgCounts[s.playerId] || 0,
                     sho: shoCounts[s.playerId] || 0,
+                    qualified: minIPOuts === 0 || s.outs >= minIPOuts,
                 };
             })
             .sort((a, b) => parseFloat(a.era) - parseFloat(b.era));

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import api from "@/lib/api";
 
-type Intent = "viewer" | "organizer";
+type Intent = "viewer" | "organizer" | "streamer";
 
 export default function RegisterPage() {
     const [intent, setIntent] = useState<Intent>("viewer");
@@ -51,6 +51,8 @@ export default function RegisterPage() {
                 phone: formData.celular || undefined,
                 ...(intent === "organizer" ? {
                     organizerRequestNote: "Solicitud de acceso como organizador desde el formulario de registro.",
+                } : intent === "streamer" ? {
+                    organizerRequestNote: "Solicitud de acceso como Streamer desde el formulario de registro.",
                 } : {}),
             });
 
@@ -149,7 +151,7 @@ export default function RegisterPage() {
                     {/* Intent selector */}
                     <div className="mb-6">
                         <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">¿Cómo quieres usar TourneyTru?</p>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-3 gap-3">
                             <button
                                 type="button"
                                 onClick={() => setIntent("viewer")}
@@ -179,6 +181,21 @@ export default function RegisterPage() {
                                 <span className="text-xl mb-1">🏆</span>
                                 <span className="font-bold text-sm">Quiero organizar</span>
                                 <span className="text-xs mt-0.5 opacity-70">Crear y gestionar torneos</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setIntent("streamer")}
+                                className={`relative flex flex-col items-start p-4 rounded-xl border text-left transition-all ${intent === "streamer"
+                                    ? "border-purple-500 bg-purple-500/10 text-foreground"
+                                    : "border-muted/30 bg-background text-muted-foreground hover:border-muted/60"
+                                    }`}
+                            >
+                                {intent === "streamer" && (
+                                    <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-purple-500" />
+                                )}
+                                <span className="text-xl mb-1">📺</span>
+                                <span className="font-bold text-sm">Soy Streamer</span>
+                                <span className="text-xs mt-0.5 opacity-70">Transmito juegos en vivo</span>
                             </button>
                         </div>
                     </div>
@@ -253,6 +270,17 @@ export default function RegisterPage() {
                                     Tu cuenta se creará como visitante. Para activar el acceso de organizador, manda un correo a{" "}
                                     <span className="text-primary font-semibold">admin@tourneytru.com</span>{" "}
                                     con tu nombre y correo registrado. Recibirás respuesta en máximo 2 días hábiles.
+                                </p>
+                            </div>
+                        )}
+
+                        {intent === "streamer" && (
+                            <div className="p-4 rounded-xl border border-purple-500/20 bg-purple-500/5">
+                                <p className="text-xs font-bold text-purple-400 mb-1">Solicitud de acceso como Streamer</p>
+                                <p className="text-xs text-muted-foreground leading-relaxed">
+                                    Tu cuenta se creará como visitante. Para activar el acceso de Streamer, manda un correo a{" "}
+                                    <span className="text-purple-400 font-semibold">admin@tourneytru.com</span>{" "}
+                                    con tu nombre, correo registrado y el torneo/liga que deseas transmitir. Recibirás respuesta en máximo 2 días hábiles.
                                 </p>
                             </div>
                         )}

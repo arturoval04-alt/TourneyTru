@@ -1,5 +1,6 @@
 import { Injectable, InternalServerErrorException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { LeaguesService } from '../leagues/leagues.service';
 import * as bcrypt from 'bcrypt';
 
 // Cuotas por defecto según planLabel
@@ -13,7 +14,10 @@ const PLAN_QUOTAS: Record<string, { maxLeagues: number; maxTournamentsPerLeague:
 
 @Injectable()
 export class UsersService {
-    constructor(private prisma: PrismaService) {}
+    constructor(
+        private prisma: PrismaService,
+        private leaguesService: LeaguesService,
+    ) {}
 
     async findAll() {
         try {
@@ -364,26 +368,27 @@ export class UsersService {
         }
     }
 
-    // Eliminar una cuenta de usuario (admin only)
+    // Eliminar una cuenta de usuario (admin only) — cascade completo
     async deleteUser(userId: string) {
         const user = await this.prisma.user.findUnique({ where: { id: userId } });
         if (!user) throw new NotFoundException('Usuario no encontrado');
 
-        // Verificar si el usuario es propietario de Ligas o Torneos
-        const leagueCount = await this.prisma.league.count({ where: { adminId: userId } });
-        const tournamentCount = await this.prisma.tournament.count({ where: { adminId: userId } });
-
-        if (leagueCount > 0 || tournamentCount > 0) {
-            throw new ForbiddenException('No puedes eliminar a este usuario porque pertenece como administrador/dueño de Ligas o Torneos activos.');
+        // Cascade delete todas las ligas que administra (y todo lo que contienen)
+        const leagues = await this.prisma.league.findMany({
+            where: { adminId: userId },
+            select: { id: true },
+        });
+        for (const league of leagues) {
+            await this.leaguesService.cascadeDeleteLeague(league.id);
         }
 
-        // Desvincular autoría de noticias (si aplica) seteando el autor a null
+        // Desvincular autoría de noticias
         await this.prisma.tournamentNews.updateMany({
             where: { authorId: userId },
-            data: { authorId: null }
+            data: { authorId: null },
         });
 
-        // Delete related TournamentOrganizer records first
+        // Desvincular como co-organizador de torneos ajenos
         await this.prisma.tournamentOrganizer.deleteMany({ where: { userId } });
 
         await this.prisma.user.delete({ where: { id: userId } });

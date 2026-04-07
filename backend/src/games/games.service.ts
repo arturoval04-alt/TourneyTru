@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AssignUmpireDto, ChangeLineupDto, CreateGameDto, UpdateGameDto, SetGameLineupDto, CambioSustitucionDto, CambioPosicionDto, CambioReingresoDto } from './dto/game.dto';
+import { SubmitManualStatsDto } from './dto/manual-stats.dto';
 import { LiveGateway } from '../live/live.gateway';
 
 @Injectable()
@@ -1106,6 +1107,12 @@ export class GamesService {
             away_team_id: game.awayTeamId,
             home_team_name: game.homeTeam?.name || 'HOME',
             away_team_name: game.awayTeam?.name || 'AWAY',
+            home_team_logo: game.homeTeam?.logoUrl || null,
+            away_team_logo: game.awayTeam?.logoUrl || null,
+            home_team_short: game.homeTeam?.shortName || (game.homeTeam?.name || 'HOM').slice(0, 3).toUpperCase(),
+            away_team_short: game.awayTeam?.shortName || (game.awayTeam?.name || 'AWA').slice(0, 3).toUpperCase(),
+            tournament_name: game.tournament?.name || '',
+            tournament_id: game.tournamentId,
             current_inning: game.currentInning,
             inning: game.currentInning,
             half: game.half,
@@ -1126,6 +1133,65 @@ export class GamesService {
             bases: { first: null, second: null, third: null },
             balls: 0,
             strikes: 0,
+        };
+    }
+
+    async getPitcherMatchup(gameId: string) {
+        const game = await this.prisma.game.findUnique({
+            where: { id: gameId },
+            include: {
+                homeTeam: true,
+                awayTeam: true,
+                tournament: true,
+                lineups: {
+                    include: { player: true },
+                    where: { isStarter: true },
+                },
+            },
+        });
+
+        if (!game) throw new NotFoundException(`Game ${gameId} not found`);
+
+        // Find starting pitchers (position P or 1)
+        const homePitcher = game.lineups.find(
+            l => l.teamId === game.homeTeamId && (l.position === 'P' || l.position === '1'),
+        );
+        const awayPitcher = game.lineups.find(
+            l => l.teamId === game.awayTeamId && (l.position === 'P' || l.position === '1'),
+        );
+
+        const buildPitcherData = async (lineup: typeof homePitcher, team: typeof game.homeTeam) => {
+            if (!lineup?.player) return null;
+            // Get cumulative tournament stats
+            const stats = await this.prisma.playerStat.findFirst({
+                where: { playerId: lineup.playerId, tournamentId: game.tournamentId },
+            });
+            const ipOuts = stats?.ipOuts || 0;
+            const ip = `${Math.floor(ipOuts / 3)}.${ipOuts % 3}`;
+            const era = ipOuts > 0 ? ((stats?.erAllowed || 0) * 27 / ipOuts).toFixed(2) : '0.00';
+            return {
+                playerId: lineup.playerId,
+                name: `${lineup.player.firstName} ${lineup.player.lastName}`,
+                photoUrl: lineup.player.photoUrl || null,
+                teamName: team?.name || '',
+                teamShort: team?.shortName || (team?.name || '').slice(0, 3).toUpperCase(),
+                teamLogo: team?.logoUrl || null,
+                ip,
+                era,
+                wins: stats?.wins || 0,
+                losses: stats?.losses || 0,
+                saves: stats?.saves || 0,
+                so: stats?.soPitching || 0,
+                bb: stats?.bbAllowed || 0,
+                hAllowed: stats?.hAllowed || 0,
+                hrAllowed: stats?.hrAllowed || 0,
+            };
+        };
+
+        return {
+            homePitcher: await buildPitcherData(homePitcher, game.homeTeam),
+            awayPitcher: await buildPitcherData(awayPitcher, game.awayTeam),
+            tournamentName: game.tournament?.name || '',
         };
     }
 
@@ -1211,4 +1277,314 @@ export class GamesService {
         });
         return { facebookStreamUrl: game.facebookStreamUrl, streamStatus: 'ended' };
     }
+
+    // ─── MANUAL STATS ────────────────────────────────────────────────────────────
+
+    // Valid result codes for manual entry — maps input to canonical result code
+    private readonly MANUAL_RESULT_MAP: Record<string, { result: string; isAB: boolean; isHit: boolean; isOut: boolean; outsRecorded: number }> = {
+        // Hits
+        'H1': { result: 'H1', isAB: true, isHit: true, isOut: false, outsRecorded: 0 },
+        '1B': { result: 'H1', isAB: true, isHit: true, isOut: false, outsRecorded: 0 },
+        'H2': { result: 'H2', isAB: true, isHit: true, isOut: false, outsRecorded: 0 },
+        '2B': { result: 'H2', isAB: true, isHit: true, isOut: false, outsRecorded: 0 },
+        'H3': { result: 'H3', isAB: true, isHit: true, isOut: false, outsRecorded: 0 },
+        '3B': { result: 'H3', isAB: true, isHit: true, isOut: false, outsRecorded: 0 },
+        'HR': { result: 'HR', isAB: true, isHit: true, isOut: false, outsRecorded: 0 },
+        'H4': { result: 'HR', isAB: true, isHit: true, isOut: false, outsRecorded: 0 },
+        // Strikeouts
+        'K':  { result: 'KS', isAB: true, isHit: false, isOut: true, outsRecorded: 1 },
+        'KS': { result: 'KS', isAB: true, isHit: false, isOut: true, outsRecorded: 1 },
+        'KL': { result: 'K',  isAB: true, isHit: false, isOut: true, outsRecorded: 1 },
+        // Walks / HBP
+        'BB':  { result: 'BB',  isAB: false, isHit: false, isOut: false, outsRecorded: 0 },
+        'IBB': { result: 'IBB', isAB: false, isHit: false, isOut: false, outsRecorded: 0 },
+        'HBP': { result: 'HBP', isAB: false, isHit: false, isOut: false, outsRecorded: 0 },
+        // Sacrifices
+        'SF': { result: 'SF', isAB: false, isHit: false, isOut: true, outsRecorded: 1 },
+        'SH': { result: 'SH', isAB: false, isHit: false, isOut: true, outsRecorded: 1 },
+        // Fielder's choice
+        'FC': { result: 'FC', isAB: true, isHit: false, isOut: false, outsRecorded: 1 },
+        // Errors (E1-E9)
+        'E1': { result: 'E1', isAB: false, isHit: false, isOut: false, outsRecorded: 0 },
+        'E2': { result: 'E2', isAB: false, isHit: false, isOut: false, outsRecorded: 0 },
+        'E3': { result: 'E3', isAB: false, isHit: false, isOut: false, outsRecorded: 0 },
+        'E4': { result: 'E4', isAB: false, isHit: false, isOut: false, outsRecorded: 0 },
+        'E5': { result: 'E5', isAB: false, isHit: false, isOut: false, outsRecorded: 0 },
+        'E6': { result: 'E6', isAB: false, isHit: false, isOut: false, outsRecorded: 0 },
+        'E7': { result: 'E7', isAB: false, isHit: false, isOut: false, outsRecorded: 0 },
+        'E8': { result: 'E8', isAB: false, isHit: false, isOut: false, outsRecorded: 0 },
+        'E9': { result: 'E9', isAB: false, isHit: false, isOut: false, outsRecorded: 0 },
+        // Double play
+        'DP': { result: 'DP', isAB: true, isHit: false, isOut: true, outsRecorded: 2 },
+    };
+
+    // Ground outs pattern: 1-3, 6-3, 4-6-3, 5-3, 3U, etc.
+    private parseGroundOut(code: string): { result: string; outsRecorded: number } | null {
+        const upper = code.toUpperCase().trim();
+        // Pattern: digits separated by dashes (e.g. "6-3", "4-6-3", "3U")
+        if (/^\d(-\d)+$/.test(upper) || /^\d+U$/.test(upper)) {
+            return { result: upper, outsRecorded: 1 };
+        }
+        return null;
+    }
+
+    // Fly outs: F1-F9
+    private parseFlyOut(code: string): { result: string; outsRecorded: number } | null {
+        const upper = code.toUpperCase().trim();
+        if (/^F\d$/.test(upper)) {
+            return { result: upper, outsRecorded: 1 };
+        }
+        return null;
+    }
+
+    // Line outs: L1-L9
+    private parseLineOut(code: string): { result: string; outsRecorded: number } | null {
+        const upper = code.toUpperCase().trim();
+        if (/^L\d$/.test(upper)) {
+            return { result: upper, outsRecorded: 1 };
+        }
+        return null;
+    }
+
+    private classifyManualResult(code: string): { result: string; isAB: boolean; isHit: boolean; isOut: boolean; outsRecorded: number } {
+        const upper = code.toUpperCase().trim();
+
+        // Direct lookup
+        const direct = this.MANUAL_RESULT_MAP[upper];
+        if (direct) return direct;
+
+        // Ground outs
+        const groundOut = this.parseGroundOut(upper);
+        if (groundOut) return { ...groundOut, isAB: true, isHit: false, isOut: true };
+
+        // Fly outs
+        const flyOut = this.parseFlyOut(upper);
+        if (flyOut) return { ...flyOut, isAB: true, isHit: false, isOut: true };
+
+        // Line outs
+        const lineOut = this.parseLineOut(upper);
+        if (lineOut) return { ...lineOut, isAB: true, isHit: false, isOut: true };
+
+        // If we can't classify, treat as a generic out
+        console.warn(`[ManualStats] Unknown result code "${code}", treating as generic out`);
+        return { result: upper, isAB: true, isHit: false, isOut: true, outsRecorded: 1 };
+    }
+
+    async submitManualStats(gameId: string, dto: SubmitManualStatsDto) {
+        // 1. Validate game exists
+        const game = await this.prisma.game.findUnique({
+            where: { id: gameId },
+            include: {
+                homeTeam: true,
+                awayTeam: true,
+                lineups: { include: { player: true } },
+            },
+        });
+        if (!game) throw new NotFoundException('Juego no encontrado.');
+        if (game.status === 'finished') {
+            throw new BadRequestException('Este juego ya fue finalizado. No se pueden añadir estadísticas manuales.');
+        }
+
+        // 2. Validate lineups exist
+        const homeLineup = game.lineups.filter(l => l.teamId === game.homeTeamId);
+        const awayLineup = game.lineups.filter(l => l.teamId === game.awayTeamId);
+        if (homeLineup.length === 0 || awayLineup.length === 0) {
+            throw new BadRequestException('Ambos equipos necesitan tener lineups configurados antes de registrar estadísticas.');
+        }
+
+        // 3. Build pitcher assignment by inning+half
+        // For each half-inning, determine which pitcher was active based on ipOuts distribution
+        const buildPitcherMap = (pitchers: typeof dto.awayPitchers, lineupEntries: typeof homeLineup): Map<string, string> => {
+            // Map: "inning-half" → pitcherId
+            const map = new Map<string, string>();
+            // Find pitcher from lineup (starting pitcher)
+            const startingPitcher = lineupEntries.find(l => this.normalizePosition(l.position) === 'P');
+            let currentPitcherId = startingPitcher?.playerId || pitchers[0]?.playerId;
+            let outsUsed = 0;
+            let pitcherIdx = 0;
+            let pitcherOutsLimit = pitchers[pitcherIdx]?.ipOuts ?? 999;
+
+            // Max innings from runs data or default to 9
+            const maxInning = Math.max(...dto.runsByInning.map(r => r.inning), 9);
+
+            for (let inn = 1; inn <= maxInning; inn++) {
+                // Each inning has 3 outs for the opposing half
+                const halfKey = `${inn}`;
+                map.set(halfKey, currentPitcherId);
+
+                outsUsed += 3;
+                // Check if this pitcher has used all their outs, move to next
+                while (pitcherIdx < pitchers.length - 1 && outsUsed >= pitcherOutsLimit) {
+                    outsUsed = 0;
+                    pitcherIdx++;
+                    currentPitcherId = pitchers[pitcherIdx].playerId;
+                    pitcherOutsLimit = pitchers[pitcherIdx].ipOuts;
+                }
+            }
+            return map;
+        };
+
+        // Away pitchers face home batters (bottom), home pitchers face away batters (top)
+        const homePitcherMap = buildPitcherMap(dto.homePitchers, homeLineup); // faces away batters in top
+        const awayPitcherMap = buildPitcherMap(dto.awayPitchers, awayLineup); // faces home batters in bottom
+
+        // 4. Delete existing plays for this game (in case of re-submission attempt)
+        await this.prisma.play.deleteMany({ where: { gameId } });
+
+        // 5. Build Play records from batter entries
+        const playsToCreate: any[] = [];
+        let playTimestamp = new Date(game.scheduledDate);
+
+        const processBatters = (
+            batters: typeof dto.awayBatters,
+            half: string,
+            pitcherMap: Map<string, string>,
+            defaultPitcherId: string,
+        ) => {
+            // Distribute plate appearances across innings
+            // We use runsByInning to figure out how many innings existed, then distribute
+            // plate appearances in order through the lineup
+            const relevantInnings = dto.runsByInning
+                .filter(r => r.half === half)
+                .sort((a, b) => a.inning - b.inning);
+            const maxInning = relevantInnings.length > 0
+                ? Math.max(...relevantInnings.map(r => r.inning))
+                : Math.ceil(batters.reduce((sum, b) => sum + b.results.length, 0) / batters.length);
+
+            // Flatten all plate appearances in lineup order
+            let currentBatterIdx = 0;
+            let currentPAIdx: number[] = new Array(batters.length).fill(0); // track which PA we're on for each batter
+            let inning = 1;
+            let outsInInning = 0;
+
+            // Process linearly through the lineup, rotating
+            const totalPAs = batters.reduce((sum, b) => sum + b.results.length, 0);
+            let paProcessed = 0;
+
+            while (paProcessed < totalPAs) {
+                const batter = batters[currentBatterIdx % batters.length];
+                const paIdx = currentPAIdx[currentBatterIdx % batters.length];
+
+                if (paIdx >= batter.results.length) {
+                    // This batter has no more PAs, skip to next
+                    currentBatterIdx++;
+                    if (currentBatterIdx >= batters.length * 2) break; // safety
+                    continue;
+                }
+
+                const resultCode = batter.results[paIdx];
+                const classified = this.classifyManualResult(resultCode);
+                const pitcherId = pitcherMap.get(`${inning}`) || defaultPitcherId;
+
+                // Calculate per-PA RBI: distribute total RBI evenly across hit PAs
+                // For HR: 1 run scored by batter guaranteed
+                let rbi = 0;
+                if (batter.rbi > 0 && classified.isHit) {
+                    // Distribute RBI proportionally (simple approach)
+                    const hitPAs = batter.results.filter(r => this.classifyManualResult(r).isHit).length;
+                    if (hitPAs > 0) {
+                        const baseRbi = Math.floor(batter.rbi / hitPAs);
+                        const remainder = batter.rbi % hitPAs;
+                        const hitIdx = batter.results.slice(0, paIdx + 1).filter(r => this.classifyManualResult(r).isHit).length - 1;
+                        rbi = baseRbi + (hitIdx < remainder ? 1 : 0);
+                    }
+                }
+                // For SF with RBI and no hits
+                if (batter.rbi > 0 && classified.result === 'SF') {
+                    const hitPAs = batter.results.filter(r => this.classifyManualResult(r).isHit).length;
+                    if (hitPAs === 0) {
+                        // All RBI come from SFs
+                        const sfPAs = batter.results.filter(r => this.classifyManualResult(r).result === 'SF').length;
+                        if (sfPAs > 0) {
+                            const baseRbi = Math.floor(batter.rbi / sfPAs);
+                            const remainder = batter.rbi % sfPAs;
+                            const sfIdx = batter.results.slice(0, paIdx + 1).filter(r => this.classifyManualResult(r).result === 'SF').length - 1;
+                            rbi = baseRbi + (sfIdx < remainder ? 1 : 0);
+                        }
+                    }
+                }
+
+                // Run scoring: distribute runs across PAs
+                let runsScored = 0;
+                if (classified.result === 'HR') {
+                    runsScored = 1; // Batter always scores on HR
+                }
+
+                playTimestamp = new Date(playTimestamp.getTime() + 1000); // increment 1s for ordering
+
+                playsToCreate.push({
+                    gameId,
+                    inning,
+                    half,
+                    outsBeforePlay: outsInInning,
+                    result: classified.result,
+                    description: `Manual: ${resultCode}`,
+                    rbi,
+                    runsScored,
+                    outsRecorded: classified.outsRecorded,
+                    scored: runsScored > 0,
+                    batterId: batter.playerId,
+                    pitcherId,
+                    timestamp: playTimestamp,
+                });
+
+                outsInInning += classified.outsRecorded;
+                if (outsInInning >= 3) {
+                    inning++;
+                    outsInInning = 0;
+                }
+
+                currentPAIdx[currentBatterIdx % batters.length]++;
+                paProcessed++;
+                currentBatterIdx++;
+            }
+        };
+
+        const defaultAwayPitcher = dto.awayPitchers[0]?.playerId || awayLineup.find(l => this.normalizePosition(l.position) === 'P')?.playerId || awayLineup[0]?.playerId;
+        const defaultHomePitcher = dto.homePitchers[0]?.playerId || homeLineup.find(l => this.normalizePosition(l.position) === 'P')?.playerId || homeLineup[0]?.playerId;
+
+        processBatters(dto.awayBatters, 'top', homePitcherMap, defaultHomePitcher);
+        processBatters(dto.homeBatters, 'bottom', awayPitcherMap, defaultAwayPitcher);
+
+        // 6. Create all plays in a transaction
+        if (playsToCreate.length > 0) {
+            await this.prisma.play.createMany({ data: playsToCreate });
+        }
+
+        // 7. Finalize game
+        const updateData: any = {
+            status: 'finished',
+            homeScore: dto.homeScore,
+            awayScore: dto.awayScore,
+            currentInning: Math.max(...dto.runsByInning.map(r => r.inning), 1),
+            half: 'bottom',
+            endTime: new Date(),
+        };
+        if (dto.winningPitcherId) updateData.winningPitcherId = dto.winningPitcherId;
+        if (dto.losingPitcherId) updateData.losingPitcherId = dto.losingPitcherId;
+        if (dto.savePitcherId) updateData.savePitcherId = dto.savePitcherId;
+        if (dto.mvpBatter1Id) updateData.mvpBatter1Id = dto.mvpBatter1Id;
+        if (dto.mvpBatter2Id) updateData.mvpBatter2Id = dto.mvpBatter2Id;
+
+        await this.prisma.game.update({
+            where: { id: gameId },
+            data: updateData,
+        });
+
+        // 8. Recalculate standings
+        try {
+            await this.recalculateStandings(game.tournamentId);
+        } catch (err) {
+            console.error('[ManualStats] Error recalculating standings:', err);
+        }
+
+        console.log(`[ManualStats] Successfully created ${playsToCreate.length} plays for game ${gameId}`);
+
+        return {
+            success: true,
+            playsCreated: playsToCreate.length,
+            gameId,
+        };
+    }
 }
+

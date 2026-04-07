@@ -1,6 +1,7 @@
 import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { GamesService } from './games.service';
 import { AssignUmpireDto, CreateGameDto, UpdateGameDto, SetGameLineupDto, ChangeLineupDto, CambioSustitucionDto, CambioPosicionDto, CambioReingresoDto } from './dto/game.dto';
+import { SubmitManualStatsDto } from './dto/manual-stats.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('api/games')
@@ -77,6 +78,11 @@ export class GamesController {
         return this.gamesService.getGameState(id);
     }
 
+    @Get(':id/pitcher-matchup')
+    getPitcherMatchup(@Param('id') id: string) {
+        return this.gamesService.getPitcherMatchup(id);
+    }
+
     // ─── Cambios v2 ─────────────────────────────────────────────────────────────
 
     @Get(':id/cambios/elegibles/:teamId')
@@ -136,5 +142,13 @@ export class GamesController {
     @UseGuards(JwtAuthGuard)
     endStream(@Param('id') id: string) {
         return this.gamesService.endStream(id);
+    }
+
+    // ─── Manual Stats ─────────────────────────────────────────────────────────────
+
+    @Post(':id/manual-stats')
+    @UseGuards(JwtAuthGuard)
+    submitManualStats(@Param('id') id: string, @Body() dto: SubmitManualStatsDto) {
+        return this.gamesService.submitManualStats(id, dto);
     }
 }

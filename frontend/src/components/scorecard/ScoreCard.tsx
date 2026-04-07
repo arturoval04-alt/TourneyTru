@@ -1,7 +1,10 @@
 import { useGameStore } from '@/store/gameStore';
-import { cn } from '../live/Field';
+import Image from 'next/image';
 
-// Define the props interface for the ScoreCard component
+function cn(...classes: (string | boolean | undefined)[]) {
+    return classes.filter(Boolean).join(' ');
+}
+
 interface ScoreCardProps {
     forceStoreData?: {
         inning: number | string;
@@ -14,11 +17,29 @@ interface ScoreCardProps {
     };
 }
 
+function TeamLogo({ url, short, size = 40 }: { url: string | null | undefined; short: string; size?: number }) {
+    if (url) {
+        return (
+            <div className="rounded-full overflow-hidden border-2 border-slate-600 bg-slate-800 flex-shrink-0"
+                style={{ width: size, height: size }}>
+                <Image src={url} alt={short} width={size} height={size} className="object-cover w-full h-full" unoptimized />
+            </div>
+        );
+    }
+    return (
+        <div className="rounded-full bg-gradient-to-br from-slate-700 to-slate-800 border-2 border-slate-600 flex items-center justify-center flex-shrink-0 font-black text-white uppercase"
+            style={{ width: size, height: size, fontSize: size * 0.28 }}>
+            {short}
+        </div>
+    );
+}
+
 export default function ScoreCard({ forceStoreData }: ScoreCardProps) {
     const defaultStore = useGameStore();
     const storeData = forceStoreData || defaultStore;
 
-    const { inning, half, outs, balls, strikes, homeScore, awayScore, homeTeamName, awayTeamName } = storeData as any;
+    const { inning, half, outs, balls, strikes, homeScore, awayScore } = storeData as any;
+    const { homeTeamName, awayTeamName, homeTeamLogoUrl, awayTeamLogoUrl, homeTeamShort, awayTeamShort } = defaultStore;
 
     return (
         <div className="w-full gap-1">
@@ -30,9 +51,7 @@ export default function ScoreCard({ forceStoreData }: ScoreCardProps) {
                         <div className="flex items-center gap-3 sm:gap-5 flex-1 min-w-0">
                             {/* Away Team */}
                             <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center text-[15px] sm:text-xs font-black text-slate-300 shrink-0 uppercase">
-                                    {(awayTeamName || 'V').slice(0, 3)}
-                                </div>
+                                <TeamLogo url={awayTeamLogoUrl} short={awayTeamShort || (awayTeamName || 'V').slice(0, 3)} size={40} />
                                 <span className="text-lg sm:text-lg font-bold text-slate-300 truncate hidden sm:block">{awayTeamName || 'Visitante'}</span>
                             </div>
 
@@ -46,9 +65,7 @@ export default function ScoreCard({ forceStoreData }: ScoreCardProps) {
                             {/* Home Team */}
                             <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 justify-end">
                                 <span className="text-lg sm:text-lg font-bold text-white truncate hidden sm:block">{homeTeamName || 'Local'}</span>
-                                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center text-[10px] sm:text-xs font-black text-white shrink-0 uppercase">
-                                    {(homeTeamName || 'L').slice(0, 3)}
-                                </div>
+                                <TeamLogo url={homeTeamLogoUrl} short={homeTeamShort || (homeTeamName || 'L').slice(0, 3)} size={40} />
                             </div>
                         </div>
 
