@@ -172,6 +172,7 @@ export class UsersService {
                 roleId: role.id,
                 scorekeeperLeagueId: dto.leagueId,
                 forcePasswordChange: true,
+                emailVerified: true,
             },
             include: { role: true },
         });
@@ -312,6 +313,7 @@ export class UsersService {
                 roleId: role.id,
                 scorekeeperLeagueId: dto.leagueId,
                 forcePasswordChange: true,
+                emailVerified: true,
             },
             include: { role: true },
         });

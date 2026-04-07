@@ -203,6 +203,7 @@ export default function AdminDashboard() {
     const [showLeagueModal, setShowLeagueModal] = useState(false);
     const [editingLeague, setEditingLeague] = useState<LeagueData | null>(null);
     const [leagueDropdownOpen, setLeagueDropdownOpen] = useState<string | null>(null);
+    const [leagueDropdownPos, setLeagueDropdownPos] = useState<{ top: number; right: number } | null>(null);
     const [leagueForm, setLeagueForm] = useState({
         name: '', shortName: '', city: '', state: '',
         sport: 'softball', description: '', logoUrl: '',
@@ -320,7 +321,7 @@ export default function AdminDashboard() {
     // Cerrar dropdown de liga al hacer clic fuera
     useEffect(() => {
         if (!leagueDropdownOpen) return;
-        const close = () => setLeagueDropdownOpen(null);
+        const close = () => { setLeagueDropdownOpen(null); setLeagueDropdownPos(null); };
         document.addEventListener('click', close);
         return () => document.removeEventListener('click', close);
     }, [leagueDropdownOpen]);
@@ -1050,13 +1051,26 @@ export default function AdminDashboard() {
                                                             {(userRole === 'admin' || userRole === 'organizer') && (
                                                                 <div className="relative">
                                                                     <button
-                                                                        onClick={() => setLeagueDropdownOpen(leagueDropdownOpen === l.id ? null : l.id)}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            if (leagueDropdownOpen === l.id) {
+                                                                                setLeagueDropdownOpen(null);
+                                                                                setLeagueDropdownPos(null);
+                                                                            } else {
+                                                                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                                                setLeagueDropdownPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                                                                                setLeagueDropdownOpen(l.id);
+                                                                            }
+                                                                        }}
                                                                         className="text-muted-foreground hover:text-foreground font-bold text-xs flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-muted/10 transition"
                                                                     >
                                                                         Opciones ▾
                                                                     </button>
-                                                                    {leagueDropdownOpen === l.id && (
-                                                                        <div className="absolute right-0 mt-1 w-40 bg-surface border border-muted/30 rounded-xl shadow-xl z-20 overflow-hidden animate-fade-in-up origin-top-right">
+                                                                    {leagueDropdownOpen === l.id && leagueDropdownPos && (
+                                                                        <div
+                                                                            className="w-40 bg-surface border border-muted/30 rounded-xl shadow-xl overflow-hidden animate-fade-in-up origin-top-right"
+                                                                            style={{ position: 'fixed', top: leagueDropdownPos.top, right: leagueDropdownPos.right, zIndex: 9999 }}
+                                                                        >
                                                                             <button
                                                                                 onClick={() => openEditLeague(l)}
                                                                                 className="w-full text-left px-4 py-2.5 text-sm text-foreground hover:bg-muted/10 font-medium transition-colors"
