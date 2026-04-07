@@ -50,10 +50,10 @@ type BaseState = {
     currentBatterId: string | null;
     currentPitcher: string;
     playLogs: PlayLog[];
-    homeLineup: LineupItem[];
-    awayLineup: LineupItem[];
-    homeFullLineup: LineupItem[];
-    awayFullLineup: LineupItem[];
+    homeLineup: LineupItem[];   // FULL lineup (includes FLEX) — used for Field, Alineaciones, pitcher lookup
+    awayLineup: LineupItem[];   // FULL lineup (includes FLEX)
+    homeBattingOrder: LineupItem[];  // Batting-only lineup (excludes FLEX) — used for batter rotation
+    awayBattingOrder: LineupItem[];  // Batting-only lineup (excludes FLEX)
     homeBatterIndex: number;
     awayBatterIndex: number;
     homeTeamName: string;
@@ -191,9 +191,8 @@ const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsSc
     if (!stateSnapshot.gameId) return;
 
     const activeBatterId = currentBatterIdOverride || stateSnapshot.currentBatterId;
-    const defensiveLineup = stateSnapshot.half === 'top' ? stateSnapshot.homeFullLineup : stateSnapshot.awayFullLineup;
-    const currentPitcher = defensiveLineup.find((item: LineupItem) => item.position === "1" || item.position === "P") ||
-        (stateSnapshot.half === 'top' ? stateSnapshot.homeLineup : stateSnapshot.awayLineup).find((item: LineupItem) => item.position === "1" || item.position === "P");
+    const defensiveLineup = stateSnapshot.half === 'top' ? stateSnapshot.homeLineup : stateSnapshot.awayLineup;
+    const currentPitcher = defensiveLineup.find((item: LineupItem) => item.position === "1" || item.position === "P");
     const activePitcherId = currentPitcher ? currentPitcher.playerId : null;
 
     const payloadInning = inningOverride !== null ? inningOverride : stateSnapshot.inning;
@@ -345,8 +344,8 @@ export const useGameStore = create<GameState>()(
             playLogs: [{ text: "Inicio del partido", inningString: "▲ 1" }],
             homeLineup: [],
             awayLineup: [],
-            homeFullLineup: [],
-            awayFullLineup: [],
+            homeBattingOrder: [],
+            awayBattingOrder: [],
             homeBatterIndex: 0,
             awayBatterIndex: 0,
             history: [],
@@ -397,6 +396,8 @@ export const useGameStore = create<GameState>()(
                     currentPitcher: 'Cargando pitcher...',
                     awayBatterIndex: 0,
                     homeBatterIndex: 0,
+                    homeBattingOrder: [],
+                    awayBattingOrder: [],
                     playLogs: [{ text: "Inicio del partido", inningString: "▲ 1" }],
                     history: [],
                     winningPitcher: null,
@@ -418,8 +419,10 @@ export const useGameStore = create<GameState>()(
                     currentBatter: state.currentBatter, currentBatterId: state.currentBatterId,
                     currentPitcher: state.currentPitcher,
                     playLogs: [...state.playLogs], homeLineup: [...state.homeLineup],
-                    awayLineup: [...state.awayLineup], homeFullLineup: [...state.homeFullLineup],
-                    awayFullLineup: [...state.awayFullLineup], homeBatterIndex: state.homeBatterIndex,
+                    awayLineup: [...state.awayLineup],
+                    homeBattingOrder: [...state.homeBattingOrder],
+                    awayBattingOrder: [...state.awayBattingOrder],
+                    homeBatterIndex: state.homeBatterIndex,
                     awayBatterIndex: state.awayBatterIndex,
                     homeTeamName: state.homeTeamName, awayTeamName: state.awayTeamName,
                     homeTeamLogoUrl: state.homeTeamLogoUrl, awayTeamLogoUrl: state.awayTeamLogoUrl,
@@ -474,7 +477,7 @@ export const useGameStore = create<GameState>()(
                             } : undefined
                         }));
 
-                        // Excluir del lineup ofensivo a jugadores cubiertos por DH (son solo defensivos)
+                        // Excluir del lineup OFENSIVO (batting order) a jugadores cubiertos por DH (son solo defensivos / FLEX)
                         const filterBattingLineup = (lp: LineupItem[]) => {
                             const covered = new Set(
                                 lp.filter(l => l.position === 'DH' && l.dhForPosition).map(l => l.dhForPosition as string)
@@ -484,17 +487,19 @@ export const useGameStore = create<GameState>()(
                             return lp.filter(l => l.position === 'DH' || !covered.has(normPos(l.position)));
                         };
 
-                        // Solo jugadores activos en el lineup (excluir sustituidos/inactivos)
-                        const homeActiveLp = sanitizeLineup(gameData.lineups?.filter((l: any) => l.team_id === gameData.home_team_id && l.is_active !== false) || []).sort((a,b) => a.battingOrder - b.battingOrder);
-                        const awayActiveLp = sanitizeLineup(gameData.lineups?.filter((l: any) => l.team_id === gameData.away_team_id && l.is_active !== false) || []).sort((a,b) => a.battingOrder - b.battingOrder);
-                        const homeLp = filterBattingLineup(homeActiveLp);
-                        const awayLp = filterBattingLineup(awayActiveLp);
+                        // Lineup COMPLETO (incluye FLEX): para Campo, Alineaciones, pitcher lookup
+                        const homeFullLp = sanitizeLineup(gameData.lineups?.filter((l: any) => l.team_id === gameData.home_team_id && l.is_active !== false) || []).sort((a: any,b: any) => a.battingOrder - b.battingOrder);
+                        const awayFullLp = sanitizeLineup(gameData.lineups?.filter((l: any) => l.team_id === gameData.away_team_id && l.is_active !== false) || []).sort((a: any,b: any) => a.battingOrder - b.battingOrder);
+
+                        // Batting order FILTRADO (excluye FLEX): para rotación de bateadores
+                        const homeBatLp = filterBattingLineup(homeFullLp);
+                        const awayBatLp = filterBattingLineup(awayFullLp);
 
                         set({
-                            homeLineup: homeLp,
-                            awayLineup: awayLp,
-                            homeFullLineup: homeActiveLp,
-                            awayFullLineup: awayActiveLp,
+                            homeLineup: homeFullLp,    // Full for Field/Alineaciones
+                            awayLineup: awayFullLp,    // Full for Field/Alineaciones
+                            homeBattingOrder: homeBatLp, // Filtered for batter rotation
+                            awayBattingOrder: awayBatLp, // Filtered for batter rotation
                             homeTeamId: gameData.home_team_id,
                             awayTeamId: gameData.away_team_id,
                             homeTeamName: gameData.home_team_name || 'HOME',
@@ -518,22 +523,25 @@ export const useGameStore = create<GameState>()(
                             };
                             const awayPA = plays.filter((p: any) => p.half === 'top' && isPAPlay(p)).length;
                             const homePA = plays.filter((p: any) => p.half === 'bottom' && isPAPlay(p)).length;
-                            const awayIdx = awayLp.length > 0 ? awayPA % awayLp.length : 0;
-                            const homeIdx = homeLp.length > 0 ? homePA % homeLp.length : 0;
+                            // Use BATTING ORDER (without FLEX) for batter index
+                            const awayIdx = awayBatLp.length > 0 ? awayPA % awayBatLp.length : 0;
+                            const homeIdx = homeBatLp.length > 0 ? homePA % homeBatLp.length : 0;
                             const activeHalf = gameData.half || 'top';
-                            const currentLineup = activeHalf === 'top' ? awayLp : homeLp;
-                            const defensiveLineup = activeHalf === 'top' ? homeLp : awayLp;
+                            // Current batter comes from BATTING ORDER
+                            const currentBatOrder = activeHalf === 'top' ? awayBatLp : homeBatLp;
+                            // Pitcher comes from FULL lineup (includes FLEX)
+                            const defensiveFullLineup = activeHalf === 'top' ? homeFullLp : awayFullLp;
                             const currentIndex = activeHalf === 'top' ? awayIdx : homeIdx;
 
-                            const pitcher = defensiveLineup.find((p: any) => p.position === 'P' || p.position === '1');
+                            const pitcher = defensiveFullLineup.find((p: any) => p.position === 'P' || p.position === '1');
                             const pName = pitcher?.player ? `${pitcher.player.firstName} ${pitcher.player.lastName}` : 'Esperando Pitcher...';
 
                             set({
                                 inning: gameData.current_inning || 1, half: activeHalf,
                                 homeScore: gameData.home_score || 0, awayScore: gameData.away_score || 0,
                                 awayBatterIndex: awayIdx, homeBatterIndex: homeIdx,
-                                currentBatter: currentLineup[currentIndex]?.player ? `${currentLineup[currentIndex].player.firstName} ${currentLineup[currentIndex].player.lastName}` : 'Desconocido',
-                                currentBatterId: currentLineup[currentIndex]?.playerId || null,
+                                currentBatter: currentBatOrder[currentIndex]?.player ? `${currentBatOrder[currentIndex].player.firstName} ${currentBatOrder[currentIndex].player.lastName}` : 'Desconocido',
+                                currentBatterId: currentBatOrder[currentIndex]?.playerId || null,
                                 currentPitcher: pName,
                                 winningPitcher: gameData.winningPitcher,
                                 losingPitcher: gameData.losingPitcher,
@@ -549,18 +557,20 @@ export const useGameStore = create<GameState>()(
                         } else {
                             // No hay jugadas aún, inicializar con el primer bateador
                             const activeHalf = gameData.half || 'top';
-                            const currentLineup = activeHalf === 'top' ? awayLp : homeLp;
-                            const defensiveLineup = activeHalf === 'top' ? homeLp : awayLp;
+                            // Current batter from BATTING ORDER
+                            const currentBatOrder = activeHalf === 'top' ? awayBatLp : homeBatLp;
+                            // Pitcher from FULL lineup
+                            const defensiveFullLineup = activeHalf === 'top' ? homeFullLp : awayFullLp;
                             
-                            const pitcher = defensiveLineup.find((p: any) => p.position === 'P' || p.position === '1');
+                            const pitcher = defensiveFullLineup.find((p: any) => p.position === 'P' || p.position === '1');
                             const pName = pitcher?.player ? `${pitcher.player.firstName} ${pitcher.player.lastName}` : 'Esperando Pitcher...';
 
                             set({
                                 inning: gameData.current_inning || 1, half: activeHalf,
                                 homeScore: gameData.home_score || 0, awayScore: gameData.away_score || 0,
                                 awayBatterIndex: 0, homeBatterIndex: 0,
-                                currentBatter: currentLineup[0]?.player ? `${currentLineup[0].player.firstName} ${currentLineup[0].player.lastName}` : 'Esperando Lineup',
-                                currentBatterId: currentLineup[0]?.playerId || null,
+                                currentBatter: currentBatOrder[0]?.player ? `${currentBatOrder[0].player.firstName} ${currentBatOrder[0].player.lastName}` : 'Esperando Lineup',
+                                currentBatterId: currentBatOrder[0]?.playerId || null,
                                 currentPitcher: pName,
                                 winningPitcher: gameData.winningPitcher,
                                 losingPitcher: gameData.losingPitcher,
@@ -750,13 +760,14 @@ export const useGameStore = create<GameState>()(
 
             cycleBatter: () => {
                 const state = get();
+                // Use BATTING ORDER (excludes FLEX) for rotation — FLEX never bats
                 if (state.half === 'top') {
-                    const nextIndex = (state.awayBatterIndex + 1) % (state.awayLineup.length || 1);
-                    const item = state.awayLineup[nextIndex];
+                    const nextIndex = (state.awayBatterIndex + 1) % (state.awayBattingOrder.length || 1);
+                    const item = state.awayBattingOrder[nextIndex];
                     set({ awayBatterIndex: nextIndex, currentBatter: item?.player ? `${item.player.firstName} ${item.player.lastName}` : 'Bateador', currentBatterId: item?.playerId || null });
                 } else {
-                    const nextIndex = (state.homeBatterIndex + 1) % (state.homeLineup.length || 1);
-                    const item = state.homeLineup[nextIndex];
+                    const nextIndex = (state.homeBatterIndex + 1) % (state.homeBattingOrder.length || 1);
+                    const item = state.homeBattingOrder[nextIndex];
                     set({ homeBatterIndex: nextIndex, currentBatter: item?.player ? `${item.player.firstName} ${item.player.lastName}` : 'Bateador', currentBatterId: item?.playerId || null });
                 }
             },
@@ -799,15 +810,23 @@ export const useGameStore = create<GameState>()(
                 }));
 
                 // Update current batter to whoever is up NEXT in the NEW half without incrementing their index!
+                // Use BATTING ORDER for batter, FULL LINEUP for pitcher
                 const stateAfterHalfChange = get();
                 if (newHalf === 'top') {
                     const idx = stateAfterHalfChange.awayBatterIndex;
-                    const item = stateAfterHalfChange.awayLineup[idx];
+                    const item = stateAfterHalfChange.awayBattingOrder[idx];
                     set({ currentBatter: item?.player ? `${item.player.firstName} ${item.player.lastName}` : 'Bateador', currentBatterId: item?.playerId || null });
                 } else {
                     const idx = stateAfterHalfChange.homeBatterIndex;
-                    const item = stateAfterHalfChange.homeLineup[idx];
+                    const item = stateAfterHalfChange.homeBattingOrder[idx];
                     set({ currentBatter: item?.player ? `${item.player.firstName} ${item.player.lastName}` : 'Bateador', currentBatterId: item?.playerId || null });
+                }
+                // Update pitcher from FULL lineup (includes FLEX)
+                const stateForPitcher = get();
+                const defensiveFullLineup = newHalf === 'top' ? stateForPitcher.homeLineup : stateForPitcher.awayLineup;
+                const pitcher = defensiveFullLineup.find((p: LineupItem) => p.position === 'P' || p.position === '1');
+                if (pitcher?.player) {
+                    set({ currentPitcher: `${pitcher.player.firstName} ${pitcher.player.lastName}` });
                 }
             },
 

@@ -26,11 +26,23 @@ const POS_LABEL: Record<string, string> = {
     'DH': 'DH', 'BD': 'BD',
 };
 
-const formatPosition = (item: LineupItem) => {
+const formatPosition = (item: LineupItem, lineup?: LineupItem[]) => {
     const isDh = item.position === 'DH' || item.position === 'BD';
     if (isDh && item.dhForPosition) {
         const anchor = POS_LABEL[item.dhForPosition] || item.dhForPosition;
         return `DH (por ${anchor})`;
+    }
+    // Detect FLEX: a defensive player whose position is covered by a DH in the same lineup
+    if (lineup) {
+        const normPos = item.position?.toUpperCase().trim() === '1' ? 'P' : item.position?.toUpperCase().trim();
+        const dhEntry = lineup.find(l => (l.position === 'DH' || l.position === 'BD') && l.dhForPosition);
+        if (dhEntry) {
+            const coveredPos = dhEntry.dhForPosition?.toUpperCase().trim() === '1' ? 'P' : dhEntry.dhForPosition?.toUpperCase().trim();
+            if (normPos === coveredPos) {
+                const posLabel = POS_LABEL[item.position] || item.position;
+                return `${posLabel} (FLEX)`;
+            }
+        }
     }
     return POS_LABEL[item.position] || item.position;
 };
@@ -446,7 +458,7 @@ export default function ScorekeeperLivePanel() {
                                                             </td>
                                                             <td className="py-2.5 text-center">
                                                                 <span className="bg-sky-500/10 text-sky-400 font-black text-xs px-2 py-1 rounded">
-                                                                    {formatPosition(item)}
+                                                                    {formatPosition(item, lineup)}
                                                                 </span>
                                                             </td>
                                                         </tr>

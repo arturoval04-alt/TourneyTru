@@ -12,6 +12,9 @@ export interface BoxscoreBatterProps {
     lastName: string;
     position: string;
     battingOrder: number;
+    isStarter?: boolean;
+    isFlex?: boolean;
+    entryInning?: number;
     atBats: number;
     runs: number;
     hits: number;

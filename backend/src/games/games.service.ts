@@ -667,22 +667,14 @@ export class GamesService {
             const teamLineup = lineups.filter(l => l.teamId === team.id);
 
             // Identify which defensive position(s) are covered by a DH.
-            // Those fielders are defense-only and must NOT appear in the batting boxscore.
+            // Those fielders are defense-only (FLEX) — they should NOT have at-bats in the boxscore,
+            // but they MUST remain in the lineup array so their pitching stats can be accumulated.
             const dhCoveredPositions = new Set<string>(
                 teamLineup
                     .filter(l => this.normalizePosition(l.position) === 'DH' && l.dhForPosition)
                     .map(l => this.normalizeDefensivePosition(l.dhForPosition))
                     .filter((p): p is string => p !== null)
             );
-
-            // Batting lineup: only players who actually occupy a batting slot.
-            // Defense-only players (covered by DH) are excluded — they have no plate appearances.
-            const battingLineup = dhCoveredPositions.size > 0
-                ? teamLineup.filter(l => {
-                    const normPos = this.normalizeDefensivePosition(l.position);
-                    return !normPos || !dhCoveredPositions.has(normPos);
-                })
-                : teamLineup;
 
             return {
                 teamId: team.id,
@@ -692,7 +684,11 @@ export class GamesService {
                 totalErrors: 0,
                 runsByInning: {},
                 lastBatterByInning: {}, // Track who was the last to have a main play in each inning
-                lineup: battingLineup.map(l => {
+                lineup: teamLineup.map(l => {
+                    // Determine if this player is the FLEX (defense-only, covered by DH)
+                    const normPos = this.normalizeDefensivePosition(l.position);
+                    const isFlexPlayer = dhCoveredPositions.size > 0 && !!normPos && dhCoveredPositions.has(normPos);
+
                     let entryInning: number | undefined = undefined;
                     if (!l.isStarter) {
                         const lTime = new Date(l.createdAt).getTime();
@@ -711,7 +707,7 @@ export class GamesService {
                         position: l.position,
                         battingOrder: l.battingOrder,
                         isStarter: l.isStarter,
-                        isFlex: false,
+                        isFlex: isFlexPlayer,
                         entryInning,
                         atBats: 0,
                         runs: 0,
