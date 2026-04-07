@@ -1612,6 +1612,21 @@ export default function AdminDashboard() {
                                                             >
                                                                 Ver Boxscore
                                                             </button>
+                                                        ) : game.status === 'in_progress' ? (
+                                                            <>
+                                                                <button
+                                                                    onClick={() => router.push(`/game/${game.id}`)}
+                                                                    className="px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-lg transition text-xs font-bold"
+                                                                >
+                                                                    Llevar Juego
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => router.push(`/manual-stats/${game.id}`)}
+                                                                    className="px-3 py-1.5 bg-emerald-900/40 border border-emerald-700 text-emerald-300 hover:bg-emerald-800/60 transition text-xs font-bold rounded-lg"
+                                                                >
+                                                                    📋 Stats Manuales
+                                                                </button>
+                                                            </>
                                                         ) : (
                                                             <>
                                                                 <button

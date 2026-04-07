@@ -621,9 +621,9 @@ export const useGameStore = create<GameState>()(
                             useGameStore.setState({ pendingPlays: remaining });
                         });
                     }
-                    // Primero subimos el estado local al backend (actualiza activeGames con bases correctas)
-                    // Luego pedimos el sync — así el backend ya tiene nuestro estado actualizado
-                    syncStateToBackend(get);
+                    // Pedir el estado completo del backend PRIMERO.
+                    // Si el backend ya tiene un estado activo (bases, outs, etc.), lo usamos.
+                    // Solo si el backend no tiene nada, el handler de fullStateSync sube el estado local.
                     gameSocket!.emit('requestFullSync', { gameId: gid });
                 });
 
@@ -697,7 +697,13 @@ export const useGameStore = create<GameState>()(
                 // Respuesta al requestFullSync — reemplazar estado completo incondicionalmente
                 gameSocket.on('fullStateSync', (data: any) => {
                     const fs = data?.fullState ?? data;
-                    if (!fs) return;
+                    if (!fs) {
+                        // El backend no tiene estado activo para este juego.
+                        // Subimos el estado local (cargado vía HTTP) para que los demás clientes lo reciban.
+                        console.log('[GameStore] fullStateSync: sin estado en backend, sincronizando estado local...');
+                        syncStateToBackend(get);
+                        return;
+                    }
                     console.log('[GameStore] fullStateSync received');
                     set({
                         inning: fs.inning ?? get().inning,
