@@ -8,7 +8,7 @@ import { getUser } from '@/lib/auth';
 import api from "@/lib/api";
 import { useParams, useRouter } from "next/navigation";
 import {
-    Settings, Share2, ArrowLeft, Users, Trophy, Flag, MapPin, ExternalLink, Clock, Star, Activity, X, CheckCircle, UserPlus, Search
+    Settings, Share2, ArrowLeft, Users, Trophy, Flag, MapPin, ExternalLink, Clock, Star, Activity, X, CheckCircle, UserPlus, Search, Plus, Upload, Download, FileText
 } from "lucide-react";
 import PlayerHoverCard from "@/components/PlayerHoverCard";
 import ImageUploader from "@/components/ui/ImageUploader";
@@ -105,6 +105,15 @@ export default function TeamProfilePage() {
     const [verifiedResults, setVerifiedResults] = useState<any[]>([]);
     const [searchingVerified, setSearchingVerified] = useState(false);
     const [addingRoster, setAddingRoster] = useState<string | null>(null);
+
+    // Add Player Modal state
+    const [showAddPlayerModal, setShowAddPlayerModal] = useState(false);
+    const [addPlayerTab, setAddPlayerTab] = useState<'manual' | 'csv'>('manual');
+    const [newPlayerForm, setNewPlayerForm] = useState({ firstName: '', lastName: '', number: '', position: 'INF', bats: 'R', throws: 'R' });
+    const [addingPlayer, setAddingPlayer] = useState(false);
+    const [csvRows, setCsvRows] = useState<{ firstName: string; lastName: string; number: string; position: string; bats: string; throws: string }[]>([]);
+    const [csvError, setCsvError] = useState('');
+    const [importingCsv, setImportingCsv] = useState(false);
 
     // Profile Editing State (Team)
     const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -222,6 +231,99 @@ export default function TeamProfilePage() {
             const msg = err?.response?.data?.message || 'Error al agregar jugador';
             alert(msg);
         } finally { setAddingRoster(null); }
+    };
+
+    const handleDeletePlayer = async (player: PlayerItem) => {
+        if (!confirm(`¿Eliminar a ${player.firstName} ${player.lastName}? Esta acción no se puede deshacer.`)) return;
+        try {
+            await api.delete(`/players/${player.id}`);
+            setTeam(prev => prev ? { ...prev, players: prev.players.filter(p => p.id !== player.id) } : prev);
+        } catch (err: any) {
+            alert(err?.response?.data?.message || 'Error al eliminar jugador');
+        }
+    };
+
+    const handleAddPlayerManual = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setAddingPlayer(true);
+        try {
+            await api.post('/players', {
+                firstName: newPlayerForm.firstName,
+                lastName: newPlayerForm.lastName,
+                number: newPlayerForm.number ? parseInt(newPlayerForm.number) : undefined,
+                position: newPlayerForm.position || undefined,
+                bats: newPlayerForm.bats,
+                throws: newPlayerForm.throws,
+                teamId,
+            });
+            setNewPlayerForm({ firstName: '', lastName: '', number: '', position: 'INF', bats: 'R', throws: 'R' });
+            setShowAddPlayerModal(false);
+            window.location.reload();
+        } catch (err: any) {
+            alert(err?.response?.data?.message || 'Error al agregar jugador');
+        } finally { setAddingPlayer(false); }
+    };
+
+    const downloadCsvTemplate = () => {
+        const csv = 'Nombre,Apellido,Número,Posición,Bats,Throws\nJuan,Pérez,5,SS,R,R\nMaría,López,12,OF,L,R';
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'plantilla_jugadores.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setCsvError('');
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const text = (ev.target?.result as string).replace(/^\uFEFF/, '');
+            const lines = text.split(/\r?\n/).filter(l => l.trim());
+            if (lines.length < 2) { setCsvError('El archivo no tiene datos de jugadores'); return; }
+            const rows = lines.slice(1).map(line => {
+                const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+                return {
+                    firstName: cols[0] || '',
+                    lastName: cols[1] || '',
+                    number: cols[2] || '',
+                    position: cols[3] || 'INF',
+                    bats: cols[4] || 'R',
+                    throws: cols[5] || 'R',
+                };
+            }).filter(r => r.firstName || r.lastName);
+            if (rows.length === 0) { setCsvError('No se encontraron jugadores válidos'); return; }
+            setCsvRows(rows);
+        };
+        reader.readAsText(file, 'UTF-8');
+        e.target.value = '';
+    };
+
+    const handleCsvImport = async () => {
+        const valid = csvRows.filter(r => r.firstName && r.lastName);
+        if (valid.length === 0) { setCsvError('Cada jugador necesita al menos nombre y apellido'); return; }
+        setImportingCsv(true);
+        try {
+            await api.post('/players/bulk', {
+                teamId,
+                players: valid.map(r => ({
+                    firstName: r.firstName,
+                    lastName: r.lastName,
+                    number: r.number ? parseInt(r.number) : undefined,
+                    position: r.position || undefined,
+                    bats: ['R', 'L', 'S'].includes(r.bats) ? r.bats : undefined,
+                    throws: ['R', 'L'].includes(r.throws) ? r.throws : undefined,
+                })),
+            });
+            setShowAddPlayerModal(false);
+            setCsvRows([]);
+            window.location.reload();
+        } catch (err: any) {
+            setCsvError(err?.response?.data?.message || 'Error al importar jugadores');
+        } finally { setImportingCsv(false); }
     };
 
     const handleUpdateProfile = async (e: React.FormEvent) => {
@@ -704,15 +806,22 @@ export default function TeamProfilePage() {
                     {/* JUGADORES (ROSTER) TAB */}
                     {activeTab === 'jugadores' && (
                         <div className="animate-fade-in-up space-y-6">
-                            {/* Header with Add button */}
+                            {/* Header with Add buttons */}
                             {canEdit && team.tournament?.id && (
-                                <div className="flex justify-end">
+                                <div className="flex flex-wrap justify-end gap-2">
+                                    <button
+                                        onClick={() => { setShowAddPlayerModal(true); setAddPlayerTab('manual'); setCsvRows([]); setCsvError(''); }}
+                                        className="flex items-center gap-2 px-4 py-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 rounded-xl text-sm font-bold transition-colors"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                        Agregar Jugador
+                                    </button>
                                     <button
                                         onClick={() => { setShowAddVerifiedModal(true); setVerifiedSearch(''); setVerifiedResults([]); }}
                                         className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-xl text-sm font-bold transition-colors"
                                     >
                                         <UserPlus className="w-4 h-4" />
-                                        Añadir Jugador Verificado
+                                        Añadir Verificado
                                     </button>
                                 </div>
                             )}
@@ -727,33 +836,43 @@ export default function TeamProfilePage() {
                                     {team.players.length > 0 && (
                                         <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                                             {team.players.map((p) => (
-                                                <PlayerHoverCard
-                                                    key={p.id}
-                                                    playerId={p.id}
-                                                    firstName={p.firstName}
-                                                    lastName={p.lastName}
-                                                    photoUrl={p.photoUrl}
-                                                    position={p.position}
-                                                    number={p.number}
-                                                    teamName={team.name}
-                                                >
-                                                    <div className="bg-surface border border-muted/30 rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 group cursor-pointer flex flex-col items-center p-6 hover:-translate-y-1">
-                                                        <div className="w-20 h-20 bg-muted/5 rounded-full mb-4 flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-primary/50 transition-colors shadow-inner">
-                                                            {p.photoUrl ? (
-                                                                <img src={p.photoUrl} alt={`${p.firstName} ${p.lastName}`} className="w-full h-full object-cover group-hover:scale-110 duration-300" />
-                                                            ) : (
-                                                                <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={96} height={96} className="opacity-90 group-hover:opacity-100 transition-opacity group-hover:scale-110 duration-300" />
-                                                            )}
+                                                <div key={p.id} className="relative group/card">
+                                                    {canEdit && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleDeletePlayer(p); }}
+                                                            className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-red-500/10 border border-red-500/20 text-red-500 flex items-center justify-center opacity-0 group-hover/card:opacity-100 hover:bg-red-500/30 transition-all"
+                                                            title="Eliminar jugador"
+                                                        >
+                                                            <X className="w-3 h-3" />
+                                                        </button>
+                                                    )}
+                                                    <PlayerHoverCard
+                                                        playerId={p.id}
+                                                        firstName={p.firstName}
+                                                        lastName={p.lastName}
+                                                        photoUrl={p.photoUrl}
+                                                        position={p.position}
+                                                        number={p.number}
+                                                        teamName={team.name}
+                                                    >
+                                                        <div className="bg-surface border border-muted/30 rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 group cursor-pointer flex flex-col items-center p-6 hover:-translate-y-1">
+                                                            <div className="w-20 h-20 bg-muted/5 rounded-full mb-4 flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-primary/50 transition-colors shadow-inner">
+                                                                {p.photoUrl ? (
+                                                                    <img src={p.photoUrl} alt={`${p.firstName} ${p.lastName}`} className="w-full h-full object-cover group-hover:scale-110 duration-300" />
+                                                                ) : (
+                                                                    <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={96} height={96} className="opacity-90 group-hover:opacity-100 transition-opacity group-hover:scale-110 duration-300" />
+                                                                )}
+                                                            </div>
+                                                            <h3 className="font-bold text-center group-hover:text-primary transition-colors text-sm">{p.firstName} {p.lastName}</h3>
+                                                            <div className="flex gap-2 items-center mt-2">
+                                                                {p.number && <span className="text-sm text-muted-foreground font-black text-center w-6">#{p.number}</span>}
+                                                                <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs font-bold rounded">
+                                                                    {p.position || 'INF'}
+                                                                </span>
+                                                            </div>
                                                         </div>
-                                                        <h3 className="font-bold text-center group-hover:text-primary transition-colors text-sm">{p.firstName} {p.lastName}</h3>
-                                                        <div className="flex gap-2 items-center mt-2">
-                                                            {p.number && <span className="text-sm text-muted-foreground font-black text-center w-6">#{p.number}</span>}
-                                                            <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs font-bold rounded">
-                                                                {p.position || 'INF'}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                </PlayerHoverCard>
+                                                    </PlayerHoverCard>
+                                                </div>
                                             ))}
                                         </div>
                                     )}
@@ -1027,6 +1146,166 @@ export default function TeamProfilePage() {
                         </div>
                     )}
                 </div>
+                {/* MODAL AGREGAR JUGADOR (MANUAL / CSV) */}
+                {showAddPlayerModal && (
+                    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in-up">
+                        <div className="bg-surface w-full max-w-xl rounded-3xl shadow-2xl border border-muted/30 overflow-hidden flex flex-col max-h-[90vh]">
+                            {/* Header */}
+                            <div className="p-6 border-b border-muted/20 flex justify-between items-center bg-muted/5 shrink-0">
+                                <div>
+                                    <h2 className="text-xl font-black text-foreground">Agregar Jugadores</h2>
+                                    <p className="text-xs text-muted-foreground mt-0.5">Uno por uno o importa el roster completo desde un archivo</p>
+                                </div>
+                                <button onClick={() => setShowAddPlayerModal(false)} className="w-10 h-10 rounded-full bg-muted/10 hover:bg-muted/20 flex items-center justify-center text-muted-foreground transition-colors">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            {/* Tabs */}
+                            <div className="flex border-b border-muted/20 shrink-0">
+                                <button
+                                    onClick={() => setAddPlayerTab('manual')}
+                                    className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold transition-colors ${addPlayerTab === 'manual' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                                >
+                                    <Plus className="w-4 h-4" />
+                                    Manual
+                                </button>
+                                <button
+                                    onClick={() => setAddPlayerTab('csv')}
+                                    className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold transition-colors ${addPlayerTab === 'csv' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                                >
+                                    <Upload className="w-4 h-4" />
+                                    Importar CSV
+                                </button>
+                            </div>
+
+                            {/* Tab: Manual */}
+                            {addPlayerTab === 'manual' && (
+                                <form onSubmit={handleAddPlayerManual} className="p-6 space-y-4 overflow-y-auto">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Nombre *</label>
+                                            <input required type="text" value={newPlayerForm.firstName} onChange={e => setNewPlayerForm({ ...newPlayerForm, firstName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" placeholder="Juan" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Apellido *</label>
+                                            <input required type="text" value={newPlayerForm.lastName} onChange={e => setNewPlayerForm({ ...newPlayerForm, lastName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" placeholder="Pérez" />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase"># Dorsal</label>
+                                            <input type="number" min={0} max={99} value={newPlayerForm.number} onChange={e => setNewPlayerForm({ ...newPlayerForm, number: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" placeholder="5" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Posición</label>
+                                            <select value={newPlayerForm.position} onChange={e => setNewPlayerForm({ ...newPlayerForm, position: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium">
+                                                <option value="INF">INF</option>
+                                                <option value="OF">OF</option>
+                                                <option value="P">P</option>
+                                                <option value="C">C</option>
+                                                <option value="1B">1B</option>
+                                                <option value="2B">2B</option>
+                                                <option value="3B">3B</option>
+                                                <option value="SS">SS</option>
+                                                <option value="LF">LF</option>
+                                                <option value="CF">CF</option>
+                                                <option value="RF">RF</option>
+                                                <option value="DH">DH</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Bats</label>
+                                            <select value={newPlayerForm.bats} onChange={e => setNewPlayerForm({ ...newPlayerForm, bats: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium">
+                                                <option value="R">R</option>
+                                                <option value="L">L</option>
+                                                <option value="S">S</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-end pt-2">
+                                        <button type="submit" disabled={addingPlayer} className="px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-black text-sm transition-colors hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2">
+                                            {addingPlayer ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Plus className="w-4 h-4" />}
+                                            Agregar Jugador
+                                        </button>
+                                    </div>
+                                </form>
+                            )}
+
+                            {/* Tab: CSV */}
+                            {addPlayerTab === 'csv' && (
+                                <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                                    {/* Download template */}
+                                    <div className="flex items-center justify-between p-3 bg-muted/10 border border-muted/20 rounded-xl">
+                                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                            <FileText className="w-4 h-4 shrink-0" />
+                                            <span>Descarga la plantilla y llénala en Excel o Google Sheets</span>
+                                        </div>
+                                        <button onClick={downloadCsvTemplate} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 rounded-lg text-xs font-bold transition-colors">
+                                            <Download className="w-3.5 h-3.5" />
+                                            Plantilla
+                                        </button>
+                                    </div>
+
+                                    {/* File input */}
+                                    {csvRows.length === 0 ? (
+                                        <label className="flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed border-muted/30 rounded-2xl cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-colors">
+                                            <Upload className="w-8 h-8 text-muted-foreground" />
+                                            <div className="text-center">
+                                                <p className="text-sm font-bold text-foreground">Seleccionar archivo CSV</p>
+                                                <p className="text-xs text-muted-foreground mt-0.5">Columnas: Nombre, Apellido, Número, Posición, Bats, Throws</p>
+                                            </div>
+                                            <input type="file" accept=".csv" onChange={handleCsvFile} className="hidden" />
+                                        </label>
+                                    ) : (
+                                        <>
+                                            {/* Preview table */}
+                                            <div className="flex items-center justify-between">
+                                                <p className="text-sm font-bold text-foreground">{csvRows.length} jugador{csvRows.length !== 1 ? 'es' : ''} encontrado{csvRows.length !== 1 ? 's' : ''}</p>
+                                                <button onClick={() => { setCsvRows([]); setCsvError(''); }} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Cambiar archivo</button>
+                                            </div>
+                                            <div className="overflow-x-auto rounded-xl border border-muted/20">
+                                                <table className="w-full text-xs">
+                                                    <thead>
+                                                        <tr className="bg-muted/10 border-b border-muted/20">
+                                                            <th className="text-left p-2.5 font-bold text-muted-foreground uppercase tracking-wider">Nombre</th>
+                                                            <th className="text-left p-2.5 font-bold text-muted-foreground uppercase tracking-wider">Apellido</th>
+                                                            <th className="text-center p-2.5 font-bold text-muted-foreground uppercase tracking-wider">#</th>
+                                                            <th className="text-center p-2.5 font-bold text-muted-foreground uppercase tracking-wider">Pos</th>
+                                                            <th className="text-center p-2.5 font-bold text-muted-foreground uppercase tracking-wider">Bats</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {csvRows.map((r, i) => (
+                                                            <tr key={i} className={`border-b border-muted/10 last:border-0 ${!r.firstName || !r.lastName ? 'bg-red-500/5' : ''}`}>
+                                                                <td className="p-2.5 font-medium text-foreground">{r.firstName || <span className="text-red-400">—</span>}</td>
+                                                                <td className="p-2.5 font-medium text-foreground">{r.lastName || <span className="text-red-400">—</span>}</td>
+                                                                <td className="p-2.5 text-center text-muted-foreground">{r.number || '—'}</td>
+                                                                <td className="p-2.5 text-center text-muted-foreground">{r.position || 'INF'}</td>
+                                                                <td className="p-2.5 text-center text-muted-foreground">{r.bats || 'R'}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                            <div className="flex justify-end pt-1">
+                                                <button onClick={handleCsvImport} disabled={importingCsv} className="px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-black text-sm transition-colors hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2">
+                                                    {importingCsv ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Upload className="w-4 h-4" />}
+                                                    Importar {csvRows.filter(r => r.firstName && r.lastName).length} Jugadores
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {csvError && (
+                                        <p className="text-sm text-red-400 font-medium text-center">{csvError}</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
                 {/* MODAL AÑADIR JUGADOR VERIFICADO */}
                 {showAddVerifiedModal && (
                     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in-up">

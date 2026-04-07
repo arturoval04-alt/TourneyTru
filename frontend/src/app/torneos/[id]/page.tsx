@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { getUser } from '@/lib/auth';
 import api from "@/lib/api";
-import { ArrowLeft, MapPin, Calendar, Users, Target, Clock, Settings, Radio, X, CheckCircle2, CheckCircle, ChevronRight, Trophy, Lock, Download, Edit3, Check, ChevronDown, Swords } from "lucide-react";
+import { ArrowLeft, MapPin, Calendar, Users, Target, Clock, Settings, Radio, X, CheckCircle2, CheckCircle, ChevronRight, Trophy, Lock, Download, Edit3, Check, ChevronDown, Swords, Upload, FileText, Plus } from "lucide-react";
 import CreateGameWizard from "@/components/game/CreateGameWizard";
 import ImageUploader from "@/components/ui/ImageUploader";
 
@@ -108,8 +108,9 @@ export default function TournamentProfilePage() {
         managerName: '',
         homeFieldId: '',
         logoUrl: '',
-        players: Array(9).fill({ firstName: '', lastName: '', number: '', position: 'INF' })
+        players: [] as { firstName: string; lastName: string; number: string; position: string }[]
     });
+    const [teamCsvError, setTeamCsvError] = useState('');
 
     const [isEditingProfile, setIsEditingProfile] = useState(false);
     const [profileForm, setProfileForm] = useState({
@@ -200,13 +201,38 @@ export default function TournamentProfilePage() {
     };
 
     const handleRemovePlayerFromForm = (index: number) => {
-        if (teamForm.players.length <= 9) {
-            alert('Un equipo debe tener registrado mínimo 9 jugadores');
-            return;
-        }
         const newPlayers = [...teamForm.players];
         newPlayers.splice(index, 1);
         setTeamForm({ ...teamForm, players: newPlayers });
+    };
+
+    const handleTeamCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setTeamCsvError('');
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const text = (ev.target?.result as string).replace(/^\uFEFF/, '');
+            const lines = text.split(/\r?\n/).filter(l => l.trim());
+            if (lines.length < 2) { setTeamCsvError('El archivo no tiene datos de jugadores'); return; }
+            const rows = lines.slice(1).map(line => {
+                const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+                return { firstName: cols[0] || '', lastName: cols[1] || '', number: cols[2] || '', position: cols[3] || 'INF' };
+            }).filter(r => r.firstName || r.lastName);
+            if (rows.length === 0) { setTeamCsvError('No se encontraron jugadores válidos'); return; }
+            setTeamForm(f => ({ ...f, players: rows }));
+        };
+        reader.readAsText(file, 'UTF-8');
+        e.target.value = '';
+    };
+
+    const downloadTeamCsvTemplate = () => {
+        const csv = 'Nombre,Apellido,Número,Posición\nJuan,Pérez,5,SS\nMaría,López,12,OF';
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'plantilla_jugadores.csv'; a.click();
+        URL.revokeObjectURL(url);
     };
 
     const handleTeamPlayerChange = (index: number, field: string, value: string) => {
@@ -219,10 +245,6 @@ export default function TournamentProfilePage() {
         e.preventDefault();
         try {
             const validPlayers = teamForm.players.filter((p: any) => p.firstName && p.lastName);
-            if (validPlayers.length < 9) {
-                alert('Asegúrate de registrar al menos 9 jugadores completos (Nombre y Apellido)');
-                return;
-            }
 
             // 1. Create Team
             const { data: teamData } = await api.post('/teams', {
@@ -574,7 +596,7 @@ export default function TournamentProfilePage() {
 
                                         {canEdit && (
                                             <>
-                                                <button onClick={() => { setIsAddingTeam(true); setIsActionsOpen(false); }} className="w-full group flex items-center gap-4 p-3.5 rounded-2xl hover:bg-muted/10 text-muted-foreground hover:text-foreground transition-all text-xs font-black uppercase tracking-widest">
+                                                <button onClick={() => { setIsAddingTeam(true); setIsActionsOpen(false); setTeamForm({ name: '', shortName: '', managerName: '', homeFieldId: '', logoUrl: '', players: [] }); setTeamCsvError(''); }} className="w-full group flex items-center gap-4 p-3.5 rounded-2xl hover:bg-muted/10 text-muted-foreground hover:text-foreground transition-all text-xs font-black uppercase tracking-widest">
                                                     <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
                                                         <Users className="w-4 h-4" />
                                                     </div>
@@ -1955,42 +1977,75 @@ export default function TournamentProfilePage() {
                                     </div>
                                 </section>
 
-                                <section className="space-y-5">
+                                <section className="space-y-4">
                                     <div className="flex items-center justify-between border-b border-muted/20 pb-2">
-                                        <h3 className="text-lg font-bold text-primary">Roster Mínimo (<span className="text-foreground">{teamForm.players.length}</span>)</h3>
-                                        <button type="button" onClick={handleAddPlayerToForm} className="text-xs font-bold bg-muted/20 hover:bg-muted/30 text-foreground px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1">+ Añadir Fila</button>
+                                        <h3 className="text-lg font-bold text-primary">
+                                            Jugadores <span className="text-muted-foreground font-medium text-sm">(opcional)</span>
+                                            {teamForm.players.length > 0 && <span className="ml-2 text-foreground text-base">— {teamForm.players.length}</span>}
+                                        </h3>
+                                        <div className="flex items-center gap-2">
+                                            {/* CSV import */}
+                                            <button type="button" onClick={downloadTeamCsvTemplate} className="text-xs font-bold text-muted-foreground hover:text-foreground px-2 py-1.5 rounded-lg transition-colors flex items-center gap-1">
+                                                <Download className="w-3.5 h-3.5" />
+                                                Plantilla
+                                            </button>
+                                            <label className="text-xs font-bold bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer">
+                                                <Upload className="w-3.5 h-3.5" />
+                                                Importar CSV
+                                                <input type="file" accept=".csv" onChange={handleTeamCsvFile} className="hidden" />
+                                            </label>
+                                            <button type="button" onClick={handleAddPlayerToForm} className="text-xs font-bold bg-muted/20 hover:bg-muted/30 text-foreground px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1">
+                                                <Plus className="w-3.5 h-3.5" />
+                                                Añadir Fila
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div className="space-y-3">
-                                        {teamForm.players.map((player: any, index: number) => (
-                                            <div key={index} className="flex flex-col sm:flex-row gap-3 bg-muted/5 p-3 rounded-xl border border-muted/10 relative group transition-colors hover:border-primary/30">
-                                                <div className="absolute -left-2 top-1/2 -translate-y-1/2 w-6 h-6 bg-surface border border-muted/20 rounded-full flex items-center justify-center text-[10px] font-black text-muted-foreground shadow-sm">{index + 1}</div>
-                                                <div className="flex-1 ml-4 sm:ml-2">
-                                                    <input required type="text" placeholder="Nombre" value={player.firstName} onChange={e => handleTeamPlayerChange(index, 'firstName', e.target.value)} className="w-full text-sm bg-transparent border-b border-muted/30 focus:border-primary outline-none py-1.5 font-bold transition-colors" />
-                                                </div>
-                                                <div className="flex-1">
-                                                    <input required type="text" placeholder="Apellido" value={player.lastName} onChange={e => handleTeamPlayerChange(index, 'lastName', e.target.value)} className="w-full text-sm bg-transparent border-b border-muted/30 focus:border-primary outline-none py-1.5 font-bold transition-colors" />
-                                                </div>
-                                                <div className="w-full sm:w-20">
-                                                    <input type="text" placeholder="Dorsal" maxLength={3} value={player.number} onChange={e => handleTeamPlayerChange(index, 'number', e.target.value.replace(/[^0-9]/g, ''))} className="w-full text-sm bg-transparent border-b border-muted/30 focus:border-primary outline-none py-1.5 font-mono text-center font-bold transition-colors placeholder:font-sans" />
-                                                </div>
-                                                <div className="w-full sm:w-24">
-                                                    <select value={player.position} onChange={e => handleTeamPlayerChange(index, 'position', e.target.value)} className="w-full text-sm bg-surface border border-muted/30 focus:border-primary outline-none rounded py-1.5 px-2 font-bold transition-colors appearance-none">
-                                                        {['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'INF', 'OF', 'UT'].map(pos => (<option key={pos} value={pos}>{pos}</option>))}
-                                                    </select>
-                                                </div>
-                                                {teamForm.players.length > 9 && (
+
+                                    {teamCsvError && (
+                                        <p className="text-sm text-red-400 font-medium">{teamCsvError}</p>
+                                    )}
+
+                                    {teamForm.players.length === 0 ? (
+                                        <div className="py-8 flex flex-col items-center justify-center gap-3 border-2 border-dashed border-muted/20 rounded-2xl text-center">
+                                            <FileText className="w-8 h-8 text-muted-foreground/50" />
+                                            <div>
+                                                <p className="text-sm font-bold text-muted-foreground">Sin jugadores agregados</p>
+                                                <p className="text-xs text-muted-foreground/70 mt-0.5">Puedes agregar filas manualmente o importar un CSV</p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {teamForm.players.map((player: any, index: number) => (
+                                                <div key={index} className="flex flex-col sm:flex-row gap-3 bg-muted/5 p-3 rounded-xl border border-muted/10 relative group transition-colors hover:border-primary/30">
+                                                    <div className="absolute -left-2 top-1/2 -translate-y-1/2 w-6 h-6 bg-surface border border-muted/20 rounded-full flex items-center justify-center text-[10px] font-black text-muted-foreground shadow-sm">{index + 1}</div>
+                                                    <div className="flex-1 ml-4 sm:ml-2">
+                                                        <input type="text" placeholder="Nombre" value={player.firstName} onChange={e => handleTeamPlayerChange(index, 'firstName', e.target.value)} className="w-full text-sm bg-transparent border-b border-muted/30 focus:border-primary outline-none py-1.5 font-bold transition-colors" />
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <input type="text" placeholder="Apellido" value={player.lastName} onChange={e => handleTeamPlayerChange(index, 'lastName', e.target.value)} className="w-full text-sm bg-transparent border-b border-muted/30 focus:border-primary outline-none py-1.5 font-bold transition-colors" />
+                                                    </div>
+                                                    <div className="w-full sm:w-20">
+                                                        <input type="text" placeholder="Dorsal" maxLength={3} value={player.number} onChange={e => handleTeamPlayerChange(index, 'number', e.target.value.replace(/[^0-9]/g, ''))} className="w-full text-sm bg-transparent border-b border-muted/30 focus:border-primary outline-none py-1.5 font-mono text-center font-bold transition-colors placeholder:font-sans" />
+                                                    </div>
+                                                    <div className="w-full sm:w-24">
+                                                        <select value={player.position} onChange={e => handleTeamPlayerChange(index, 'position', e.target.value)} className="w-full text-sm bg-surface border border-muted/30 focus:border-primary outline-none rounded py-1.5 px-2 font-bold transition-colors appearance-none">
+                                                            {['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'INF', 'OF', 'UT'].map(pos => (<option key={pos} value={pos}>{pos}</option>))}
+                                                        </select>
+                                                    </div>
                                                     <button type="button" onClick={() => handleRemovePlayerFromForm(index)} className="absolute -right-2 top-1/2 -translate-y-1/2 w-6 h-6 bg-red-500/10 border border-red-500/20 rounded-full items-center justify-center text-red-500 hover:bg-red-500/20 transition-colors hidden group-hover:flex">
                                                         <X className="w-3 h-3" />
                                                     </button>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </section>
 
                                 <div className="flex justify-end pt-4 border-t border-muted/20">
                                     <button type="submit" className="px-8 py-3 rounded-xl font-black bg-primary text-white hover:bg-primary-light transition-colors shadow-lg shadow-primary/20">
-                                        Registrar Equipo y Jugadores
+                                        {teamForm.players.filter((p: any) => p.firstName && p.lastName).length > 0
+                                            ? `Registrar Equipo con ${teamForm.players.filter((p: any) => p.firstName && p.lastName).length} jugadores`
+                                            : 'Registrar Equipo'}
                                     </button>
                                 </div>
                             </form>

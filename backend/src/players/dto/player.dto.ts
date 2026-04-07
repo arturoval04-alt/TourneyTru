@@ -1,4 +1,5 @@
-import { IsString, IsOptional, IsInt, IsUUID, IsIn, IsBoolean, MaxLength, Min, Max } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsUUID, IsIn, IsBoolean, IsArray, ValidateNested, MaxLength, Min, Max } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreatePlayerDto {
     @IsString()
@@ -77,4 +78,43 @@ export class UpdatePlayerDto {
     @IsOptional()
     @IsBoolean()
     isVerified?: boolean;
+}
+
+export class BulkPlayerItem {
+    @IsString()
+    @MaxLength(50)
+    firstName: string;
+
+    @IsString()
+    @MaxLength(50)
+    lastName: string;
+
+    @IsOptional()
+    @IsInt()
+    @Min(0)
+    @Max(99)
+    number?: number;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(10)
+    position?: string;
+
+    @IsOptional()
+    @IsIn(['R', 'L', 'S'])
+    bats?: string;
+
+    @IsOptional()
+    @IsIn(['R', 'L'])
+    throws?: string;
+}
+
+export class BulkCreatePlayersDto {
+    @IsUUID()
+    teamId: string;
+
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => BulkPlayerItem)
+    players: BulkPlayerItem[];
 }

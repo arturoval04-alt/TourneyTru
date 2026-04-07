@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreatePlayerDto, UpdatePlayerDto } from './dto/player.dto';
+import { CreatePlayerDto, UpdatePlayerDto, BulkCreatePlayersDto } from './dto/player.dto';
 
 @Injectable()
 export class PlayersService {
@@ -195,6 +195,33 @@ export class PlayersService {
         }
 
         return player;
+    }
+
+    async createBulk(data: BulkCreatePlayersDto) {
+        const { teamId, players } = data;
+        const team = await (this.prisma.team as any).findUnique({
+            where: { id: teamId },
+            include: { tournament: { include: { league: true } } },
+        });
+        const adminId = team?.tournament?.league?.adminId ?? team?.tournament?.adminId;
+        if (adminId) {
+            const admin = await this.prisma.user.findUnique({ where: { id: adminId } }) as any;
+            if (admin && admin.maxPlayersPerTeam > 0) {
+                const count = await this.prisma.player.count({ where: { teamId } });
+                if (count + players.length > admin.maxPlayersPerTeam) {
+                    throw new ForbiddenException({
+                        code: 'QUOTA_EXCEEDED',
+                        resource: 'players',
+                        message: `El límite de tu plan es ${admin.maxPlayersPerTeam} jugadores por equipo. Ya tienes ${count} y estás intentando agregar ${players.length}.`,
+                        limit: admin.maxPlayersPerTeam,
+                        current: count,
+                    });
+                }
+            }
+        }
+        return this.prisma.player.createMany({
+            data: players.map(p => ({ ...p, teamId })),
+        });
     }
 
     async update(id: string, updateData: UpdatePlayerDto) {

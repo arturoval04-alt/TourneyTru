@@ -559,6 +559,17 @@ export default function AdminDashboard() {
         setShowEditPlayerModal(true);
     };
 
+    const handleDeletePlayer = async (player: any) => {
+        const name = `${player.firstName || player.first_name} ${player.lastName || player.last_name}`;
+        if (!confirm(`¿Eliminar a ${name}? Esta acción no se puede deshacer.`)) return;
+        try {
+            await api.delete(`/players/${player.id}`);
+            setPlayers(prev => prev.filter((p: any) => p.id !== player.id));
+        } catch (err: any) {
+            alert(err?.response?.data?.message || 'Error al eliminar jugador');
+        }
+    };
+
     const handleUpdatePlayer = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!editingPlayer) return;
@@ -1345,12 +1356,20 @@ export default function AdminDashboard() {
                                                             Ficha
                                                         </Link>
                                                         {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (
-                                                            <button
-                                                                onClick={() => handleEditPlayer(player)}
-                                                                className="text-blue-500/70 hover:text-blue-500 font-bold text-xs transition-colors"
-                                                            >
-                                                                Editar
-                                                            </button>
+                                                            <>
+                                                                <button
+                                                                    onClick={() => handleEditPlayer(player)}
+                                                                    className="text-blue-500/70 hover:text-blue-500 font-bold text-xs transition-colors mr-3"
+                                                                >
+                                                                    Editar
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleDeletePlayer(player)}
+                                                                    className="text-red-500/60 hover:text-red-500 font-bold text-xs transition-colors"
+                                                                >
+                                                                    Eliminar
+                                                                </button>
+                                                            </>
                                                         )}
                                                     </td>
                                                 </tr>

@@ -1,6 +1,6 @@
 import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { PlayersService } from './players.service';
-import { CreatePlayerDto, UpdatePlayerDto } from './dto/player.dto';
+import { CreatePlayerDto, UpdatePlayerDto, BulkCreatePlayersDto } from './dto/player.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('api/players')
@@ -11,6 +11,12 @@ export class PlayersController {
     @UseGuards(JwtAuthGuard)
     create(@Body() createPlayerDto: CreatePlayerDto) {
         return this.playersService.create(createPlayerDto);
+    }
+
+    @Post('bulk')
+    @UseGuards(JwtAuthGuard)
+    createBulk(@Body() dto: BulkCreatePlayersDto) {
+        return this.playersService.createBulk(dto);
     }
 
     @Get('search')
