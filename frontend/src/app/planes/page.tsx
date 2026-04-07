@@ -35,7 +35,7 @@ const plans = [
         badgeColor: "bg-primary/10 text-primary border border-primary/30",
         cardBorder: "border-primary/30",
         highlight: true,
-        price: "$800",
+        price: "$1200",
         priceNote: "MXN / mes",
         features: [
             { label: "1 liga", icon: "🏟️" },
@@ -60,7 +60,7 @@ const plans = [
         badgeColor: "bg-purple-500/10 text-purple-400 border border-purple-500/20",
         cardBorder: "border-muted/30",
         highlight: false,
-        price: "$500",
+        price: "$750",
         priceNote: "MXN / 50 juegos",
         features: [
             { label: "Overlay profesional en transmisión", icon: "📺" },
@@ -80,7 +80,7 @@ const addons = [
     {
         label: "+1 Torneo adicional",
         description: "Agrega otro torneo a tu liga (hasta 20 equipos)",
-        price: "+$600 MXN/mes",
+        price: "+$900 MXN/mes",
     },
     {
         label: "+Equipos extra",
