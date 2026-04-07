@@ -150,7 +150,7 @@ export default function TeamProfilePage() {
                         setCanEdit(true);
                     }
                 })
-                .catch(() => {});
+                .catch(() => { });
         }
     }, [team]);
 
@@ -836,7 +836,7 @@ export default function TeamProfilePage() {
                                     {team.players.length > 0 && (
                                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 items-stretch">
                                             {team.players.map((p) => (
-                                                <div key={p.id} className="group/card">
+                                                <div key={p.id} className="group/card w-full">
                                                     <PlayerHoverCard
                                                         playerId={p.id}
                                                         firstName={p.firstName}
@@ -856,14 +856,14 @@ export default function TeamProfilePage() {
                                                                     <X className="w-3 h-3" />
                                                                 </button>
                                                             )}
-                                                            <div className="w-16 h-16 bg-muted/5 rounded-full mb-3 mt-2 flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-primary/50 transition-colors shadow-inner">
+                                                            <div className="w-16 h-16 bg-muted/5 rounded-full mb-3 mt-2 flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-primary/50 transition-colors shadow-inner shrink-0">
                                                                 {p.photoUrl ? (
                                                                     <img src={p.photoUrl} alt={`${p.firstName} ${p.lastName}`} className="w-full h-full object-cover group-hover:scale-110 duration-300" />
                                                                 ) : (
                                                                     <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={80} height={80} className="opacity-90 group-hover:opacity-100 transition-opacity group-hover:scale-110 duration-300" />
                                                                 )}
                                                             </div>
-                                                            <h3 className="font-bold text-center group-hover:text-primary transition-colors text-sm leading-tight">{p.firstName} {p.lastName}</h3>
+                                                            <h3 className="font-bold text-center group-hover:text-primary transition-colors text-sm leading-tight line-clamp-2 min-h-[2.5rem] flex items-center justify-center w-full">{p.firstName} {p.lastName}</h3>
                                                             <div className="flex gap-2 items-center mt-2">
                                                                 {p.number && <span className="text-sm text-muted-foreground font-black text-center w-6">#{p.number}</span>}
                                                                 <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs font-bold rounded">

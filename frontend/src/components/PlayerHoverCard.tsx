@@ -21,7 +21,7 @@ export default function PlayerHoverCard({
 
     return (
         <div
-            className="relative inline-block cursor-pointer"
+            className="relative block w-full h-full cursor-pointer"
             onClick={() => router.push(`/jugadores/${playerId}`)}
         >
             {children}
