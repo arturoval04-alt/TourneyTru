@@ -2287,8 +2287,8 @@ export default function AdminDashboard() {
             {/* MODAL NUEVO JUEGO */}
             {showGameModal && (
                 <CreateGameWizard
-                    context={userRole === 'scorekeeper' ? 'scorekeeper' : 'admin'}
-                    leagueId={userRole === 'scorekeeper' ? (currentUser?.scorekeeperLeagueId ?? undefined) : undefined}
+                    context={(userRole === 'scorekeeper' || userRole === 'presi') ? 'scorekeeper' : 'admin'}
+                    leagueId={(userRole === 'scorekeeper' || userRole === 'presi') ? (currentUser?.scorekeeperLeagueId ?? undefined) : undefined}
                     onClose={() => setShowGameModal(false)}
                 />
             )}

@@ -17,14 +17,14 @@ export class LeaguesController {
     @Get()
     @UseGuards(OptionalJwtAuthGuard)
     findAll(@Query('adminId') adminId?: string, @Req() req?: any) {
-        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
+        const requestor = req?.user ? { userId: req.user.id, role: req.user.role, scorekeeperLeagueId: req.user.scorekeeperLeagueId ?? null } : undefined;
         return this.leaguesService.findAll(adminId, requestor);
     }
 
     @Get(':id')
     @UseGuards(OptionalJwtAuthGuard)
     findOne(@Param('id') id: string, @Req() req?: any) {
-        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
+        const requestor = req?.user ? { userId: req.user.id, role: req.user.role, scorekeeperLeagueId: req.user.scorekeeperLeagueId ?? null } : undefined;
         return this.leaguesService.findOne(id, requestor);
     }
 

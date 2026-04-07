@@ -20,8 +20,7 @@ export class UsersController {
     @Get('my-scorekeepers')
     @Roles('organizer', 'admin', 'presi')
     async myScorekeepers(@Request() req: any) {
-        // Un presi también puede ver a los scorekeepers de su liga (u otros presis)
-        return this.usersService.findStaffByOrganizer(req.user.id);
+        return this.usersService.findStaffByOrganizer(req.user.id, req.user.role, req.user.scorekeeperLeagueId);
     }
 
     // Admin: cambiar rol y cuotas de un usuario

@@ -250,12 +250,20 @@ export class UsersService {
     }
 
     // Organizer: obtener personal vinculado a sus ligas
-    async findStaffByOrganizer(organizerId: string) {
-        const leagues = await this.prisma.league.findMany({
-            where: { adminId: organizerId },
-            select: { id: true },
-        });
-        const leagueIds = leagues.map(l => l.id);
+    async findStaffByOrganizer(organizerId: string, requesterRole?: string, requesterLeagueId?: string | null) {
+        let leagueIds: string[];
+
+        if (requesterRole === 'presi' && requesterLeagueId) {
+            // Presi no es adminId de ninguna liga — su liga está en scorekeeperLeagueId
+            leagueIds = [requesterLeagueId];
+        } else {
+            const leagues = await this.prisma.league.findMany({
+                where: { adminId: organizerId },
+                select: { id: true },
+            });
+            leagueIds = leagues.map(l => l.id);
+        }
+
         if (leagueIds.length === 0) return [];
 
         const users = await (this.prisma.user as any).findMany({

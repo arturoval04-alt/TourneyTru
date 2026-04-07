@@ -38,10 +38,18 @@ export class LeaguesService {
 
     async findAll(adminId?: string, requestor?: Requestor) {
         const isSystemAdmin = requestor?.role === 'admin';
+        const isRestricted = requestor?.role === 'scorekeeper' || requestor?.role === 'presi';
+        const isOrganizer = requestor?.role === 'organizer';
         const where: any = {};
 
-        if (adminId) {
+        if (isRestricted && requestor?.scorekeeperLeagueId) {
+            // Scorekeeper y presi: solo ven su liga asignada (aunque sea privada)
+            where.id = requestor.scorekeeperLeagueId;
+        } else if (adminId) {
             where.adminId = adminId;
+        } else if (isOrganizer && requestor?.userId) {
+            // Organizer sin adminId explícito: solo ve las ligas donde es admin
+            where.adminId = requestor.userId;
         } else if (!isSystemAdmin) {
             where.isPrivate = false;
         }
@@ -55,10 +63,10 @@ export class LeaguesService {
             orderBy: { name: 'asc' },
         }) as any[];
 
-        // If scoped to a user's own leagues or system admin — no privacy filter
-        if (adminId || isSystemAdmin) return results;
+        // Roles con query ya acotada — no aplicar filtro de privacidad adicional
+        if (adminId || isSystemAdmin || isRestricted || isOrganizer) return results;
 
-        // Public listing: filter private leagues in-memory (Prisma client not regenerated)
+        // Listado público: filtrar ligas privadas en memoria
         return results.filter((l: any) => {
             if (!(l.isPrivate ?? false)) return true;
             return requestor?.userId === l.adminId;
