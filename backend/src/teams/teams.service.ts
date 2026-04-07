@@ -251,9 +251,22 @@ export class TeamsService {
     }
 
     async remove(id: string) {
-        await this.findOne(id);
-        return this.prisma.team.delete({
-            where: { id },
+        const team = await this.prisma.team.findUnique({ where: { id } });
+        if (!team) throw new NotFoundException(`Team ${id} not found`);
+        return this.prisma.$transaction(async (tx: any) => {
+            // Nullify game MVP/pitcher references to players on this team (NoAction FKs)
+            await tx.$executeRaw`UPDATE games SET mvp_batter1_id = NULL WHERE mvp_batter1_id IN (SELECT id FROM players WHERE team_id = ${id})`;
+            await tx.$executeRaw`UPDATE games SET mvp_batter2_id = NULL WHERE mvp_batter2_id IN (SELECT id FROM players WHERE team_id = ${id})`;
+            await tx.$executeRaw`UPDATE games SET winning_pitcher_id = NULL WHERE winning_pitcher_id IN (SELECT id FROM players WHERE team_id = ${id})`;
+            await tx.$executeRaw`UPDATE games SET losing_pitcher_id = NULL WHERE losing_pitcher_id IN (SELECT id FROM players WHERE team_id = ${id})`;
+            await tx.$executeRaw`UPDATE games SET save_pitcher_id = NULL WHERE save_pitcher_id IN (SELECT id FROM players WHERE team_id = ${id})`;
+            // Delete games involving this team (cascades plays, lineups, lineup_changes, game_umpires)
+            await tx.$executeRaw`DELETE FROM games WHERE home_team_id = ${id} OR away_team_id = ${id}`;
+            // Delete roster entries and player stats (NoAction FKs on team)
+            await tx.$executeRaw`DELETE FROM roster_entries WHERE team_id = ${id}`;
+            await tx.$executeRaw`DELETE FROM player_stats WHERE team_id = ${id}`;
+            // Delete team — players cascade automatically
+            return tx.team.delete({ where: { id } });
         });
     }
 }

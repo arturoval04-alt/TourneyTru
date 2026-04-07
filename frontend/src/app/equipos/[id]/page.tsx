@@ -834,18 +834,9 @@ export default function TeamProfilePage() {
                             ) : (
                                 <>
                                     {team.players.length > 0 && (
-                                        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 items-stretch">
                                             {team.players.map((p) => (
-                                                <div key={p.id} className="relative group/card">
-                                                    {canEdit && (
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); handleDeletePlayer(p); }}
-                                                            className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-red-500/10 border border-red-500/20 text-red-500 flex items-center justify-center opacity-0 group-hover/card:opacity-100 hover:bg-red-500/30 transition-all"
-                                                            title="Eliminar jugador"
-                                                        >
-                                                            <X className="w-3 h-3" />
-                                                        </button>
-                                                    )}
+                                                <div key={p.id} className="group/card">
                                                     <PlayerHoverCard
                                                         playerId={p.id}
                                                         firstName={p.firstName}
@@ -855,15 +846,24 @@ export default function TeamProfilePage() {
                                                         number={p.number}
                                                         teamName={team.name}
                                                     >
-                                                        <div className="bg-surface border border-muted/30 rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 group cursor-pointer flex flex-col items-center p-6 hover:-translate-y-1">
-                                                            <div className="w-20 h-20 bg-muted/5 rounded-full mb-4 flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-primary/50 transition-colors shadow-inner">
+                                                        <div className="relative bg-surface border border-muted/30 rounded-xl shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 group cursor-pointer flex flex-col items-center p-4 hover:-translate-y-1 h-full">
+                                                            {canEdit && (
+                                                                <button
+                                                                    onClick={(e) => { e.stopPropagation(); handleDeletePlayer(p); }}
+                                                                    className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-red-500/10 border border-red-500/20 text-red-500 flex items-center justify-center sm:opacity-0 sm:group-hover:opacity-100 hover:bg-red-500/30 transition-all"
+                                                                    title="Eliminar jugador"
+                                                                >
+                                                                    <X className="w-3 h-3" />
+                                                                </button>
+                                                            )}
+                                                            <div className="w-16 h-16 bg-muted/5 rounded-full mb-3 mt-2 flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-primary/50 transition-colors shadow-inner">
                                                                 {p.photoUrl ? (
                                                                     <img src={p.photoUrl} alt={`${p.firstName} ${p.lastName}`} className="w-full h-full object-cover group-hover:scale-110 duration-300" />
                                                                 ) : (
-                                                                    <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={96} height={96} className="opacity-90 group-hover:opacity-100 transition-opacity group-hover:scale-110 duration-300" />
+                                                                    <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={80} height={80} className="opacity-90 group-hover:opacity-100 transition-opacity group-hover:scale-110 duration-300" />
                                                                 )}
                                                             </div>
-                                                            <h3 className="font-bold text-center group-hover:text-primary transition-colors text-sm">{p.firstName} {p.lastName}</h3>
+                                                            <h3 className="font-bold text-center group-hover:text-primary transition-colors text-sm leading-tight">{p.firstName} {p.lastName}</h3>
                                                             <div className="flex gap-2 items-center mt-2">
                                                                 {p.number && <span className="text-sm text-muted-foreground font-black text-center w-6">#{p.number}</span>}
                                                                 <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs font-bold rounded">
@@ -884,7 +884,7 @@ export default function TeamProfilePage() {
                                                 <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
                                                 Jugadores Invitados
                                             </h3>
-                                            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 items-stretch">
                                                 {team.rosterEntries.map((entry) => {
                                                     const p = entry.player;
                                                     return (
@@ -898,18 +898,18 @@ export default function TeamProfilePage() {
                                                             number={p.number}
                                                             teamName={p.team?.name || team.name}
                                                         >
-                                                            <div className="bg-surface border border-emerald-500/20 rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:border-emerald-400/50 transition-all duration-300 group cursor-pointer flex flex-col items-center p-6 hover:-translate-y-1 relative">
+                                                            <div className="relative bg-surface border border-emerald-500/20 rounded-xl shadow-sm hover:shadow-md hover:border-emerald-400/50 transition-all duration-300 group cursor-pointer flex flex-col items-center p-4 hover:-translate-y-1 h-full">
                                                                 <span className="absolute top-2 right-2 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded-full">
                                                                     Invitado
                                                                 </span>
-                                                                <div className="w-20 h-20 bg-muted/5 rounded-full mb-4 flex items-center justify-center overflow-hidden border-2 border-emerald-500/20 group-hover:border-emerald-400/50 transition-colors shadow-inner">
+                                                                <div className="w-16 h-16 bg-muted/5 rounded-full mb-3 mt-2 flex items-center justify-center overflow-hidden border-2 border-emerald-500/20 group-hover:border-emerald-400/50 transition-colors shadow-inner">
                                                                     {p.photoUrl ? (
                                                                         <img src={p.photoUrl} alt={`${p.firstName} ${p.lastName}`} className="w-full h-full object-cover group-hover:scale-110 duration-300" />
                                                                     ) : (
-                                                                        <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={96} height={96} className="opacity-90 group-hover:opacity-100 transition-opacity group-hover:scale-110 duration-300" />
+                                                                        <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={80} height={80} className="opacity-90 group-hover:opacity-100 transition-opacity group-hover:scale-110 duration-300" />
                                                                     )}
                                                                 </div>
-                                                                <h3 className="font-bold text-center group-hover:text-emerald-400 transition-colors text-sm">{p.firstName} {p.lastName}</h3>
+                                                                <h3 className="font-bold text-center group-hover:text-emerald-400 transition-colors text-sm leading-tight">{p.firstName} {p.lastName}</h3>
                                                                 <p className="text-[10px] text-muted-foreground mt-0.5 text-center">{p.team?.name}</p>
                                                                 <div className="flex gap-2 items-center mt-2">
                                                                     {p.number && <span className="text-sm text-muted-foreground font-black text-center w-6">#{p.number}</span>}

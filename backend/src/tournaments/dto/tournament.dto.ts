@@ -52,6 +52,10 @@ export class CreateTournamentDto {
     @IsOptional()
     @IsDateString()
     startDate?: string;
+
+    @IsOptional()
+    @IsBoolean()
+    isPrivate?: boolean;
 }
 
 export class UpdateTournamentDto {

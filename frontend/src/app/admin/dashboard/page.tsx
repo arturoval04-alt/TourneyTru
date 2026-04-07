@@ -482,6 +482,22 @@ export default function AdminDashboard() {
         } finally { setSaving(false); }
     };
 
+    const handleDeleteTournament = async (tourn: TournamentData) => {
+        if (!window.confirm(`¿Eliminar el torneo "${tourn.name}"?\n\nEsto eliminará permanentemente todos sus equipos, jugadores, juegos y estadísticas.\n\nEsta acción no se puede deshacer.`)) return;
+        try {
+            await api.delete(`/torneos/${tourn.id}`);
+            setShowEditTournModal(false);
+            setEditingTourn(null);
+            fetchTournaments(
+                (userRole === 'organizer' || userRole === 'presi') ? currentUser?.id : undefined,
+                userRole === 'scorekeeper' ? (currentUser?.scorekeeperLeagueId ?? undefined) : undefined,
+            );
+        } catch (err: any) {
+            console.error(err);
+            alert(err?.response?.data?.message || 'Error al eliminar el torneo');
+        }
+    };
+
     const handleEditTourn = (tourn: TournamentData) => {
         setEditingTourn(tourn);
         setTournForm({
@@ -528,6 +544,24 @@ export default function AdminDashboard() {
                 alert('Error al crear equipo');
             }
         } finally { setSaving(false); }
+    };
+
+    const handleDeleteTeam = async (team: any) => {
+        if (!window.confirm(`¿Eliminar el equipo "${team.name}"?\n\nEsto eliminará permanentemente todos sus jugadores, juegos y estadísticas.\n\nEsta acción no se puede deshacer.`)) return;
+        try {
+            await api.delete(`/teams/${team.id}`);
+            setShowTeamModal(false);
+            setEditingTeam(null);
+            setTeamForm({ name: '', manager: '', logoUrl: '', tournament_id: '' });
+            if (selectedTournament) {
+                api.get('/teams', { params: { tournamentId: selectedTournament } })
+                    .then(({ data }) => setTeams(data || []))
+                    .catch(console.error);
+            }
+        } catch (err: any) {
+            console.error(err);
+            alert(err?.response?.data?.message || 'Error al eliminar el equipo');
+        }
     };
 
     const openEditTeam = (team: any) => {
@@ -822,7 +856,7 @@ export default function AdminDashboard() {
                 state: leagueForm.state || undefined,
                 sport: leagueForm.sport || undefined,
                 description: leagueForm.description || undefined,
-                logoUrl: leagueForm.logoUrl || undefined,
+                logoUrl: leagueForm.logoUrl || null,
                 isPrivate: leagueForm.isPrivate,
             });
             alert('Liga Actualizada');
@@ -2230,6 +2264,21 @@ export default function AdminDashboard() {
                             <button type="submit" disabled={saving} className={`w-full py-3 mt-4 font-bold rounded-xl transition shadow-lg ${saving ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-primary/20 cursor-pointer active:scale-95'}`}>
                                 {saving ? 'Actualizando...' : 'Guardar Cambios'}
                             </button>
+
+                            {/* Zona de peligro */}
+                            <div className="mt-6 pt-4 border-t border-red-500/20">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-red-500/60 mb-2">Zona de peligro</p>
+                                <button
+                                    type="button"
+                                    onClick={() => editingTourn && handleDeleteTournament(editingTourn)}
+                                    className="w-full py-2.5 font-bold rounded-xl border border-red-500/30 text-red-500 bg-red-500/5 hover:bg-red-500/15 transition text-sm cursor-pointer active:scale-95"
+                                >
+                                    Eliminar Torneo
+                                </button>
+                                <p className="text-[10px] text-muted-foreground mt-1.5 text-center">
+                                    Elimina el torneo y todos sus equipos, juegos y estadísticas de forma permanente.
+                                </p>
+                            </div>
                         </form>
                     </div>
                 </div>
@@ -2300,6 +2349,23 @@ export default function AdminDashboard() {
                             <button type="submit" disabled={saving} className={`w-full py-3 mt-4 font-bold rounded-xl transition shadow-lg ${saving ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-primary/20 cursor-pointer active:scale-95'}`}>
                                 {saving ? 'Guardando...' : editingTeam ? 'Guardar Cambios' : 'Crear Equipo'}
                             </button>
+
+                            {/* Zona de peligro — solo al editar */}
+                            {editingTeam && (
+                                <div className="mt-6 pt-4 border-t border-red-500/20">
+                                    <p className="text-[10px] font-bold uppercase tracking-widest text-red-500/60 mb-2">Zona de peligro</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleDeleteTeam(editingTeam)}
+                                        className="w-full py-2.5 font-bold rounded-xl border border-red-500/30 text-red-500 bg-red-500/5 hover:bg-red-500/15 transition text-sm cursor-pointer active:scale-95"
+                                    >
+                                        Eliminar Equipo
+                                    </button>
+                                    <p className="text-[10px] text-muted-foreground mt-1.5 text-center">
+                                        Elimina el equipo y todos sus jugadores, juegos y estadísticas de forma permanente.
+                                    </p>
+                                </div>
+                            )}
                         </form>
                     </div>
                 </div>

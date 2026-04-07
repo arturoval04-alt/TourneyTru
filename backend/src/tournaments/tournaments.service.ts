@@ -25,7 +25,13 @@ export class TournamentsService {
                 }
             }
         }
-        const tournament = await this.prisma.tournament.create({ data });
+        const { isPrivate, ...rest } = data as any;
+        const tournament = await this.prisma.tournament.create({ data: rest });
+
+        // isPrivate not in Prisma client type (not regenerated) — set via raw SQL
+        if (isPrivate !== undefined) {
+            await this.prisma.$executeRaw`UPDATE tournaments SET is_private = ${isPrivate ? 1 : 0} WHERE id = ${tournament.id}`;
+        }
 
         // Auto-agregar al creador como organizador del torneo
         if (data.adminId) {
@@ -153,8 +159,14 @@ export class TournamentsService {
 
     async remove(id: string, requestor?: Requestor) {
         await this.findOne(id, requestor);
-        return this.prisma.tournament.delete({
-            where: { id },
+        return this.prisma.$transaction(async (tx: any) => {
+            // Remove records with NoAction FK constraints before tournament deletion
+            await tx.$executeRaw`DELETE FROM roster_entries WHERE tournament_id = ${id}`;
+            await tx.$executeRaw`DELETE FROM player_stats WHERE tournament_id = ${id}`;
+            // Delete games and their child records (plays, lineups, lineup_changes, game_umpires cascade)
+            await tx.$executeRaw`DELETE FROM games WHERE tournament_id = ${id}`;
+            // Delete tournament — remaining relations cascade: teams→players, organizers, news, standings, fields
+            return tx.tournament.delete({ where: { id } });
         });
     }
 
