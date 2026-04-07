@@ -166,37 +166,71 @@ export default function CambiosModal({ isOpen, onClose }: Props) {
 
     // Get player at a position (considering swaps already applied)
     const playerAtPos = (pos: string): EligiblePlayer | undefined => {
-        // apply swaps in order
+        // Build map: for each original player position -> where they are NOW
         const swapped = new Map<string, string>(); // originalPos -> currentPos
         for (const p of currentPosLineup) {
             if (p.position) swapped.set(p.position, p.position);
         }
         for (const sw of posSwaps) {
+            // Find who is currently at fromPosition and move them to toPosition
             for (const [orig, cur] of swapped) {
-                if (cur === sw.fromPosition) swapped.set(orig, sw.toPosition);
+                if (cur === sw.fromPosition) { swapped.set(orig, sw.toPosition); break; }
             }
         }
+        // Find who ends up at `pos`
         for (const p of currentPosLineup) {
             if (p.position && swapped.get(p.position) === pos) return p;
         }
         return undefined;
     };
 
+    // After all swaps, which position is empty (has no player)?
+    const emptyPositions = useMemo(() => {
+        const occupied = new Set<string>();
+        const swapped = new Map<string, string>();
+        for (const p of currentPosLineup) {
+            if (p.position && DEFENSIVE_POSITIONS.includes(p.position)) swapped.set(p.position, p.position);
+        }
+        for (const sw of posSwaps) {
+            for (const [orig, cur] of swapped) {
+                if (cur === sw.fromPosition) { swapped.set(orig, sw.toPosition); break; }
+            }
+        }
+        for (const [, cur] of swapped) occupied.add(cur);
+        return DEFENSIVE_POSITIONS.filter(p => currentPosLineup.some(pl => pl.position === p) && !occupied.has(p));
+    }, [currentPosLineup, posSwaps]);
+
+    // The "displaced" player: after a swap chain, if a position is left empty, the player
+    // who was last displaced needs to be placed. We auto-select them.
+    const displacedPosition = useMemo(() => {
+        if (posSwaps.length === 0) return null;
+        // After applying swaps, check if any original position is now empty
+        // The displaced position is the one that lost its player
+        return emptyPositions.length > 0 ? emptyPositions[0] : null;
+    }, [posSwaps, emptyPositions]);
+
+    // Chain-aware selection: if there's a displaced player, auto-select them
+    const effectiveSelecting = useMemo(() => {
+        if (posSelecting) return posSelecting;
+        return displacedPosition;
+    }, [posSelecting, displacedPosition]);
+
     const handlePosClick = (pos: string) => {
         if (!DEFENSIVE_POSITIONS.includes(pos)) return;
-        const playerHere = playerAtPos(pos);
-        if (!playerHere) return;
 
-        if (!posSelecting) {
-            // start: pick from
+        if (!effectiveSelecting) {
+            // No selection yet: pick the "from" position (must have a player)
+            const playerHere = playerAtPos(pos);
+            if (!playerHere) return;
             setPosSelecting(pos);
-        } else if (posSelecting === pos) {
-            // deselect
-            setPosSelecting(null);
+        } else if (effectiveSelecting === pos) {
+            // Clicking on the same position: deselect (only if manually selected, not auto-displaced)
+            if (posSelecting === pos) setPosSelecting(null);
         } else {
-            // pick to: add swap
-            setPosSwaps(prev => [...prev, { fromPosition: posSelecting, toPosition: pos }]);
-            setPosSelecting(null);
+            // Pick the "to" position: add swap
+            // Allow clicking on any position (occupied or empty)
+            setPosSwaps(prev => [...prev, { fromPosition: effectiveSelecting, toPosition: pos }]);
+            setPosSelecting(null); // clear manual selection; displacedPosition will auto-select if needed
         }
     };
 
@@ -237,10 +271,10 @@ export default function CambiosModal({ isOpen, onClose }: Props) {
     // ── Validation ────────────────────────────────────────────────────────────
     const canProceedToReview = useMemo(() => {
         if (changeType === 'SUSTITUCION') return !!subPlayerOutId && !!subPlayerInId && !!subPosition && (subPosition !== 'DH' || !!subDhFor);
-        if (changeType === 'POSICION') return posSwaps.length > 0;
+        if (changeType === 'POSICION') return posSwaps.length > 0 && emptyPositions.length === 0;
         if (changeType === 'REINGRESO') return !!reingresoPId;
         return false;
-    }, [changeType, subPlayerOutId, subPlayerInId, subPosition, subDhFor, posSwaps, reingresoPId]);
+    }, [changeType, subPlayerOutId, subPlayerInId, subPosition, subDhFor, posSwaps, reingresoPId, emptyPositions]);
 
     // ── Register new player (streamer) ───────────────────────────────────────
     const handleSaveNewPlayer = async () => {
@@ -608,8 +642,8 @@ export default function CambiosModal({ isOpen, onClose }: Props) {
                     {step === 2 && changeType === 'POSICION' && (
                         <div className="space-y-3 pt-1">
                             <p className="text-slate-400 text-xs text-center">
-                                {posSelecting
-                                    ? `Toca la posición destino para ${posSelecting}`
+                                {effectiveSelecting
+                                    ? `Toca la posición destino para ${effectiveSelecting}${displacedPosition ? ` (${playerAtPos(effectiveSelecting)?.lastName || 'vacío'} desplazado)` : ''}`
                                     : 'Toca una posición para moverla'}
                             </p>
 
@@ -617,10 +651,9 @@ export default function CambiosModal({ isOpen, onClose }: Props) {
                             <div className="grid gap-1.5 mx-auto max-w-xs" style={{ gridTemplateColumns: 'repeat(4, 1fr)', gridTemplateRows: 'repeat(4, auto)' }}>
                                 {FIELD_POSITIONS.map(fp => {
                                     const player = playerAtPos(fp.pos);
-                                    const isSwapFrom = posSwaps.some(s => s.fromPosition === fp.pos);
-                                    const isSwapTo = posSwaps.some(s => s.toPosition === fp.pos);
-                                    const isSelecting = posSelecting === fp.pos;
-                                    const isTarget = !!posSelecting && posSelecting !== fp.pos && !!player;
+                                    const isEmpty = !player;
+                                    const isSelected = effectiveSelecting === fp.pos;
+                                    const isTarget = !!effectiveSelecting && effectiveSelecting !== fp.pos;
 
                                     return (
                                         <button
@@ -628,21 +661,21 @@ export default function CambiosModal({ isOpen, onClose }: Props) {
                                             onClick={() => handlePosClick(fp.pos)}
                                             style={{ gridColumn: fp.col, gridRow: fp.row }}
                                             className={`flex flex-col items-center justify-center rounded-xl p-1.5 border transition-all active:scale-95 min-h-[52px] ${
-                                                isSelecting
+                                                isSelected
                                                     ? 'bg-emerald-500/30 border-emerald-400 ring-2 ring-emerald-400/50'
-                                                    : isSwapFrom
-                                                        ? 'bg-amber-500/20 border-amber-400'
-                                                        : isSwapTo
-                                                            ? 'bg-sky-500/20 border-sky-400'
-                                                            : isTarget
-                                                                ? 'bg-slate-700 border-slate-400 hover:border-emerald-400 animate-pulse'
-                                                                : 'bg-slate-800 border-slate-600 hover:border-slate-400'
+                                                    : isEmpty
+                                                        ? isTarget
+                                                            ? 'bg-rose-500/10 border-rose-400/60 hover:border-emerald-400 animate-pulse'
+                                                            : 'bg-slate-800/50 border-dashed border-slate-600'
+                                                        : isTarget
+                                                            ? 'bg-slate-700 border-slate-400 hover:border-emerald-400 animate-pulse'
+                                                            : 'bg-slate-800 border-slate-600 hover:border-slate-400'
                                             }`}
                                         >
                                             <span className="text-xs font-black text-slate-400">{POS_NUM[fp.pos]}</span>
-                                            <span className="text-[10px] font-bold text-white">{fp.label}</span>
-                                            <span className="text-[9px] text-slate-400 leading-tight text-center truncate w-full px-0.5">
-                                                {player ? player.lastName : '—'}
+                                            <span className={`text-[10px] font-bold ${isEmpty ? 'text-rose-400' : 'text-white'}`}>{fp.label}</span>
+                                            <span className={`text-[9px] leading-tight text-center truncate w-full px-0.5 ${isEmpty ? 'text-rose-400/70' : 'text-slate-400'}`}>
+                                                {player ? player.lastName : '— vacío —'}
                                             </span>
                                         </button>
                                     );
