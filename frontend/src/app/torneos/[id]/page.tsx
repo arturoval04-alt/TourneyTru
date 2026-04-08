@@ -29,7 +29,7 @@ export default function TournamentProfilePage() {
         startDate?: string;
         isPrivate?: boolean;
         league?: { name: string };
-        teams: { id: string; name: string; shortName?: string; logoUrl?: string; managerName?: string; _count?: { players: number } }[];
+        teams: { id: string; name: string; shortName?: string; logoUrl?: string; managerName?: string; _count?: { rosterEntries: number } }[];
         games: { id: string; homeTeam: { id: string; name: string; shortName?: string; logoUrl?: string; wins?: number; losses?: number }; awayTeam: { id: string; name: string; shortName?: string; logoUrl?: string; wins?: number; losses?: number }; homeScore: number; awayScore: number; currentInning: number; half: string; status: string; scheduledDate: string; field?: string; round?: string; winningPitcher?: { id: string; firstName: string; lastName: string; photoUrl?: string } | null; mvpBatter1?: { id: string; firstName: string; lastName: string; photoUrl?: string } | null; mvpBatter2?: { id: string; firstName: string; lastName: string; photoUrl?: string } | null }[];
         fields: { id: string; name: string; location?: string }[];
         organizers: { id: string; user: { firstName?: string; lastName?: string; email: string } }[];
@@ -263,6 +263,7 @@ export default function TournamentProfilePage() {
                     number: p.number ? parseInt(p.number) : null,
                     position: p.position,
                     teamId: teamData.id,
+                    tournamentId: tournamentId,
                 });
             }
 
@@ -1271,7 +1272,7 @@ export default function TournamentProfilePage() {
                                                         </div>
                                                         <div>
                                                             <h3 className="font-bold text-lg group-hover:text-primary transition-colors">{team.name}</h3>
-                                                            <p className="text-sm text-muted-foreground">{team._count?.players || 0} jugadores</p>
+                                                            <p className="text-sm text-muted-foreground">{team._count?.rosterEntries || 0} jugadores</p>
                                                         </div>
                                                     </div>
                                                     {team.managerName && <p className="text-sm text-muted-foreground">Manager: {team.managerName}</p>}

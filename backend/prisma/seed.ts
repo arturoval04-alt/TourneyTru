@@ -86,30 +86,44 @@ async function main() {
     const lastNames = ['Perez', 'Garcia', 'Martinez', 'Rodriguez', 'Lopez', 'Hernandez', 'Gonzalez', 'Torres', 'Ramirez', 'Flores'];
 
     for (let i = 0; i < 10; i++) {
-        await prisma.player.create({
+        const playerA = await (prisma.player as any).create({
             data: {
                 firstName: firstNames[i],
                 lastName: lastNames[i],
-                number: Math.floor(Math.random() * 99) + 1,
                 position: ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF'][Math.floor(Math.random() * 9)],
                 bats: ['R', 'L', 'S'][Math.floor(Math.random() * 3)],
                 throws: ['R', 'L'][Math.floor(Math.random() * 2)],
-                teamId: teamA.id
+            }
+        });
+        await (prisma as any).rosterEntry.create({
+            data: {
+                playerId: playerA.id,
+                teamId: teamA.id,
+                tournamentId: tournament.id,
+                number: Math.floor(Math.random() * 99) + 1,
+                isActive: true,
             }
         });
     }
 
     // Invent 10 players for Team B
     for (let i = 0; i < 10; i++) {
-        await prisma.player.create({
+        const playerB = await (prisma.player as any).create({
             data: {
                 firstName: firstNames[9 - i],
                 lastName: lastNames[9 - i],
-                number: Math.floor(Math.random() * 99) + 1,
                 position: ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF'][Math.floor(Math.random() * 9)],
                 bats: ['R', 'L', 'S'][Math.floor(Math.random() * 3)],
                 throws: ['R', 'L'][Math.floor(Math.random() * 2)],
-                teamId: teamB.id
+            }
+        });
+        await (prisma as any).rosterEntry.create({
+            data: {
+                playerId: playerB.id,
+                teamId: teamB.id,
+                tournamentId: tournament.id,
+                number: Math.floor(Math.random() * 99) + 1,
+                isActive: true,
             }
         });
     }

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTeamDto, UpdateTeamDto, CreateTeamBulkDto } from './dto/team.dto';
 
@@ -30,25 +30,61 @@ export class TeamsService {
                 }
             }
         }
+        // Duplicate check: mismo nombre en el mismo torneo
+        if (data.tournamentId && data.name) {
+            const existing = await this.prisma.team.findFirst({
+                where: {
+                    tournamentId: data.tournamentId,
+                    name: { equals: data.name },
+                },
+                select: { id: true, name: true, shortName: true },
+            });
+            if (existing) {
+                throw new HttpException(
+                    {
+                        code: 'DUPLICATE_TEAM',
+                        existing,
+                        message: `Ya existe un equipo con ese nombre en este torneo: "${existing.name}"`,
+                    },
+                    HttpStatus.CONFLICT,
+                );
+            }
+        }
+
         return this.prisma.team.create({ data });
     }
 
     async createBulk(data: CreateTeamBulkDto) {
-        const { players, ...teamData } = data;
+        const { players, tournamentId, ...teamData } = data;
 
-        // Use Prisma transaction or nested create
-        return this.prisma.team.create({
-            data: {
-                ...teamData,
-                players: {
-                    create: players,
-                },
-            },
-            include: {
-                players: true,
-                homeField: true,
-                tournament: true
+        return this.prisma.$transaction(async (tx: any) => {
+            const team = await tx.team.create({
+                data: { ...teamData, tournamentId },
+                include: { homeField: true, tournament: true },
+            });
+
+            for (const p of players) {
+                const player = await tx.player.create({
+                    data: {
+                        firstName: p.firstName,
+                        lastName: p.lastName,
+                        position: p.position ?? null,
+                        photoUrl: p.photoUrl ?? null,
+                    },
+                });
+                await tx.rosterEntry.create({
+                    data: {
+                        playerId: player.id,
+                        teamId: team.id,
+                        tournamentId,
+                        number: p.number ?? null,
+                        position: p.position ?? null,
+                        isActive: true,
+                    },
+                });
             }
+
+            return team;
         });
     }
 
@@ -67,8 +103,13 @@ export class TeamsService {
             where,
             include: {
                 tournament: true,
-                _count: { select: { players: true } },
-                ...(filters?.includePlayers ? { players: true } : {}),
+                _count: { select: { rosterEntries: true } },
+                ...(filters?.includePlayers ? {
+                    rosterEntries: {
+                        where: { isActive: true },
+                        include: { player: true },
+                    },
+                } : {}),
             },
             orderBy: { name: 'asc' },
         });
@@ -79,25 +120,16 @@ export class TeamsService {
             where: { id },
             include: {
                 tournament: true,
-                players: {
-                    include: {
-                        playsAsBatter: true,
-                        playsAsPitcher: true,
-                        lineupEntries: {
-                            where: { isStarter: true }
-                        }
-                    }
-                },
                 rosterEntries: {
                     where: { isActive: true },
                     include: {
                         player: {
-                            select: {
-                                id: true, firstName: true, lastName: true,
-                                number: true, position: true, photoUrl: true,
-                                bats: true, throws: true, isVerified: true,
-                                teamId: true,
-                                team: { select: { id: true, name: true, shortName: true } },
+                            include: {
+                                playsAsBatter: true,
+                                playsAsPitcher: true,
+                                lineupEntries: {
+                                    where: { isStarter: true },
+                                },
                             },
                         },
                     },
@@ -133,35 +165,39 @@ export class TeamsService {
             }
         }
 
-        // Calculate Stats for each player
-        const playersWithStats = team.players.map(player => {
+        // Calculate stats for each roster entry's player
+        const rosterEntriesWithStats = team.rosterEntries.map((entry: any) => {
+            const player = entry.player;
             const batting = this.calculateBattingStats(player.playsAsBatter);
             const pitching = this.calculatePitchingStats(player.playsAsPitcher);
             const gs = player.lineupEntries.length;
-            const gsPitching = player.lineupEntries.filter(l => l.position === 'P' || l.dhForPosition === 'P').length;
-            
+            const gsPitching = player.lineupEntries.filter((l: any) => l.position === 'P' || l.dhForPosition === 'P').length;
+
             return {
-                ...player,
-                stats: { batting: { ...batting, gs }, pitching: { ...pitching, gs: gsPitching } }
+                ...entry,
+                player: {
+                    ...player,
+                    stats: { batting: { ...batting, gs }, pitching: { ...pitching, gs: gsPitching } },
+                },
             };
         });
 
         // Team Totals
-        const teamBatting = this.calculateBattingStats(team.players.flatMap(p => p.playsAsBatter));
-        const teamPitching = this.calculatePitchingStats(team.players.flatMap(p => p.playsAsPitcher));
-        const teamGs = team.players.reduce((sum, p) => sum + p.lineupEntries.length, 0);
-        const teamGsPitching = team.players.reduce((sum, p) => sum + p.lineupEntries.filter(l => l.position === 'P' || l.dhForPosition === 'P').length, 0);
+        const teamBatting = this.calculateBattingStats(team.rosterEntries.flatMap((e: any) => e.player.playsAsBatter));
+        const teamPitching = this.calculatePitchingStats(team.rosterEntries.flatMap((e: any) => e.player.playsAsPitcher));
+        const teamGs = team.rosterEntries.reduce((sum: number, e: any) => sum + e.player.lineupEntries.length, 0);
+        const teamGsPitching = team.rosterEntries.reduce((sum: number, e: any) => sum + e.player.lineupEntries.filter((l: any) => l.position === 'P' || l.dhForPosition === 'P').length, 0);
 
-        return { 
-            ...team, 
-            players: playersWithStats,
-            wins, 
-            losses, 
+        return {
+            ...team,
+            rosterEntries: rosterEntriesWithStats,
+            wins,
+            losses,
             gamesPlayed: wins + losses,
             stats: {
                 batting: { ...teamBatting, gs: teamGs },
-                pitching: { ...teamPitching, gs: teamGsPitching }
-            }
+                pitching: { ...teamPitching, gs: teamGsPitching },
+            },
         };
     }
 
@@ -254,18 +290,19 @@ export class TeamsService {
         const team = await this.prisma.team.findUnique({ where: { id } });
         if (!team) throw new NotFoundException(`Team ${id} not found`);
         return this.prisma.$transaction(async (tx: any) => {
-            // Nullify game MVP/pitcher references to players on this team (NoAction FKs)
-            await tx.$executeRaw`UPDATE games SET mvp_batter1_id = NULL WHERE mvp_batter1_id IN (SELECT id FROM players WHERE team_id = ${id})`;
-            await tx.$executeRaw`UPDATE games SET mvp_batter2_id = NULL WHERE mvp_batter2_id IN (SELECT id FROM players WHERE team_id = ${id})`;
-            await tx.$executeRaw`UPDATE games SET winning_pitcher_id = NULL WHERE winning_pitcher_id IN (SELECT id FROM players WHERE team_id = ${id})`;
-            await tx.$executeRaw`UPDATE games SET losing_pitcher_id = NULL WHERE losing_pitcher_id IN (SELECT id FROM players WHERE team_id = ${id})`;
-            await tx.$executeRaw`UPDATE games SET save_pitcher_id = NULL WHERE save_pitcher_id IN (SELECT id FROM players WHERE team_id = ${id})`;
+            // Nullify game MVP/pitcher references to players who were on this team (via roster_entries)
+            await tx.$executeRaw`UPDATE games SET mvp_batter1_id = NULL WHERE mvp_batter1_id IN (SELECT player_id FROM roster_entries WHERE team_id = ${id})`;
+            await tx.$executeRaw`UPDATE games SET mvp_batter2_id = NULL WHERE mvp_batter2_id IN (SELECT player_id FROM roster_entries WHERE team_id = ${id})`;
+            await tx.$executeRaw`UPDATE games SET winning_pitcher_id = NULL WHERE winning_pitcher_id IN (SELECT player_id FROM roster_entries WHERE team_id = ${id})`;
+            await tx.$executeRaw`UPDATE games SET losing_pitcher_id = NULL WHERE losing_pitcher_id IN (SELECT player_id FROM roster_entries WHERE team_id = ${id})`;
+            await tx.$executeRaw`UPDATE games SET save_pitcher_id = NULL WHERE save_pitcher_id IN (SELECT player_id FROM roster_entries WHERE team_id = ${id})`;
             // Delete games involving this team (cascades plays, lineups, lineup_changes, game_umpires)
             await tx.$executeRaw`DELETE FROM games WHERE home_team_id = ${id} OR away_team_id = ${id}`;
-            // Delete roster entries and player stats (NoAction FKs on team)
+            // Delete roster entries and player stats and standings for this team
             await tx.$executeRaw`DELETE FROM roster_entries WHERE team_id = ${id}`;
             await tx.$executeRaw`DELETE FROM player_stats WHERE team_id = ${id}`;
-            // Delete team — players cascade automatically
+            await tx.$executeRaw`DELETE FROM standings WHERE team_id = ${id}`;
+            // Delete team (players remain as global identity records)
             return tx.team.delete({ where: { id } });
         });
     }

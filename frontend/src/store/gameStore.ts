@@ -83,6 +83,7 @@ export interface GameState extends BaseState {
     facebookStreamUrl: string | null;
     streamStatus: string;
     pendingPlays: number; // jugadas en cola esperando envío
+    socketConnected: boolean; // estado de conexión del socket en tiempo real
     phantomOutCandidates: string[]; // runner IDs que anotarán como carrera sucia por out fantasma
 
     // Acciones earned-run
@@ -360,6 +361,7 @@ export const useGameStore = create<GameState>()(
             facebookStreamUrl: null,
             streamStatus: 'offline',
             pendingPlays: 0,
+            socketConnected: false,
             phantomOutCandidates: [],
 
             clearEndGamePrompt: () => set({ shouldPromptEndGame: false }),
@@ -609,6 +611,7 @@ export const useGameStore = create<GameState>()(
                 });
 
                 gameSocket.on('connect', async () => {
+                    useGameStore.setState({ socketConnected: true });
                     console.log(`Socket connected: game-${gameId}`);
                     gameSocket!.emit('joinGame', gameId);
                     const { gameId: gid } = get();
@@ -629,7 +632,7 @@ export const useGameStore = create<GameState>()(
 
                 gameSocket.on('disconnect', () => {
                     console.log('Socket disconnected');
-                    useGameStore.setState({ pendingPlays: getPlayQueue(get().gameId || '').length });
+                    useGameStore.setState({ socketConnected: false, pendingPlays: getPlayQueue(get().gameId || '').length });
                     // Importar toast dinámicamente para evitar dependencia circular con módulos de servidor
                     if (typeof window !== 'undefined') {
                         import('sonner').then(({ toast }) => toast.warning('Conexión perdida. Reconectando...'));

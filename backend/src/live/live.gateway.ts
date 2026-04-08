@@ -136,8 +136,8 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.prisma.game.findUnique({
           where: { id: gameId },
           include: {
-            homeTeam: { include: { players: true } },
-            awayTeam: { include: { players: true } },
+            homeTeam: { include: { rosterEntries: { where: { isActive: true }, include: { player: true } } } },
+            awayTeam: { include: { rosterEntries: { where: { isActive: true }, include: { player: true } } } },
             lineups: { include: { player: true } },
             plays: true,
           },

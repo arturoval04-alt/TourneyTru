@@ -1,6 +1,6 @@
-import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query, Request } from '@nestjs/common';
 import { PlayersService } from './players.service';
-import { CreatePlayerDto, UpdatePlayerDto, BulkCreatePlayersDto } from './dto/player.dto';
+import { CreatePlayerDto, UpdatePlayerDto, BulkCreatePlayersDto, ConfirmImportDto } from './dto/player.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('api/players')
@@ -9,14 +9,41 @@ export class PlayersController {
 
     @Post()
     @UseGuards(JwtAuthGuard)
-    create(@Body() createPlayerDto: CreatePlayerDto) {
-        return this.playersService.create(createPlayerDto);
+    create(@Body() createPlayerDto: CreatePlayerDto, @Request() req: any) {
+        return this.playersService.create(createPlayerDto, req.user);
     }
 
+    // Legacy bulk — se mantiene por compatibilidad
     @Post('bulk')
     @UseGuards(JwtAuthGuard)
     createBulk(@Body() dto: BulkCreatePlayersDto) {
         return this.playersService.createBulk(dto);
+    }
+
+    // Nueva importación con preview por fila
+    @Post('import')
+    @UseGuards(JwtAuthGuard)
+    importPlayers(@Body() dto: BulkCreatePlayersDto, @Request() req: any) {
+        return this.playersService.importPlayers(dto, req.user);
+    }
+
+    // Confirmar importación tras revisión del preview
+    @Post('confirm-import')
+    @UseGuards(JwtAuthGuard)
+    confirmImport(@Body() dto: ConfirmImportDto, @Request() req: any) {
+        return this.playersService.confirmImport(dto, req.user);
+    }
+
+    @Get('check-duplicate')
+    checkDuplicate(
+        @Query('fn') firstName: string,
+        @Query('ln') lastName: string,
+        @Query('sln') secondLastName: string,
+        @Query('teamId') teamId: string,
+        @Query('tourneyId') tournamentId: string,
+    ) {
+        if (!firstName || !lastName || !teamId || !tournamentId) return { level: 'none' };
+        return this.playersService.detectDuplicate(firstName, lastName, secondLastName || undefined, teamId, tournamentId);
     }
 
     @Get('search')

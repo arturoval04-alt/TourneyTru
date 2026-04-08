@@ -153,7 +153,6 @@ model Team {
   lineupChanges LineupChange[]
   lineups       Lineup[]
   playerStats   PlayerStat[]
-  players       Player[]
   rosterEntries RosterEntry[]
   homeField     Field?         @relation(fields: [homeFieldId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   tournament    Tournament     @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
@@ -163,32 +162,38 @@ model Team {
 }
 
 model Player {
-  id                     String         @id @default(uuid())
-  firstName              String         @map("first_name")
-  lastName               String         @map("last_name")
-  number                 Int?
-  position               String?
-  photoUrl               String?        @map("photo_url") @db.NVarChar(Max)
-  bats                   String?        @default("R") @db.NVarChar(10)
-  throws                 String?        @default("R") @db.NVarChar(10)
-  teamId                 String         @map("team_id")
-  isVerified             Boolean        @default(false) @map("is_verified")
-  verifiedAt             DateTime?      @map("verified_at")
-  verificationMethod     String?        @map("verification_method") @db.NVarChar(50)
-  createdAt              DateTime       @default(now()) @map("created_at")
-  gamesMvp1         Game[]         @relation("GameMvpBatter1")
-  gamesMvp2         Game[]         @relation("GameMvpBatter2")
-  gamesWonAsPitcher Game[]         @relation("GameWinningPitcher")
-  gamesLostAsPitcher Game[]        @relation("GameLosingPitcher")
-  gamesSavedAsPitcher Game[]       @relation("GameSavePitcher")
-  lineupChangesIn   LineupChange[] @relation("LineupChangePlayerIn")
-  lineupChangesOut  LineupChange[] @relation("LineupChangePlayerOut")
-  lineupEntries     Lineup[]
-  playerStats       PlayerStat[]
-  team              Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  playsAsBatter     Play[]         @relation("BatterPlay")
-  playsAsPitcher    Play[]         @relation("PitcherPlay")
-  rosterEntries     RosterEntry[]
+  id                  String    @id @default(uuid())
+  // ─── Identidad ────────────────────────────────
+  firstName           String    @map("first_name") @db.NVarChar(50)
+  lastName            String    @map("last_name") @db.NVarChar(50)
+  secondLastName      String?   @map("second_last_name") @db.NVarChar(50)
+  curp                String?   @db.NVarChar(18)
+  birthDate           DateTime? @map("birth_date")
+  sex                 String?   @db.NVarChar(10)   // 'M', 'F', 'O'
+  // ─── Atributos físicos / deportivos ───────────
+  position            String?   @db.NVarChar(10)   // posición principal
+  bats                String?   @default("R") @db.NVarChar(10)
+  throws              String?   @default("R") @db.NVarChar(10)
+  photoUrl            String?   @map("photo_url") @db.NVarChar(Max)
+  // ─── Control ──────────────────────────────────
+  isVerified          Boolean   @default(false) @map("is_verified")
+  verifiedAt          DateTime? @map("verified_at")
+  verificationMethod  String?   @map("verification_method") @db.NVarChar(50)
+  isStreamerCreated   Boolean   @default(false) @map("is_streamer_created")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  // ─── Relaciones ───────────────────────────────
+  rosterEntries       RosterEntry[]
+  playerStats         PlayerStat[]
+  lineupEntries       Lineup[]
+  lineupChangesIn     LineupChange[] @relation("LineupChangePlayerIn")
+  lineupChangesOut    LineupChange[] @relation("LineupChangePlayerOut")
+  playsAsBatter       Play[]         @relation("BatterPlay")
+  playsAsPitcher      Play[]         @relation("PitcherPlay")
+  gamesMvp1           Game[]         @relation("GameMvpBatter1")
+  gamesMvp2           Game[]         @relation("GameMvpBatter2")
+  gamesWonAsPitcher   Game[]         @relation("GameWinningPitcher")
+  gamesLostAsPitcher  Game[]         @relation("GameLosingPitcher")
+  gamesSavedAsPitcher Game[]         @relation("GameSavePitcher")
 
   @@index([lastName, firstName], map: "players_name_idx")
   @@map("players")

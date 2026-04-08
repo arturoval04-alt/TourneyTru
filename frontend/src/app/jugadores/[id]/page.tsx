@@ -47,6 +47,8 @@ interface RosterHistoryEntry {
     id: string;
     teamId: string;
     tournamentId: string;
+    number?: number | null;
+    position?: string | null;
     isActive: boolean;
     joinedAt: string;
     leftAt?: string | null;
@@ -58,19 +60,18 @@ interface PlayerData {
     id: string;
     firstName: string;
     lastName: string;
+    secondLastName?: string | null;
+    curp?: string | null;
+    birthDate?: string | null;
     number: number | null;
     position: string | null;
     bats: string | null;
     throws: string | null;
     photoUrl: string | null;
     isVerified: boolean;
-    team: {
-        id: string; name: string; shortName?: string; logoUrl?: string;
-        tournament: Tournament | null;
-    };
     playerStats: PlayerStat[];
     lineupEntries: GameEntry[];
-    rosterEntries?: RosterHistoryEntry[];
+    rosterEntries: RosterHistoryEntry[];
 }
 
 // ─── Stat helpers ──────────────────────────────────────────────────────────────
@@ -174,7 +175,7 @@ function StatRow({ label, value, highlight }: { label: string; value: string | n
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
-type Tab = "estadisticas" | "juegos" | "equipos" | "torneos";
+type Tab = "estadisticas" | "juegos" | "equipos" | "torneos" | "informacion";
 
 interface ComputedStats {
     playerId: string; gp: number; ab: number; h: number;
@@ -196,7 +197,7 @@ export default function PlayerProfilePage() {
     const [activeTab, setActiveTab] = useState<Tab>("estadisticas");
     const [canEdit, setCanEdit] = useState(false);
     const [isEditingPlayer, setIsEditingPlayer] = useState(false);
-    const [playerForm, setPlayerForm] = useState({ firstName: '', lastName: '', number: '', position: '', bats: 'R', throws: 'R', photoUrl: '' });
+    const [playerForm, setPlayerForm] = useState({ firstName: '', lastName: '', secondLastName: '', number: '', position: '', bats: 'R', throws: 'R', photoUrl: '', curp: '', birthDate: '' });
     const [statsTournamentFilter, setStatsTournamentFilter] = useState<string | null>(null);
     const [gamesTournamentFilter, setGamesTournamentFilter] = useState<string | null>(null);
     const [statsType, setStatsType] = useState<'bateo' | 'pitcheo'>('bateo');
@@ -211,14 +212,17 @@ export default function PlayerProfilePage() {
                 const p = playerRes.data;
                 setPlayer(p);
                 setComputedStats(statsRes.data);
-                setPlayerForm({ firstName: p.firstName, lastName: p.lastName, number: p.number?.toString() || '', position: p.position || '', bats: p.bats || 'R', throws: p.throws || 'R', photoUrl: p.photoUrl || '' });
+                const activeEntry = p.rosterEntries?.find((e: any) => e.isActive) ?? p.rosterEntries?.[0];
+                setPlayerForm({ firstName: p.firstName, lastName: p.lastName, secondLastName: p.secondLastName || '', number: activeEntry?.number?.toString() || p.number?.toString() || '', position: p.position || '', bats: p.bats || 'R', throws: p.throws || 'R', photoUrl: p.photoUrl || '', curp: p.curp || '', birthDate: p.birthDate ? p.birthDate.slice(0, 10) : '' });
 
                 // Check edit permissions
                 const user = getUser();
                 if (!user) return;
                 if (user.role === 'admin') { setCanEdit(true); return; }
-                if (p?.team?.tournament?.id) {
-                    const { data: t } = await api.get(`/torneos/${p.team.tournament.id}`).catch(() => ({ data: null }));
+                const activeRoster = p.rosterEntries?.find((e: any) => e.isActive) ?? p.rosterEntries?.[0];
+                const tournamentId = activeRoster?.tournament?.id;
+                if (tournamentId) {
+                    const { data: t } = await api.get(`/torneos/${tournamentId}`).catch(() => ({ data: null }));
                     if (t?.organizers?.some((o: any) => o.user?.id === user.id || o.userId === user.id)) {
                         if (user.role === 'organizer' || user.role === 'presi') {
                             setCanEdit(true);
@@ -241,11 +245,14 @@ export default function PlayerProfilePage() {
             await api.patch(`/players/${id}`, {
                 firstName: playerForm.firstName,
                 lastName: playerForm.lastName,
+                secondLastName: playerForm.secondLastName || null,
                 number: playerForm.number ? parseInt(playerForm.number) : null,
                 position: playerForm.position,
                 bats: playerForm.bats,
                 throws: playerForm.throws,
                 photoUrl: playerForm.photoUrl,
+                curp: playerForm.curp || null,
+                birthDate: playerForm.birthDate || null,
             });
             setIsEditingPlayer(false);
             window.location.reload();
@@ -326,6 +333,15 @@ export default function PlayerProfilePage() {
         );
     }
 
+    // Derive current team from rosterEntries (active first, then most recent)
+    const currentEntry = player.rosterEntries?.find(e => e.isActive) ?? player.rosterEntries?.[0];
+    const currentTeam = currentEntry ? { id: currentEntry.team.id, name: currentEntry.team.name, shortName: currentEntry.team.shortName, logoUrl: currentEntry.team.logoUrl, tournament: currentEntry.tournament } : null;
+
+    // Active entries = all teams where player is currently registered
+    const activeEntries = player.rosterEntries?.filter(e => e.isActive) ?? [];
+    // Inactive entries = teams where player was given "baja" or tournament finished
+    const inactiveEntries = player.rosterEntries?.filter(e => !e.isActive) ?? [];
+
     const totals = aggregateStats(player.playerStats);
     // Use computed stats from the plays table when available (they override the empty playerStats)
     const cs = computedStats;
@@ -404,6 +420,9 @@ export default function PlayerProfilePage() {
         { id: "equipos", label: "Equipos" },
         { id: "torneos", label: "Torneos" },
     ];
+    if (canEdit) {
+        tabs.push({ id: "informacion", label: "Información" });
+    }
 
     return (
         <div className="min-h-screen bg-background text-foreground font-sans pb-24">
@@ -459,13 +478,9 @@ export default function PlayerProfilePage() {
 
                     {/* Info */}
                     <div className="flex-1 text-center sm:text-left">
-                        {player.position && (
-                            <span className="inline-block px-2.5 py-0.5 bg-primary/30 text-primary text-[10px] font-black uppercase tracking-widest rounded mb-2">
-                                {player.position}
-                            </span>
-                        )}
+
                         <h1 className="text-3xl sm:text-5xl font-black text-white uppercase tracking-tight leading-none mb-2 flex items-center gap-3 flex-wrap">
-                            {player.firstName} {player.lastName}
+                            {player.firstName} {player.lastName} {player.secondLastName && player.secondLastName}
                             {player.isVerified && (
                                 <span className="inline-flex items-center gap-1 text-sm font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-full normal-case tracking-normal">
                                     <CheckCircle className="w-4 h-4" />
@@ -474,22 +489,14 @@ export default function PlayerProfilePage() {
                             )}
                         </h1>
                         <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 text-white/60 text-sm font-medium mb-5">
-                            <Link
-                                href={`/equipos/${player.team.id}`}
-                                className="flex items-center gap-1.5 hover:text-white transition-colors"
-                            >
-                                <Users className="w-3.5 h-3.5" />
-                                {player.team.name}
-                            </Link>
-                            {player.team.tournament && (
-                                <Link
-                                    href={`/torneos/${player.team.tournament.id}`}
-                                    className="flex items-center gap-1.5 hover:text-white transition-colors"
-                                >
-                                    <Trophy className="w-3.5 h-3.5" />
-                                    {player.team.tournament.name}
-                                </Link>
-                            )}
+                            <div className="flex items-center gap-1.5 transition-colors">
+                                <Trophy className="w-3.5 h-3.5 text-white/40" />
+                                {(() => {
+                                    const numEquipos = player.rosterEntries?.length || 0;
+                                    const numTorneos = new Set(player.rosterEntries?.map((e: any) => e.tournament?.id || e.team?.tournament?.id).filter(Boolean)).size || 0;
+                                    return `Participante en ${numEquipos} equipo${numEquipos !== 1 ? 's' : ''} y ${numTorneos} torneo${numTorneos !== 1 ? 's' : ''}`;
+                                })()}
+                            </div>
                         </div>
 
                         {/* Primary stats bar */}
@@ -510,7 +517,7 @@ export default function PlayerProfilePage() {
                         <span>Batea: <span className="text-white/70">{player.bats === 'L' ? 'Zurdo' : player.bats === 'S' ? 'Ambos' : 'Derecho'}</span></span>
                         <span>Tira: <span className="text-white/70">{player.throws === 'L' ? 'Zurdo' : 'Derecho'}</span></span>
                         <span>Juegos: <span className="text-white/70">{cs?.gp ?? games.length}</span></span>
-                        <span>Torneos: <span className="text-white/70">{player.playerStats.length || (player.team.tournament ? 1 : 0)}</span></span>
+                        <span>Torneos: <span className="text-white/70">{player.playerStats.length || (currentTeam?.tournament ? 1 : 0)}</span></span>
                     </div>
                 </div>
             </div>
@@ -678,7 +685,7 @@ export default function PlayerProfilePage() {
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                 {filteredGames.map(entry => {
                                     const g = entry.game;
-                                    const isHome = g.homeTeamId === player.team.id;
+                                    const isHome = currentTeam ? g.homeTeamId === currentTeam.id : false;
                                     const myScore = isHome ? g.homeScore : g.awayScore;
                                     const oppScore = isHome ? g.awayScore : g.homeScore;
                                     const finished = g.status === "finished";
@@ -794,48 +801,61 @@ export default function PlayerProfilePage() {
                 {/* EQUIPOS */}
                 {activeTab === "equipos" && (
                     <div className="animate-fade-in-up space-y-6">
-                        {/* Current team */}
+                        {/* Active teams */}
+                        {activeEntries.length > 0 && (
                         <div>
-                            <SectionTitle>Equipo Actual</SectionTitle>
+                            <SectionTitle>Equipos Activos ({activeEntries.length})</SectionTitle>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <Link href={`/equipos/${player.team.id}`} className="bg-surface border border-muted/20 rounded-2xl p-5 shadow-sm hover:border-primary/40 hover:-translate-y-1 transition-all group">
-                                    <div className="flex items-center gap-4 mb-3">
-                                        <div className="w-14 h-14 bg-surface rounded-full shadow-md flex items-center justify-center border-2 border-muted/20 overflow-hidden font-black text-lg shrink-0 group-hover:border-primary/50 transition-colors">
-                                            {player.team.logoUrl ? (
-                                                <img src={player.team.logoUrl} alt={player.team.name} className="w-full h-full object-cover" />
-                                            ) : (
-                                                player.team.shortName || player.team.name?.substring(0, 2)
-                                            )}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <h4 className="font-black text-base text-foreground leading-tight group-hover:text-primary transition-colors truncate">
-                                                {player.team.name}
-                                            </h4>
-                                            {player.team.tournament && (
+                                {activeEntries.map(entry => (
+                                    <Link key={entry.id} href={`/equipos/${entry.teamId}`} className="bg-surface border border-emerald-500/30 rounded-2xl p-5 shadow-sm hover:border-emerald-400/50 hover:-translate-y-1 transition-all group relative overflow-hidden">
+                                        <span className="absolute top-3 right-3 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded-full">Activo</span>
+                                        <div className="flex items-center gap-4 mb-3">
+                                            <div className="w-14 h-14 bg-surface rounded-full shadow-md flex items-center justify-center border-2 border-muted/20 overflow-hidden font-black text-lg shrink-0 group-hover:border-emerald-400/50 transition-colors">
+                                                {entry.team.logoUrl ? (
+                                                    <img src={entry.team.logoUrl} alt={entry.team.name} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    entry.team.shortName || entry.team.name?.substring(0, 2)
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <h4 className="font-black text-base text-foreground leading-tight group-hover:text-primary transition-colors truncate">
+                                                    {entry.team.name}
+                                                </h4>
                                                 <p className="text-[11px] text-muted-foreground font-medium mt-0.5 flex items-center gap-1">
-                                                    <Trophy className="w-3 h-3" /> {player.team.tournament.name}
+                                                    <Trophy className="w-3 h-3" /> {entry.tournament.name} · {entry.tournament.season}
                                                 </p>
-                                            )}
+                                            </div>
+                                            <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
                                         </div>
-                                        <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
-                                    </div>
-                                    <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                                        <span className="bg-primary/20 text-primary px-2 py-0.5 rounded">{player.position || 'UTIL'}</span>
-                                        {player.number != null && <span>#{player.number}</span>}
-                                    </div>
-                                </Link>
+                                        <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                                            <span className="bg-primary/20 text-primary px-2 py-0.5 rounded">{entry.position || player.position || 'UTIL'}</span>
+                                            {entry.number != null && <span>#{entry.number}</span>}
+                                            <span className="ml-auto text-muted-foreground/60">Desde {new Date(entry.joinedAt).toLocaleDateString('es-MX', { month: 'short', year: 'numeric' })}</span>
+                                        </div>
+                                    </Link>
+                                ))}
                             </div>
                         </div>
+                        )}
 
-                        {/* Roster history */}
-                        {player.rosterEntries && player.rosterEntries.length > 0 && (
+                        {activeEntries.length === 0 && (
+                            <div className="bg-surface border border-muted/20 rounded-2xl p-10 text-center">
+                                <p className="text-muted-foreground">Este jugador no tiene equipos activos actualmente.</p>
+                            </div>
+                        )}
+
+                        {/* Roster history (inactive only) */}
+                        {inactiveEntries.length > 0 && (
                             <div>
-                                <SectionTitle>Historial de Equipos (Invitado)</SectionTitle>
+                                <SectionTitle>Historial de Equipos ({inactiveEntries.length})</SectionTitle>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    {player.rosterEntries.map(entry => (
-                                        <Link key={entry.id} href={`/equipos/${entry.teamId}`} className={`bg-surface border rounded-2xl p-5 shadow-sm hover:-translate-y-1 transition-all group ${entry.isActive ? 'border-emerald-500/30 hover:border-emerald-400/50' : 'border-muted/20 hover:border-primary/40'}`}>
+                                    {inactiveEntries.map(entry => (
+                                        <Link key={entry.id} href={`/equipos/${entry.teamId}`} className="bg-surface border border-muted/20 rounded-2xl p-5 shadow-sm hover:border-primary/40 hover:-translate-y-1 transition-all group relative overflow-hidden opacity-80 hover:opacity-100">
+                                            <span className="absolute top-3 right-3 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 bg-muted/20 text-muted-foreground border border-muted/30 rounded-full">
+                                                Baja
+                                            </span>
                                             <div className="flex items-center gap-4 mb-3">
-                                                <div className="w-14 h-14 bg-surface rounded-full shadow-md flex items-center justify-center border-2 border-muted/20 overflow-hidden font-black text-lg shrink-0 group-hover:border-primary/50 transition-colors">
+                                                <div className="w-14 h-14 bg-surface rounded-full shadow-md flex items-center justify-center border-2 border-muted/20 overflow-hidden font-black text-lg shrink-0 group-hover:border-primary/50 transition-colors grayscale group-hover:grayscale-0">
                                                     {entry.team.logoUrl ? (
                                                         <img src={entry.team.logoUrl} alt={entry.team.name} className="w-full h-full object-cover" />
                                                     ) : (
@@ -843,16 +863,11 @@ export default function PlayerProfilePage() {
                                                     )}
                                                 </div>
                                                 <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2">
-                                                        <h4 className="font-black text-base text-foreground leading-tight group-hover:text-primary transition-colors truncate">
-                                                            {entry.team.name}
-                                                        </h4>
-                                                        {entry.isActive && (
-                                                            <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded-full shrink-0">Activo</span>
-                                                        )}
-                                                    </div>
+                                                    <h4 className="font-black text-base text-foreground leading-tight group-hover:text-primary transition-colors truncate">
+                                                        {entry.team.name}
+                                                    </h4>
                                                     <p className="text-[11px] text-muted-foreground font-medium mt-0.5 flex items-center gap-1">
-                                                        <Trophy className="w-3 h-3" /> {entry.tournament.name}
+                                                        <Trophy className="w-3 h-3" /> {entry.tournament.name} · {entry.tournament.season}
                                                     </p>
                                                 </div>
                                                 <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
@@ -871,14 +886,11 @@ export default function PlayerProfilePage() {
 
                 {/* TORNEOS — Card style like tournament search page */}
                 {activeTab === "torneos" && (() => {
-                    // Collect all unique tournaments: primary + from roster entries
+                    // Collect all unique tournaments from roster entries
                     const allTournaments: Array<{ id: string; name: string; season: string; teamName: string; teamId: string; isPrimary: boolean }> = [];
-                    if (player.team.tournament) {
-                        allTournaments.push({ ...player.team.tournament, teamName: player.team.name, teamId: player.team.id, isPrimary: true });
-                    }
-                    player.rosterEntries?.forEach(entry => {
+                    player.rosterEntries?.forEach((entry, idx) => {
                         if (!allTournaments.find(t => t.id === entry.tournament.id)) {
-                            allTournaments.push({ ...entry.tournament, teamName: entry.team.name, teamId: entry.teamId, isPrimary: false });
+                            allTournaments.push({ ...entry.tournament, teamName: entry.team.name, teamId: entry.teamId, isPrimary: idx === 0 });
                         }
                     });
 
@@ -937,6 +949,33 @@ export default function PlayerProfilePage() {
                         </div>
                     );
                 })()}
+
+                {/* INFORMACIÓN (Solo admins/organizadores de la liga/torneo) */}
+                {activeTab === "informacion" && canEdit && (
+                    <div className="animate-fade-in-up bg-surface border border-muted/30 rounded-2xl p-6 md:p-8 shadow-sm">
+                        <SectionTitle>Datos del Jugador</SectionTitle>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-8 gap-x-6 mt-6">
+                            <div>
+                                <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Nombre Completo</h4>
+                                <p className="text-foreground font-bold text-base">{player.firstName} {player.lastName} {player.secondLastName || ''}</p>
+                            </div>
+                            <div>
+                                <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">CURP</h4>
+                                <p className="text-foreground font-bold text-base font-mono tracking-wider">{player.curp || 'No registrada'}</p>
+                            </div>
+                            <div>
+                                <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Fecha de Nacimiento</h4>
+                                <p className="text-foreground font-bold text-base">
+                                    {player.birthDate ? new Date(player.birthDate).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' }) : 'No registrada'}
+                                </p>
+                            </div>
+                            <div>
+                                <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Dorsal / Posición</h4>
+                                <p className="text-foreground font-bold text-base">#{player.number || 'N/A'} — {player.position || 'N/A'}</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </main>
 
             {/* ── Modal Editar Jugador ──────────────────────────────────────── */}
@@ -956,8 +995,22 @@ export default function PlayerProfilePage() {
                                     <input required type="text" value={playerForm.firstName} onChange={e => setPlayerForm(f => ({ ...f, firstName: e.target.value }))} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Apellido</label>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Apellido Paterno</label>
                                     <input required type="text" value={playerForm.lastName} onChange={e => setPlayerForm(f => ({ ...f, lastName: e.target.value }))} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Apellido Materno <span className="normal-case font-normal">(opcional)</span></label>
+                                <input type="text" value={playerForm.secondLastName} onChange={e => setPlayerForm(f => ({ ...f, secondLastName: e.target.value }))} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">CURP <span className="normal-case font-normal">(opcional)</span></label>
+                                    <input type="text" maxLength={18} value={playerForm.curp} onChange={e => setPlayerForm(f => ({ ...f, curp: e.target.value.toUpperCase() }))} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-mono tracking-wide" placeholder="AAAA000000AAAAAA00" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Fecha de Nac. <span className="normal-case font-normal">(opcional)</span></label>
+                                    <input type="date" value={playerForm.birthDate} onChange={e => setPlayerForm(f => ({ ...f, birthDate: e.target.value }))} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors" />
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
@@ -968,7 +1021,7 @@ export default function PlayerProfilePage() {
                                 <div>
                                     <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Posición</label>
                                     <select value={playerForm.position} onChange={e => setPlayerForm(f => ({ ...f, position: e.target.value }))} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors">
-                                        {['P','C','1B','2B','3B','SS','LF','CF','RF','DH'].map(pos => <option key={pos} value={pos}>{pos}</option>)}
+                                        {['P','C','1B','2B','3B','SS','LF','CF','RF','DH','INF','OF'].map(pos => <option key={pos} value={pos}>{pos}</option>)}
                                     </select>
                                 </div>
                             </div>

@@ -19,6 +19,12 @@ export class RosterController {
         return this.rosterService.removeFromRoster(id);
     }
 
+    @Delete('hard/:id')
+    @UseGuards(JwtAuthGuard)
+    hardDeleteFromRoster(@Param('id') id: string) {
+        return this.rosterService.hardDeleteFromRoster(id);
+    }
+
     @Get('player/:playerId/history')
     getPlayerHistory(@Param('playerId') playerId: string) {
         return this.rosterService.getPlayerHistory(playerId);

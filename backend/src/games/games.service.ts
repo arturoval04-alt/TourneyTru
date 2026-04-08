@@ -98,8 +98,8 @@ export class GamesService {
         const game = await this.prisma.game.findUnique({
             where: { id },
             include: {
-                homeTeam: { include: { players: true } },
-                awayTeam: { include: { players: true } },
+                homeTeam: { include: { rosterEntries: { where: { isActive: true }, include: { player: true } } } },
+                awayTeam: { include: { rosterEntries: { where: { isActive: true }, include: { player: true } } } },
                 tournament: {
                     include: {
                         league: { select: { id: true, adminId: true } },
@@ -271,11 +271,10 @@ export class GamesService {
             throw new NotFoundException('No se encontró el turno indicado en el lineup.');
         }
 
-        const playerIn = await this.prisma.player.findUnique({
-            where: { id: change.playerInId },
-            select: { id: true, teamId: true },
+        const playerInEntry = await (this.prisma.rosterEntry as any).findFirst({
+            where: { playerId: change.playerInId, teamId: change.teamId, isActive: true },
         });
-        if (!playerIn || playerIn.teamId !== change.teamId) {
+        if (!playerInEntry) {
             throw new BadRequestException('El jugador seleccionado no pertenece al equipo.');
         }
 
@@ -343,10 +342,14 @@ export class GamesService {
             orderBy: { battingOrder: 'asc' },
         });
 
-        const roster = await this.prisma.player.findMany({
-            where: { teamId },
-            orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+        const rosterEntries = await (this.prisma.rosterEntry as any).findMany({
+            where: { teamId, isActive: true },
+            include: { player: true },
+            orderBy: [{ player: { lastName: 'asc' } }, { player: { firstName: 'asc' } }],
         });
+        const numberByPlayerId = new Map<string, number | null>(
+            rosterEntries.map((e: any) => [e.playerId, e.number ?? null])
+        );
 
         const activeLineup = currentLineup.filter(l => (l as any).isActive);
         const inactiveLineup = currentLineup.filter(l => !(l as any).isActive);
@@ -362,18 +365,18 @@ export class GamesService {
             isStarter: l.isStarter,
             firstName: l.player.firstName,
             lastName: l.player.lastName,
-            number: (l.player as any).number ?? null,
+            number: numberByPlayerId.get(l.playerId) ?? null,
         }));
 
         // Jugadores que pueden entrar (sustitución): jugadores del roster que
         // nunca han aparecido en el lineup de este juego (ni activos ni inactivos)
-        const puedenEntrar = roster
-            .filter(p => !allLineupPlayerIds.has(p.id))
-            .map(p => ({
-                playerId: p.id,
-                firstName: p.firstName,
-                lastName: p.lastName,
-                number: (p as any).number ?? null,
+        const puedenEntrar = rosterEntries
+            .filter((e: any) => !allLineupPlayerIds.has(e.playerId))
+            .map((e: any) => ({
+                playerId: e.playerId,
+                firstName: e.player.firstName,
+                lastName: e.player.lastName,
+                number: e.number ?? null,
             }));
 
         // Jugadores que pueden reingresar: starters inactivos que no han usado reingreso
@@ -390,13 +393,13 @@ export class GamesService {
                     dhForPosition: l.dhForPosition,
                     firstName: l.player.firstName,
                     lastName: l.player.lastName,
-                    number: (l.player as any).number ?? null,
+                    number: numberByPlayerId.get(l.playerId) ?? null,
                     sustitutoActual: sustituto ? {
                         lineupId: sustituto.id,
                         playerId: sustituto.playerId,
                         firstName: sustituto.player.firstName,
                         lastName: sustituto.player.lastName,
-                        number: (sustituto.player as any).number ?? null,
+                        number: numberByPlayerId.get(sustituto.playerId) ?? null,
                     } : null,
                 };
             });
@@ -429,11 +432,10 @@ export class GamesService {
             throw new BadRequestException('El jugador entrante ya ha participado en el juego.');
         }
 
-        const playerInRecord = await this.prisma.player.findUnique({
-            where: { id: dto.playerInId },
-            select: { id: true, teamId: true },
+        const playerInEntry2 = await (this.prisma.rosterEntry as any).findFirst({
+            where: { playerId: dto.playerInId, teamId: dto.teamId, isActive: true },
         });
-        if (!playerInRecord || playerInRecord.teamId !== dto.teamId) {
+        if (!playerInEntry2) {
             throw new BadRequestException('El jugador no pertenece al equipo.');
         }
 

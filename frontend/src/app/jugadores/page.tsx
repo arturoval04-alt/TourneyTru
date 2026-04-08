@@ -22,7 +22,17 @@ interface PlayerItem {
     photoUrl?: string; team?: { id: string; name: string };
 }
 
-interface TeamItem { id: string; name: string; logoUrl?: string; players: PlayerItem[] }
+interface TeamItem {
+    id: string; 
+    name: string; 
+    logoUrl?: string; 
+    rosterEntries?: { 
+        player: PlayerItem; 
+        number?: number; 
+        position?: string; 
+        status?: string; 
+    }[];
+}
 
 type FilterMode = "liga" | "torneo" | "equipo";
 
@@ -86,8 +96,15 @@ export default function JugadoresPage() {
     const extractPlayers = (teamsData: any[]) => {
         const all: PlayerItem[] = [];
         for (const team of teamsData) {
-            for (const p of team.players || []) {
-                all.push({ ...p, team: { id: team.id, name: team.name } });
+            for (const entry of team.rosterEntries || []) {
+                const p = entry.player;
+                if (!p) continue;
+                all.push({ 
+                    ...p, 
+                    position: entry.position || p.position,
+                    number: entry.number || p.number,
+                    team: { id: team.id, name: team.name } 
+                });
             }
         }
         return all;
@@ -131,9 +148,15 @@ export default function JugadoresPage() {
         setSelectedTeam(team);
         setEntitySearch(""); setPlayerSearch("");
         setActiveTab("roster");
-        const teamPlayers: PlayerItem[] = (team.players || []).map(p => ({
-            ...p, team: { id: team.id, name: team.name }
-        }));
+        const teamPlayers: PlayerItem[] = (team.rosterEntries || []).map(entry => {
+            const p = entry.player;
+            return {
+                ...p,
+                position: entry.position || p.position,
+                number: entry.number || p.number,
+                team: { id: team.id, name: team.name }
+            };
+        });
         setPlayers(teamPlayers);
     };
 
@@ -373,7 +396,7 @@ export default function JugadoresPage() {
                                                 </div>
                                                 <div className="min-w-0">
                                                     <h3 className="font-bold text-base group-hover:text-primary transition-colors truncate">{team.name}</h3>
-                                                    <p className="text-xs text-muted-foreground">{team.players?.length || 0} Jugadores</p>
+                                                    <p className="text-xs text-muted-foreground">{team.rosterEntries?.length || 0} Jugadores</p>
                                                 </div>
                                                 <ChevronRight size={16} className="text-muted-foreground ml-auto shrink-0 group-hover:text-primary transition-colors" />
                                             </div>

@@ -95,8 +95,8 @@ export class TournamentsService {
                 league: true,
                 teams: {
                     include: {
-                        players: true,
-                        _count: { select: { players: true } },
+                        rosterEntries: { where: { isActive: true }, include: { player: true } },
+                        _count: { select: { rosterEntries: true } },
                     },
                 },
                 games: {
@@ -178,7 +178,7 @@ export class TournamentsService {
         await this.findOne(id, requestor);
         return this.prisma.team.findMany({
             where: { tournamentId: id },
-            include: { _count: { select: { players: true } } },
+            include: { _count: { select: { rosterEntries: true } } },
         });
     }
 

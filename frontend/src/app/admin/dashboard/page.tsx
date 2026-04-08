@@ -8,6 +8,7 @@ import CreateGameWizard from '@/components/game/CreateGameWizard';
 import ImageUploader from '@/components/ui/ImageUploader';
 import api from '@/lib/api';
 import { uploadToCloudinary } from '@/lib/cloudinary';
+import { CheckCircle, AlertTriangle, XCircle, Search, Plus } from 'lucide-react';
 
 export default function AdminDashboard() {
     const router = useRouter();
@@ -60,6 +61,8 @@ export default function AdminDashboard() {
         id: string;
         name: string;
         logoUrl?: string;
+        managerName?: string;
+        tournament?: { id: string; name: string };
     }
 
     interface PlayerData {
@@ -193,9 +196,46 @@ export default function AdminDashboard() {
     const [teamForm, setTeamForm] = useState({ name: '', manager: '', logoUrl: '', tournament_id: '' });
 
     // -- Form: Create Player --
-    const [playerForm, setPlayerForm] = useState({ firstName: '', lastName: '', number: '', position: 'INF', photoUrl: '', team_id: '' });
+    const [playerForm, setPlayerForm] = useState({
+        firstName: '', lastName: '', secondLastName: '', curp: '', birthDate: '', number: '', position: 'INF', bats: 'R', throws: 'R', photoUrl: '', team_id: ''
+    });
     const [showEditPlayerModal, setShowEditPlayerModal] = useState(false);
     const [editingPlayer, setEditingPlayer] = useState<any>(null);
+    const [liveValidation, setLiveValidation] = useState<any>(null);
+    const [checkingLive, setCheckingLive] = useState(false);
+    
+    // Live Validation for Dashboard
+    useEffect(() => {
+        if (!showPlayerModal) return;
+
+        const fn = playerForm.firstName.trim();
+        const ln = playerForm.lastName.trim();
+        
+        if (fn.length < 2 || ln.length < 2 || !playerForm.team_id) {
+            setLiveValidation(null);
+            return;
+        }
+        
+        const team = teams.find(t => t.id === playerForm.team_id);
+        const tourneyId = team?.tournament?.id || '';
+
+        const timeoutId = setTimeout(() => {
+            setCheckingLive(true);
+            const params = new URLSearchParams({
+                fn: fn,
+                ln: ln,
+                sln: playerForm.secondLastName?.trim() || '',
+                teamId: playerForm.team_id,
+                tourneyId: tourneyId
+            });
+            api.get(`/players/check-duplicate?${params}`)
+                .then(res => setLiveValidation(res.data))
+                .catch(err => console.error(err))
+                .finally(() => setCheckingLive(false));
+        }, 500);
+
+        return () => clearTimeout(timeoutId);
+    }, [playerForm.firstName, playerForm.lastName, playerForm.secondLastName, playerForm.team_id, showPlayerModal, teams]);
 
     // -- Form: Create User --
     const [userForm, setUserForm] = useState({ name: '', email: '', password: '', role: 'general', tournament_id: '', tournament_ids: [] as string[] });
@@ -594,21 +634,28 @@ export default function AdminDashboard() {
         } finally { setSaving(false); }
     };
 
-    const handleCreatePlayer = async (e: React.FormEvent) => {
+    const handleCreatePlayer = async (e: React.FormEvent, forceCreate = false) => {
         e.preventDefault();
         setSaving(true);
         try {
             await api.post('/players', {
                 firstName: playerForm.firstName,
                 lastName: playerForm.lastName,
+                secondLastName: playerForm.secondLastName || undefined,
+                curp: playerForm.curp || undefined,
+                birthDate: playerForm.birthDate || undefined,
                 number: playerForm.number ? parseInt(playerForm.number) : null,
                 teamId: playerForm.team_id,
+                tournamentId: selectedTournament, // Esto previene el error 400 y activa la detección de duplicados
                 position: playerForm.position,
+                bats: playerForm.bats,
+                throws: playerForm.throws,
                 photoUrl: playerForm.photoUrl || null,
+                ...(forceCreate ? { forceCreate: true } : {}),
             });
             alert('Jugador Registrado Satisfactoriamente');
             setShowPlayerModal(false);
-            setPlayerForm({ firstName: '', lastName: '', number: '', position: 'INF', photoUrl: '', team_id: '' });
+            setPlayerForm({ firstName: '', lastName: '', secondLastName: '', curp: '', birthDate: '', number: '', position: 'INF', bats: 'R', throws: 'R', photoUrl: '', team_id: '' });
             if (selectedTeam === playerForm.team_id) {
                 api.get('/players', { params: { teamId: selectedTeam } })
                     .then(({ data }) => setPlayers(data || []))
@@ -630,8 +677,13 @@ export default function AdminDashboard() {
         setPlayerForm({
             firstName: player.firstName || player.first_name,
             lastName: player.lastName || player.last_name,
+            secondLastName: player.secondLastName || '',
+            curp: player.curp || '',
+            birthDate: player.birthDate ? new Date(player.birthDate).toISOString().split('T')[0] : '',
             number: player.number?.toString() || '',
             position: player.position || 'INF',
+            bats: player.bats || 'R',
+            throws: player.throws || 'R',
             photoUrl: player.photoUrl || player.photo_url || '',
             team_id: player.team_id
         });
@@ -640,12 +692,17 @@ export default function AdminDashboard() {
 
     const handleDeletePlayer = async (player: any) => {
         const name = `${player.firstName || player.first_name} ${player.lastName || player.last_name}`;
-        if (!confirm(`¿Eliminar a ${name}? Esta acción no se puede deshacer.`)) return;
+        if (!confirm(`¿Eliminar a ${name} de este equipo? Se eliminará su registro del roster pero el jugador seguirá existiendo en el sistema.`)) return;
         try {
-            await api.delete(`/players/${player.id}`);
+            if (player.rosterEntryId) {
+                await api.delete(`/roster/hard/${player.rosterEntryId}`);
+            } else {
+                // Fallback: si no tenemos rosterEntryId, eliminar el player (legacy)
+                await api.delete(`/players/${player.id}`);
+            }
             setPlayers(prev => prev.filter((p: any) => p.id !== player.id));
         } catch (err: any) {
-            alert(err?.response?.data?.message || 'Error al eliminar jugador');
+            alert(err?.response?.data?.message || 'Error al eliminar jugador del equipo');
         }
     };
 
@@ -657,15 +714,21 @@ export default function AdminDashboard() {
             await api.patch(`/players/${editingPlayer.id}`, {
                 firstName: playerForm.firstName,
                 lastName: playerForm.lastName,
-                number: playerForm.number ? parseInt(playerForm.number) : null,
-                teamId: playerForm.team_id,
-                position: playerForm.position,
-                photoUrl: playerForm.photoUrl || null,
+                secondLastName: playerForm.secondLastName || undefined,
+                curp: playerForm.curp || undefined,
+                birthDate: playerForm.birthDate || undefined,
+                number: playerForm.number && playerForm.number.trim() !== '' ? parseInt(playerForm.number) : undefined,
+                teamId: playerForm.team_id || undefined,
+                tournamentId: selectedTournament || undefined,
+                position: playerForm.position || undefined,
+                bats: playerForm.bats || 'R',
+                throws: playerForm.throws || 'R',
+                photoUrl: playerForm.photoUrl || undefined,
             });
             alert('Jugador Actualizado');
             setShowEditPlayerModal(false);
             setEditingPlayer(null);
-            setPlayerForm({ firstName: '', lastName: '', number: '', position: 'INF', photoUrl: '', team_id: '' });
+            setPlayerForm({ firstName: '', lastName: '', secondLastName: '', curp: '', birthDate: '', number: '', position: 'INF', bats: 'R', throws: 'R', photoUrl: '', team_id: '' });
             if (selectedTeam) {
                 api.get('/players', { params: { teamId: selectedTeam } })
                     .then(({ data }) => setPlayers(data || []))
@@ -1340,7 +1403,7 @@ export default function AdminDashboard() {
                                                         </span>
                                                     </td>
                                                     <td className="px-6 py-4 text-xs font-bold">
-                                                        <span className="text-primary">{(team as any)._count?.players || 0} Jugadores</span>
+                                                        <span className="text-primary">{(team as any)._count?.rosterEntries || 0} Jugadores</span>
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
                                                         <button className="text-primary hover:underline font-bold text-xs mr-4" onClick={() => router.push(`/equipos/${team.id}`)}>Ver Perfil</button>
@@ -1402,7 +1465,7 @@ export default function AdminDashboard() {
                                         <thead className="bg-muted/10 text-xs uppercase text-foreground font-black tracking-wider border-b border-muted/20">
                                             <tr>
                                                 <th className="px-6 py-4">Jugador</th>
-                                                <th className="px-6 py-4">Equipo actual</th>
+                                                <th className="px-6 py-4">Equipos</th>
                                                 <th className="px-6 py-4">Posición</th>
                                                 <th className="px-6 py-4 text-right">Acciones</th>
                                             </tr>
@@ -1438,7 +1501,9 @@ export default function AdminDashboard() {
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4 text-xs font-bold text-muted-foreground uppercase">
-                                                        {player.team?.name || 'Agente Libre'}
+                                                        <span className="bg-muted/10 px-2 py-1 rounded-md">
+                                                            {player._count?.rosterEntries === 1 ? '1 Equipo' : `${player._count?.rosterEntries || 0} Equipos`}
+                                                        </span>
                                                     </td>
                                                     <td className="px-6 py-4">
                                                         <span className="bg-primary/10 text-primary px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-tighter">{player.position || 'INF'}</span>
@@ -2388,67 +2453,209 @@ export default function AdminDashboard() {
             {/* MODAL NUEVO JUGADOR */}
             {showPlayerModal && (
                 <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
-                    <div className="bg-surface border border-muted/30 p-5 sm:p-8 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl relative animate-fade-in-up">
-                        <button onClick={() => setShowPlayerModal(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
+                    <div className="bg-surface border border-muted/30 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl relative animate-fade-in-up flex flex-col">
+                        <button onClick={() => setShowPlayerModal(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground z-10">
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
+                        <div className="flex-1 overflow-y-auto p-5 sm:p-8">
                         <h2 className="text-2xl font-black text-foreground mb-6 uppercase tracking-tight pb-4 border-b border-muted/20">
                             Alta de Jugador
                         </h2>
-                        <form onSubmit={handleCreatePlayer} className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Equipo Destino</label>
-                                <select
-                                    required
-                                    value={playerForm.team_id}
-                                    onChange={e => setPlayerForm({ ...playerForm, team_id: e.target.value })}
-                                    className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition"
-                                >
-                                    <option value="">-- Seleccionar Equipo --</option>
-                                    {teams.map((t: TeamData) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                </select>
-                            </div>
-                            <div className="flex gap-4">
-                                <div className="flex-1">
-                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Nombre</label>
-                                    <input required type="text" value={playerForm.firstName} onChange={e => setPlayerForm({ ...playerForm, firstName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Roberto" />
-                                </div>
-                                <div className="flex-1">
-                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Apellido</label>
-                                    <input required type="text" value={playerForm.lastName} onChange={e => setPlayerForm({ ...playerForm, lastName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Gómez" />
-                                </div>
-                            </div>
-                            <div className="flex gap-4">
-                                <div className="flex-1">
-                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Número (Jersey)</label>
-                                    <input required type="text" value={playerForm.number} onChange={e => setPlayerForm({ ...playerForm, number: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. 24" />
-                                </div>
-                                <div className="flex-1">
-                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Posición</label>
-                                    <select value={playerForm.position} onChange={e => setPlayerForm({ ...playerForm, position: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition">
-                                        <option value="P">Pitcher (P)</option>
-                                        <option value="C">Catcher (C)</option>
-                                        <option value="INF">Infielder (INF)</option>
-                                        <option value="OF">Outfielder (OF)</option>
-                                        <option value="DH">Bateador Designado (DH)</option>
+                        
+                        <div className="flex flex-col lg:flex-row gap-6">
+                            <form onSubmit={(e) => handleCreatePlayer(e)} className="space-y-4 flex-1">
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Equipo Destino</label>
+                                    <select
+                                        required
+                                        value={playerForm.team_id}
+                                        onChange={e => setPlayerForm({ ...playerForm, team_id: e.target.value })}
+                                        className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition"
+                                    >
+                                        <option value="">-- Seleccionar Equipo --</option>
+                                        {teams.map((t: TeamData) => <option key={t.id} value={t.id}>{t.name}</option>)}
                                     </select>
                                 </div>
-                            </div>
+                                <div className="flex gap-4">
+                                    <div className="flex-1">
+                                        <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Nombre</label>
+                                        <input required type="text" value={playerForm.firstName} onChange={e => setPlayerForm({ ...playerForm, firstName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Roberto" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Apellido Paterno</label>
+                                        <input required type="text" value={playerForm.lastName} onChange={e => setPlayerForm({ ...playerForm, lastName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Gómez" />
+                                    </div>
+                                </div>
 
-                            <div>
-                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Foto del Jugador</label>
-                                <ImageUploader
-                                    value={playerForm.photoUrl}
-                                    onChange={url => setPlayerForm({ ...playerForm, photoUrl: url })}
-                                    shape="circle"
-                                    placeholder="⚾"
-                                />
-                            </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Apellido Materno <span className="text-muted-foreground/50 lowercase font-normal">(opcional)</span></label>
+                                    <input type="text" value={playerForm.secondLastName} onChange={e => setPlayerForm({ ...playerForm, secondLastName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Silva" />
+                                </div>
 
-                            <button type="submit" disabled={saving} className={`w-full py-3 mt-4 font-bold rounded-xl transition shadow-lg ${saving ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-primary/20 cursor-pointer active:scale-95'}`}>
-                                {saving ? 'Verificando...' : 'Guardar Jugador'}
-                            </button>
-                        </form>
+                                <div className="flex gap-4">
+                                    <div className="flex-1">
+                                        <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">CURP <span className="text-muted-foreground/50 lowercase font-normal">(opcional)</span></label>
+                                        <input type="text" value={playerForm.curp} onChange={e => setPlayerForm({ ...playerForm, curp: e.target.value.toUpperCase() })} maxLength={18} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="AAAA000000AAAAAA00" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">FECHA DE NAC. <span className="text-muted-foreground/50 lowercase font-normal">(opcional)</span></label>
+                                        <input type="date" value={playerForm.birthDate} onChange={e => setPlayerForm({ ...playerForm, birthDate: e.target.value })} max={new Date().toISOString().split('T')[0]} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition [color-scheme:dark]" />
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-4">
+                                    <div className="flex-1">
+                                        <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Número (Jersey)</label>
+                                        <input required type="text" value={playerForm.number} onChange={e => setPlayerForm({ ...playerForm, number: e.target.value.replace(/[^0-9]/g, '') })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. 24" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Posición</label>
+                                        <select value={playerForm.position} onChange={e => setPlayerForm({ ...playerForm, position: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition">
+                                            <option value="P">Pitcher (P)</option>
+                                            <option value="C">Catcher (C)</option>
+                                            <option value="1B">1ra Base (1B)</option>
+                                            <option value="2B">2da Base (2B)</option>
+                                            <option value="3B">3ra Base (3B)</option>
+                                            <option value="SS">Short Stop (SS)</option>
+                                            <option value="LF">Left Field (LF)</option>
+                                            <option value="CF">Center Field (CF)</option>
+                                            <option value="RF">Right Field (RF)</option>
+                                            <option value="DH">Bateador Designado (DH)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                
+                                <div className="flex gap-4">
+                                    <div className="flex-1">
+                                        <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Batea</label>
+                                        <select value={playerForm.bats} onChange={e => setPlayerForm({ ...playerForm, bats: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary transition font-medium">
+                                            <option value="R">Derecho</option>
+                                            <option value="L">Zurdo</option>
+                                            <option value="S">Ambidiestro</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex-1">
+                                        <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Tira</label>
+                                        <select value={playerForm.throws} onChange={e => setPlayerForm({ ...playerForm, throws: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary transition font-medium">
+                                            <option value="R">Derecho</option>
+                                            <option value="L">Zurdo</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Foto del Jugador</label>
+                                    <ImageUploader
+                                        value={playerForm.photoUrl}
+                                        onChange={url => setPlayerForm({ ...playerForm, photoUrl: url })}
+                                        shape="circle"
+                                        placeholder="⚾"
+                                    />
+                                </div>
+
+                                <button 
+                                    type="submit" 
+                                    disabled={saving || checkingLive || (liveValidation?.level === 'team') || (liveValidation?.level === 'tournament')} 
+                                    className={`w-full py-3 mt-4 font-bold rounded-xl transition shadow-lg ${(saving || checkingLive || liveValidation?.level === 'team' || liveValidation?.level === 'tournament') ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-primary/20 cursor-pointer active:scale-95'}`}
+                                >
+                                    {saving ? 'Guardando...' : 'Guardar Jugador'}
+                                </button>
+                            </form>
+
+                            {/* Verification Column */}
+                            <div className="w-full lg:w-[320px] shrink-0 bg-muted/5 flex flex-col p-6 rounded-xl border border-muted/20">
+                                <h3 className="text-[11px] font-black uppercase tracking-widest text-muted-foreground mb-4">
+                                    Verificación
+                                </h3>
+                                
+                                {checkingLive ? (
+                                    <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
+                                        <span className="w-6 h-6 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin mb-3"></span>
+                                        <p className="text-xs font-bold">Analizando perfil...</p>
+                                    </div>
+                                ) : !liveValidation ? (
+                                    <div className="flex flex-col items-center justify-center h-full min-h-[160px] text-center text-muted-foreground/40 space-y-3 pb-8">
+                                        <Search className="w-8 h-8" />
+                                        <p className="text-xs font-medium px-4">Ingresa el nombre, apellido y selecciona destino para verificar la identidad del jugador.</p>
+                                    </div>
+                                ) : liveValidation.level === 'none' ? (
+                                    <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-5 flex flex-col items-center text-center">
+                                        <div className="w-12 h-12 bg-emerald-500/20 rounded-full flex items-center justify-center mb-3">
+                                            <CheckCircle className="w-6 h-6 text-emerald-500" />
+                                        </div>
+                                        <h4 className="text-sm font-black text-emerald-500 mb-1">Perfil Único</h4>
+                                        <p className="text-xs text-emerald-500/80 font-medium leading-relaxed">
+                                            No hay coincidencias en la base de datos. Se creará un registro nuevo al guardar.
+                                        </p>
+                                    </div>
+                                ) : liveValidation.level === 'global' ? (
+                                    <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-5 flex flex-col items-center text-center">
+                                        <div className="w-12 h-12 bg-amber-500/20 rounded-full flex items-center justify-center mb-3">
+                                            <AlertTriangle className="w-6 h-6 text-amber-500" />
+                                        </div>
+                                        <h4 className="text-sm font-black text-amber-500 mb-1">Homónimo / Existente</h4>
+                                        <div className="bg-surface border border-amber-500/20 rounded-xl p-3 mt-3 w-full mb-3 text-left">
+                                            <p className="text-xs font-bold text-foreground truncate">{liveValidation.existing?.firstName} {liveValidation.existing?.lastName}</p>
+                                            <p className="text-[10px] text-muted-foreground mt-0.5 max-w-[200px] truncate">
+                                                Juega en: {liveValidation.existing?.team?.name || 'Agente Libre'}
+                                            </p>
+                                        </div>
+                                        <div className="flex flex-col gap-2 w-full">
+                                            <button 
+                                                type="button"
+                                                onClick={async () => {
+                                                    setSaving(true);
+                                                    try {
+                                                        const team = teams.find(t => t.id === playerForm.team_id);
+                                                        if (!team?.tournament?.id) return;
+                                                        await api.post('/roster', {
+                                                            playerId: liveValidation.existing.id,
+                                                            teamId: playerForm.team_id,
+                                                            tournamentId: team.tournament.id,
+                                                        });
+                                                        setShowPlayerModal(false);
+                                                        window.location.reload();
+                                                    } catch (err: any) {
+                                                        alert(err?.response?.data?.message || 'Error al vincular jugador');
+                                                    } finally { setSaving(false); }
+                                                }}
+                                                disabled={saving}
+                                                className="w-full py-2 bg-amber-500 text-amber-950 text-[11px] font-black rounded-lg hover:bg-amber-400 transition cursor-pointer disabled:opacity-50"
+                                            >
+                                                Sí, es él (Añadir al roster)
+                                            </button>
+                                            <button 
+                                                type="button"
+                                                onClick={async () => {
+                                                    await handleCreatePlayer({ preventDefault: () => {} } as any, true);
+                                                }}
+                                                disabled={saving}
+                                                className="w-full py-2 border border-amber-500/30 text-amber-500/80 text-[11px] font-bold rounded-lg hover:bg-amber-500/10 transition cursor-pointer disabled:opacity-50"
+                                            >
+                                                No, crear variante nueva
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-5 flex flex-col items-center text-center">
+                                        <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center mb-3">
+                                            <XCircle className="w-6 h-6 text-red-500" />
+                                        </div>
+                                        <h4 className="text-sm font-black text-red-500 mb-1">No Permitido</h4>
+                                        <p className="text-xs text-red-500/80 font-medium mb-3">
+                                            Este jugador ya se encuentra en el roster de {liveValidation.level === 'team' ? 'este equipo' : 'este torneo'}.
+                                        </p>
+                                        <div className="bg-surface border border-red-500/20 rounded-xl p-3 w-full text-left">
+                                            <p className="text-xs font-bold text-foreground truncate">{liveValidation.existing?.firstName} {liveValidation.existing?.lastName}</p>
+                                            <p className="text-[10px] text-red-400 mt-0.5 truncate font-medium">
+                                                Equipo: {liveValidation.existing?.team?.name || 'Desconocido'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        </div>
                     </div>
                 </div>
             )}
@@ -2481,23 +2688,63 @@ export default function AdminDashboard() {
                                     <input required type="text" value={playerForm.firstName} onChange={e => setPlayerForm({ ...playerForm, firstName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Roberto" />
                                 </div>
                                 <div className="flex-1">
-                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Apellido</label>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Apellido Paterno</label>
                                     <input required type="text" value={playerForm.lastName} onChange={e => setPlayerForm({ ...playerForm, lastName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Gómez" />
                                 </div>
                             </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Apellido Materno <span className="text-muted-foreground/50 lowercase font-normal">(opcional)</span></label>
+                                <input type="text" value={playerForm.secondLastName} onChange={e => setPlayerForm({ ...playerForm, secondLastName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Silva" />
+                            </div>
+
+                            <div className="flex gap-4">
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">CURP <span className="text-muted-foreground/50 lowercase font-normal">(opcional)</span></label>
+                                    <input type="text" value={playerForm.curp} onChange={e => setPlayerForm({ ...playerForm, curp: e.target.value.toUpperCase() })} maxLength={18} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="AAAA000000AAAAAA00" />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">FECHA DE NAC. <span className="text-muted-foreground/50 lowercase font-normal">(opcional)</span></label>
+                                    <input type="date" value={playerForm.birthDate} onChange={e => setPlayerForm({ ...playerForm, birthDate: e.target.value })} max={new Date().toISOString().split('T')[0]} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition [color-scheme:dark]" />
+                                </div>
+                            </div>
+
                             <div className="flex gap-4">
                                 <div className="flex-1">
                                     <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Número (Jersey)</label>
-                                    <input required type="text" value={playerForm.number} onChange={e => setPlayerForm({ ...playerForm, number: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. 24" />
+                                    <input type="text" value={playerForm.number} onChange={e => setPlayerForm({ ...playerForm, number: e.target.value.replace(/[^0-9]/g, '') })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. 24" />
                                 </div>
                                 <div className="flex-1">
                                     <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Posición</label>
                                     <select value={playerForm.position} onChange={e => setPlayerForm({ ...playerForm, position: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition">
                                         <option value="P">Pitcher (P)</option>
                                         <option value="C">Catcher (C)</option>
-                                        <option value="INF">Infielder (INF)</option>
-                                        <option value="OF">Outfielder (OF)</option>
+                                        <option value="1B">1ra Base (1B)</option>
+                                        <option value="2B">2da Base (2B)</option>
+                                        <option value="3B">3ra Base (3B)</option>
+                                        <option value="SS">Short Stop (SS)</option>
+                                        <option value="LF">Left Field (LF)</option>
+                                        <option value="CF">Center Field (CF)</option>
+                                        <option value="RF">Right Field (RF)</option>
                                         <option value="DH">Bateador Designado (DH)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div className="flex gap-4">
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Batea</label>
+                                    <select value={playerForm.bats} onChange={e => setPlayerForm({ ...playerForm, bats: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary transition font-medium">
+                                        <option value="R">Derecho</option>
+                                        <option value="L">Zurdo</option>
+                                        <option value="S">Ambidiestro</option>
+                                    </select>
+                                </div>
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Tira</label>
+                                    <select value={playerForm.throws} onChange={e => setPlayerForm({ ...playerForm, throws: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary transition font-medium">
+                                        <option value="R">Derecho</option>
+                                        <option value="L">Zurdo</option>
                                     </select>
                                 </div>
                             </div>

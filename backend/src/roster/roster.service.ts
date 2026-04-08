@@ -49,17 +49,16 @@ export class RosterService {
         if (adminId) {
             const admin = await this.prisma.user.findUnique({ where: { id: adminId } }) as any;
             if (admin && admin.maxPlayersPerTeam > 0) {
-                const directCount = await this.prisma.player.count({ where: { teamId: dto.teamId } });
                 const rosterCount = await (this.prisma as any).rosterEntry.count({
                     where: { teamId: dto.teamId, tournamentId: dto.tournamentId, isActive: true },
                 });
-                if (directCount + rosterCount >= admin.maxPlayersPerTeam) {
+                if (rosterCount >= admin.maxPlayersPerTeam) {
                     throw new ForbiddenException({
                         code: 'QUOTA_EXCEEDED',
                         resource: 'players',
                         message: `El equipo ya alcanzó el límite de jugadores de tu plan (${admin.maxPlayersPerTeam}).`,
                         limit: admin.maxPlayersPerTeam,
-                        current: directCount + rosterCount,
+                        current: rosterCount,
                     });
                 }
             }
@@ -70,11 +69,11 @@ export class RosterService {
                 playerId: dto.playerId,
                 teamId: dto.teamId,
                 tournamentId: dto.tournamentId,
-                number: dto.number ?? player.number,
+                number: dto.number ?? null,
                 position: dto.position ?? player.position,
             },
             include: {
-                player: { select: { id: true, firstName: true, lastName: true, photoUrl: true, position: true, number: true, isVerified: true } },
+                player: { select: { id: true, firstName: true, lastName: true, photoUrl: true, position: true, isVerified: true } },
                 team: { select: { id: true, name: true } },
                 tournament: { select: { id: true, name: true, season: true } },
             },
@@ -88,6 +87,12 @@ export class RosterService {
             where: { id },
             data: { isActive: false, leftAt: new Date() },
         });
+    }
+
+    async hardDeleteFromRoster(id: string) {
+        const entry = await (this.prisma as any).rosterEntry.findUnique({ where: { id } });
+        if (!entry) throw new NotFoundException('Entrada de roster no encontrada');
+        return (this.prisma as any).rosterEntry.delete({ where: { id } });
     }
 
     async getPlayerHistory(playerId: string) {

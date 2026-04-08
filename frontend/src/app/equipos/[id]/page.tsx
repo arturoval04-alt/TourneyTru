@@ -8,10 +8,37 @@ import { getUser } from '@/lib/auth';
 import api from "@/lib/api";
 import { useParams, useRouter } from "next/navigation";
 import {
-    Settings, Share2, ArrowLeft, Users, Trophy, Flag, MapPin, ExternalLink, Clock, Star, Activity, X, CheckCircle, UserPlus, Search, Plus, Upload, Download, FileText
+    Settings, Share2, ArrowLeft, Users, Trophy, Flag, MapPin, ExternalLink, Clock, Star, Activity, X, CheckCircle, UserPlus, Search, Plus, Upload, Download, FileText, AlertTriangle, XCircle
 } from "lucide-react";
 import PlayerHoverCard from "@/components/PlayerHoverCard";
 import ImageUploader from "@/components/ui/ImageUploader";
+
+type ImportRowStatus = 'pending_confirm' | 'duplicate_global' | 'duplicate_tournament' | 'duplicate_team';
+
+interface ImportRowResult {
+    row: number;
+    status: ImportRowStatus;
+    firstName: string;
+    lastName: string;
+    secondLastName?: string | null;
+    existing?: {
+        id: string;
+        firstName: string;
+        lastName: string;
+        secondLastName?: string | null;
+        isVerified: boolean;
+        team: { id: string; name: string; shortName?: string | null; tournament: { id: string; name: string; season: string } };
+    };
+}
+
+interface DuplicateModalState {
+    level: 'global' | 'team' | 'tournament';
+    existing: ImportRowResult['existing'];
+    pendingData: {
+        firstName: string; lastName: string; secondLastName?: string;
+        number?: number; position?: string; bats?: string; throws?: string; teamId: string;
+    };
+}
 
 interface BattingStats {
     games: number; atBats: number; runs: number; hits: number; h2: number; h3: number; hr: number; rbi: number; bb: number; so: number; hbp: number; sac: number;
@@ -55,12 +82,14 @@ interface GameRecord {
 interface RosterEntry {
     id: string;
     playerId: string;
+    number?: number;
+    position?: string;
     player: {
         id: string; firstName: string; lastName: string;
-        number?: number; position?: string; photoUrl?: string;
+        secondLastName?: string | null;
+        position?: string; photoUrl?: string;
         bats?: string; throws?: string; isVerified: boolean;
-        teamId?: string;
-        team?: { id: string; name: string; shortName?: string };
+        stats?: { batting: BattingStats; pitching: PitchingStats };
     };
     joinedAt: string;
 }
@@ -72,8 +101,7 @@ interface TeamData {
     logoUrl?: string;
     managerName?: string;
     tournament?: { id: string; name: string; category?: string };
-    players: PlayerItem[];
-    rosterEntries?: RosterEntry[];
+    rosterEntries: RosterEntry[];
     wins: number;
     losses: number;
     gamesPlayed: number;
@@ -109,11 +137,20 @@ export default function TeamProfilePage() {
     // Add Player Modal state
     const [showAddPlayerModal, setShowAddPlayerModal] = useState(false);
     const [addPlayerTab, setAddPlayerTab] = useState<'manual' | 'csv'>('manual');
-    const [newPlayerForm, setNewPlayerForm] = useState({ firstName: '', lastName: '', number: '', position: 'INF', bats: 'R', throws: 'R' });
+    const [newPlayerForm, setNewPlayerForm] = useState({ firstName: '', lastName: '', secondLastName: '', number: '', position: 'INF', bats: 'R', throws: 'R', curp: '', birthDate: '' });
     const [addingPlayer, setAddingPlayer] = useState(false);
-    const [csvRows, setCsvRows] = useState<{ firstName: string; lastName: string; number: string; position: string; bats: string; throws: string }[]>([]);
+    const [csvRows, setCsvRows] = useState<{ firstName: string; lastName: string; secondLastName: string; number: string; position: string; bats: string; throws: string }[]>([]);
     const [csvError, setCsvError] = useState('');
     const [importingCsv, setImportingCsv] = useState(false);
+
+    // Import preview state (2-step CSV flow)
+    const [importPreview, setImportPreview] = useState<ImportRowResult[] | null>(null);
+    const [importStep, setImportStep] = useState<'upload' | 'preview'>('upload');
+    const [importChecked, setImportChecked] = useState<Set<number>>(new Set());
+    const [importSummary, setImportSummary] = useState<{ pendingConfirm: number; globalWarnings: number; blocked: number } | null>(null);
+    const [confirmingImport, setConfirmingImport] = useState(false);
+    const [liveValidation, setLiveValidation] = useState<any>(null);
+    const [checkingLive, setCheckingLive] = useState(false);
 
     // Profile Editing State (Team)
     const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -180,6 +217,35 @@ export default function TeamProfilePage() {
         }
     }, [selectedPlayer]);
 
+    // Live Validation for Manual Player Creation
+    useEffect(() => {
+        if (!showAddPlayerModal || addPlayerTab !== 'manual') return;
+
+        const fn = newPlayerForm.firstName.trim();
+        const ln = newPlayerForm.lastName.trim();
+        if (fn.length < 2 || ln.length < 2) {
+            setLiveValidation(null);
+            return;
+        }
+
+        const timeoutId = setTimeout(() => {
+            setCheckingLive(true);
+            const params = new URLSearchParams({
+                fn: fn,
+                ln: ln,
+                sln: newPlayerForm.secondLastName?.trim() || '',
+                teamId: team?.id || '',
+                tourneyId: team?.tournament?.id || ''
+            });
+            api.get(`/players/check-duplicate?${params}`)
+                .then(res => setLiveValidation(res.data))
+                .catch(err => console.error(err))
+                .finally(() => setCheckingLive(false));
+        }, 500);
+
+        return () => clearTimeout(timeoutId);
+    }, [newPlayerForm.firstName, newPlayerForm.lastName, newPlayerForm.secondLastName, showAddPlayerModal, addPlayerTab, team]);
+
     const handleUpdatePlayer = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
@@ -190,7 +256,9 @@ export default function TeamProfilePage() {
                 position: playerForm.position,
                 bats: playerForm.bats,
                 throws: playerForm.throws,
-                photoUrl: playerForm.photoUrl
+                photoUrl: playerForm.photoUrl,
+                teamId,
+                tournamentId: team?.tournament?.id
             });
 
             alert('Información del Jugador Actualizada');
@@ -233,39 +301,46 @@ export default function TeamProfilePage() {
         } finally { setAddingRoster(null); }
     };
 
-    const handleDeletePlayer = async (player: PlayerItem) => {
-        if (!confirm(`¿Eliminar a ${player.firstName} ${player.lastName}? Esta acción no se puede deshacer.`)) return;
+    const handleDeactivatePlayer = async (rosterEntryId: string, playerName: string) => {
+        if (!confirm(`¿Dar de baja a ${playerName} de este equipo? El jugador seguirá existiendo en el sistema y su historial se conservará.`)) return;
         try {
-            await api.delete(`/players/${player.id}`);
-            setTeam(prev => prev ? { ...prev, players: prev.players.filter(p => p.id !== player.id) } : prev);
+            await api.delete(`/roster/${rosterEntryId}`);
+            setTeam(prev => prev ? { ...prev, rosterEntries: prev.rosterEntries.filter(e => e.id !== rosterEntryId) } : prev);
         } catch (err: any) {
-            alert(err?.response?.data?.message || 'Error al eliminar jugador');
+            alert(err?.response?.data?.message || 'Error al dar de baja al jugador');
         }
     };
 
-    const handleAddPlayerManual = async (e: React.FormEvent) => {
+    const handleAddPlayerManual = async (e: React.FormEvent, forceCreate = false) => {
         e.preventDefault();
         setAddingPlayer(true);
+        const payload = {
+            firstName: newPlayerForm.firstName,
+            lastName: newPlayerForm.lastName,
+            secondLastName: newPlayerForm.secondLastName || undefined,
+            number: newPlayerForm.number ? parseInt(newPlayerForm.number) : undefined,
+            position: newPlayerForm.position || undefined,
+            bats: newPlayerForm.bats,
+            throws: newPlayerForm.throws,
+            curp: newPlayerForm.curp || undefined,
+            birthDate: newPlayerForm.birthDate || undefined,
+            teamId,
+            tournamentId: team?.tournament?.id,
+            ...(forceCreate ? { forceCreate: true } : {}),
+        };
         try {
-            await api.post('/players', {
-                firstName: newPlayerForm.firstName,
-                lastName: newPlayerForm.lastName,
-                number: newPlayerForm.number ? parseInt(newPlayerForm.number) : undefined,
-                position: newPlayerForm.position || undefined,
-                bats: newPlayerForm.bats,
-                throws: newPlayerForm.throws,
-                teamId,
-            });
-            setNewPlayerForm({ firstName: '', lastName: '', number: '', position: 'INF', bats: 'R', throws: 'R' });
+            await api.post('/players', payload);
+            setNewPlayerForm({ firstName: '', lastName: '', secondLastName: '', number: '', position: 'INF', bats: 'R', throws: 'R', curp: '', birthDate: '' });
             setShowAddPlayerModal(false);
             window.location.reload();
         } catch (err: any) {
-            alert(err?.response?.data?.message || 'Error al agregar jugador');
+            const data = err?.response?.data;
+            alert(data?.message || 'Error al agregar jugador');
         } finally { setAddingPlayer(false); }
     };
 
     const downloadCsvTemplate = () => {
-        const csv = 'Nombre,Apellido,Número,Posición,Bats,Throws\nJuan,Pérez,5,SS,R,R\nMaría,López,12,OF,L,R';
+        const csv = 'Nombre,Apellido,ApellidoMaterno,Número,Posición,Bats,Throws\nJuan,Pérez,García,5,SS,R,R\nMaría,López,,12,OF,L,R';
         const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -279,6 +354,9 @@ export default function TeamProfilePage() {
         const file = e.target.files?.[0];
         if (!file) return;
         setCsvError('');
+        setImportPreview(null);
+        setImportStep('upload');
+        setImportChecked(new Set());
         const reader = new FileReader();
         reader.onload = (ev) => {
             const text = (ev.target?.result as string).replace(/^\uFEFF/, '');
@@ -289,10 +367,11 @@ export default function TeamProfilePage() {
                 return {
                     firstName: cols[0] || '',
                     lastName: cols[1] || '',
-                    number: cols[2] || '',
-                    position: cols[3] || 'INF',
-                    bats: cols[4] || 'R',
-                    throws: cols[5] || 'R',
+                    secondLastName: cols[2] || '',
+                    number: cols[3] || '',
+                    position: cols[4] || 'INF',
+                    bats: cols[5] || 'R',
+                    throws: cols[6] || 'R',
                 };
             }).filter(r => r.firstName || r.lastName);
             if (rows.length === 0) { setCsvError('No se encontraron jugadores válidos'); return; }
@@ -302,28 +381,87 @@ export default function TeamProfilePage() {
         e.target.value = '';
     };
 
-    const handleCsvImport = async () => {
+    // Etapa 1: enviar al backend para obtener preview con estados por fila
+    const handleCsvPreview = async () => {
         const valid = csvRows.filter(r => r.firstName && r.lastName);
         if (valid.length === 0) { setCsvError('Cada jugador necesita al menos nombre y apellido'); return; }
         setImportingCsv(true);
+        setCsvError('');
         try {
-            await api.post('/players/bulk', {
+            const { data } = await api.post('/players/import', {
                 teamId,
+                tournamentId: team?.tournament?.id,
                 players: valid.map(r => ({
                     firstName: r.firstName,
                     lastName: r.lastName,
+                    secondLastName: r.secondLastName || undefined,
                     number: r.number ? parseInt(r.number) : undefined,
                     position: r.position || undefined,
                     bats: ['R', 'L', 'S'].includes(r.bats) ? r.bats : undefined,
                     throws: ['R', 'L'].includes(r.throws) ? r.throws : undefined,
                 })),
             });
+            setImportPreview(data.results);
+            setImportSummary(data.summary);
+            // Pre-seleccionar todos los elegibles (verde y amarillo)
+            const eligible = new Set<number>(
+                (data.results as ImportRowResult[])
+                    .filter(r => r.status === 'pending_confirm' || r.status === 'duplicate_global')
+                    .map(r => r.row)
+            );
+            setImportChecked(eligible);
+            setImportStep('preview');
+        } catch (err: any) {
+            setCsvError(err?.response?.data?.message || 'Error al verificar jugadores');
+        } finally { setImportingCsv(false); }
+    };
+
+    // Etapa 2: confirmar los seleccionados
+    const handleConfirmImport = async () => {
+        if (!importPreview) return;
+        setConfirmingImport(true);
+        const selected = importPreview.filter(r => importChecked.has(r.row));
+        const toCreate = selected
+            .filter(r => r.status === 'pending_confirm')
+            .map(r => {
+                const orig = csvRows.find(c => c.firstName === r.firstName && c.lastName === r.lastName);
+                return {
+                    firstName: r.firstName,
+                    lastName: r.lastName,
+                    secondLastName: r.secondLastName || undefined,
+                    number: orig?.number ? parseInt(orig.number) : undefined,
+                    position: orig?.position || undefined,
+                    bats: orig?.bats || undefined,
+                    throws: orig?.throws || undefined,
+                };
+            });
+        const toRoster = selected
+            .filter(r => r.status === 'duplicate_global' && r.existing)
+            .map(r => ({ playerId: r.existing!.id }));
+        try {
+            await api.post('/players/confirm-import', { 
+                teamId, 
+                tournamentId: team?.tournament?.id,
+                toCreate, 
+                toRoster 
+            });
             setShowAddPlayerModal(false);
             setCsvRows([]);
+            setImportPreview(null);
+            setImportStep('upload');
             window.location.reload();
         } catch (err: any) {
-            setCsvError(err?.response?.data?.message || 'Error al importar jugadores');
-        } finally { setImportingCsv(false); }
+            setCsvError(err?.response?.data?.message || 'Error al confirmar importación');
+        } finally { setConfirmingImport(false); }
+    };
+
+    const resetCsvState = () => {
+        setCsvRows([]);
+        setCsvError('');
+        setImportPreview(null);
+        setImportStep('upload');
+        setImportChecked(new Set());
+        setImportSummary(null);
     };
 
     const handleUpdateProfile = async (e: React.FormEvent) => {
@@ -491,7 +629,7 @@ export default function TeamProfilePage() {
                                     </div>
                                     <div className="text-center md:text-left">
                                         <p className="text-[9px] md:text-[10px] text-white/50 font-black uppercase tracking-wider mb-0.5">ROSTER</p>
-                                        <p className="text-xs md:text-sm font-medium text-white">{team.players?.length || 0} Jugadores</p>
+                                        <p className="text-xs md:text-sm font-medium text-white">{team.rosterEntries?.length || 0} Jugadores</p>
                                     </div>
                                 </div>
                                 <div className="flex flex-col md:flex-row items-center gap-1 md:gap-3 group bg-white/5 px-2 py-2 md:px-4 border border-white/10 rounded-xl md:bg-transparent md:border-none md:p-0 justify-center md:justify-start">
@@ -826,105 +964,61 @@ export default function TeamProfilePage() {
                                 </div>
                             )}
 
-                            {/* Regular players */}
-                            {team.players.length === 0 && (!team.rosterEntries || team.rosterEntries.length === 0) ? (
+                            {/* Roster */}
+                            {!team.rosterEntries || team.rosterEntries.length === 0 ? (
                                 <div className="py-12 text-center bg-surface border border-muted/30 rounded-2xl">
                                     <p className="text-muted-foreground">No hay jugadores registrados.</p>
                                 </div>
                             ) : (
-                                <>
-                                    {team.players.length > 0 && (
-                                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 items-stretch">
-                                            {team.players.map((p) => (
-                                                <div key={p.id} className="group/card w-full">
-                                                    <PlayerHoverCard
-                                                        playerId={p.id}
-                                                        firstName={p.firstName}
-                                                        lastName={p.lastName}
-                                                        photoUrl={p.photoUrl}
-                                                        position={p.position}
-                                                        number={p.number}
-                                                        teamName={team.name}
-                                                    >
-                                                        <div className="relative bg-surface border border-muted/30 rounded-xl shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 group cursor-pointer flex flex-col items-center p-4 hover:-translate-y-1 h-full">
-                                                            {canEdit && (
-                                                                <button
-                                                                    onClick={(e) => { e.stopPropagation(); handleDeletePlayer(p); }}
-                                                                    className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-red-500/10 border border-red-500/20 text-red-500 flex items-center justify-center sm:opacity-0 sm:group-hover:opacity-100 hover:bg-red-500/30 transition-all"
-                                                                    title="Eliminar jugador"
-                                                                >
-                                                                    <X className="w-3 h-3" />
-                                                                </button>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 items-stretch">
+                                    {team.rosterEntries.map((entry) => {
+                                        const p = entry.player;
+                                        return (
+                                            <div key={entry.id} className="group/card w-full">
+                                                <PlayerHoverCard
+                                                    playerId={p.id}
+                                                    firstName={p.firstName}
+                                                    lastName={p.lastName}
+                                                    photoUrl={p.photoUrl}
+                                                    position={entry.position || p.position}
+                                                    number={entry.number ?? undefined}
+                                                    teamName={team.name}
+                                                >
+                                                    <div className="relative bg-surface border border-muted/30 rounded-xl shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 group cursor-pointer flex flex-col items-center p-4 hover:-translate-y-1 h-full">
+                                                        {canEdit && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleDeactivatePlayer(entry.id, `${p.firstName} ${p.lastName}`); }}
+                                                                className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center sm:opacity-0 sm:group-hover:opacity-100 hover:bg-amber-500/30 transition-all"
+                                                                title="Dar de baja"
+                                                            >
+                                                                <X className="w-3 h-3" />
+                                                            </button>
+                                                        )}
+                                                        {p.isVerified && (
+                                                            <span className="absolute top-2 left-2 text-emerald-400" title="Verificado">
+                                                                <CheckCircle className="w-3.5 h-3.5" />
+                                                            </span>
+                                                        )}
+                                                        <div className="w-16 h-16 bg-muted/5 rounded-full mb-3 mt-2 flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-primary/50 transition-colors shadow-inner shrink-0">
+                                                            {p.photoUrl ? (
+                                                                <img src={p.photoUrl} alt={`${p.firstName} ${p.lastName}`} className="w-full h-full object-cover group-hover:scale-110 duration-300" />
+                                                            ) : (
+                                                                <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={80} height={80} className="opacity-90 group-hover:opacity-100 transition-opacity group-hover:scale-110 duration-300" />
                                                             )}
-                                                            <div className="w-16 h-16 bg-muted/5 rounded-full mb-3 mt-2 flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-primary/50 transition-colors shadow-inner shrink-0">
-                                                                {p.photoUrl ? (
-                                                                    <img src={p.photoUrl} alt={`${p.firstName} ${p.lastName}`} className="w-full h-full object-cover group-hover:scale-110 duration-300" />
-                                                                ) : (
-                                                                    <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={80} height={80} className="opacity-90 group-hover:opacity-100 transition-opacity group-hover:scale-110 duration-300" />
-                                                                )}
-                                                            </div>
-                                                            <h3 className="font-bold text-center group-hover:text-primary transition-colors text-sm leading-tight line-clamp-2 min-h-[2.5rem] flex items-center justify-center w-full">{p.firstName} {p.lastName}</h3>
-                                                            <div className="flex gap-2 items-center mt-2">
-                                                                {p.number && <span className="text-sm text-muted-foreground font-black text-center w-6">#{p.number}</span>}
-                                                                <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs font-bold rounded">
-                                                                    {p.position || 'INF'}
-                                                                </span>
-                                                            </div>
                                                         </div>
-                                                    </PlayerHoverCard>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    {/* Roster entries (invited/verified players) */}
-                                    {team.rosterEntries && team.rosterEntries.length > 0 && (
-                                        <div>
-                                            <h3 className="text-[11px] font-black uppercase tracking-widest text-muted-foreground mb-3 pl-1 flex items-center gap-2">
-                                                <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
-                                                Jugadores Invitados
-                                            </h3>
-                                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 items-stretch">
-                                                {team.rosterEntries.map((entry) => {
-                                                    const p = entry.player;
-                                                    return (
-                                                        <PlayerHoverCard
-                                                            key={entry.id}
-                                                            playerId={p.id}
-                                                            firstName={p.firstName}
-                                                            lastName={p.lastName}
-                                                            photoUrl={p.photoUrl}
-                                                            position={p.position}
-                                                            number={p.number}
-                                                            teamName={p.team?.name || team.name}
-                                                        >
-                                                            <div className="relative bg-surface border border-emerald-500/20 rounded-xl shadow-sm hover:shadow-md hover:border-emerald-400/50 transition-all duration-300 group cursor-pointer flex flex-col items-center p-4 hover:-translate-y-1 h-full">
-                                                                <span className="absolute top-2 right-2 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded-full">
-                                                                    Invitado
-                                                                </span>
-                                                                <div className="w-16 h-16 bg-muted/5 rounded-full mb-3 mt-2 flex items-center justify-center overflow-hidden border-2 border-emerald-500/20 group-hover:border-emerald-400/50 transition-colors shadow-inner">
-                                                                    {p.photoUrl ? (
-                                                                        <img src={p.photoUrl} alt={`${p.firstName} ${p.lastName}`} className="w-full h-full object-cover group-hover:scale-110 duration-300" />
-                                                                    ) : (
-                                                                        <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.firstName}${p.lastName}`} alt="Player" width={80} height={80} className="opacity-90 group-hover:opacity-100 transition-opacity group-hover:scale-110 duration-300" />
-                                                                    )}
-                                                                </div>
-                                                                <h3 className="font-bold text-center group-hover:text-emerald-400 transition-colors text-sm leading-tight">{p.firstName} {p.lastName}</h3>
-                                                                <p className="text-[10px] text-muted-foreground mt-0.5 text-center">{p.team?.name}</p>
-                                                                <div className="flex gap-2 items-center mt-2">
-                                                                    {p.number && <span className="text-sm text-muted-foreground font-black text-center w-6">#{p.number}</span>}
-                                                                    <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 text-xs font-bold rounded">
-                                                                        {p.position || 'INF'}
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                        </PlayerHoverCard>
-                                                    );
-                                                })}
+                                                        <h3 className="font-bold text-center group-hover:text-primary transition-colors text-sm leading-tight line-clamp-2 min-h-[2.5rem] flex items-center justify-center w-full">{p.firstName} {p.lastName}</h3>
+                                                        <div className="flex gap-2 items-center mt-2">
+                                                            {entry.number != null && <span className="text-sm text-muted-foreground font-black text-center w-6">#{entry.number}</span>}
+                                                            <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs font-bold rounded">
+                                                                {entry.position || p.position || 'INF'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </PlayerHoverCard>
                                             </div>
-                                        </div>
-                                    )}
-                                </>
+                                        );
+                                    })}
+                                </div>
                             )}
                         </div>
                     )}
@@ -1036,7 +1130,8 @@ export default function TeamProfilePage() {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-muted/10">
-                                            {team.players
+                                            {team.rosterEntries
+                                                .map(e => e.player)
                                                 .filter(p => statsType === 'bateo' ? (p.stats?.batting.atBats || 0) > 0 : (p.stats?.pitching.ip || 0) > 0)
                                                 .map((p) => (
                                                     <tr key={p.id} className="hover:bg-muted/5 transition-colors group">
@@ -1136,7 +1231,7 @@ export default function TeamProfilePage() {
                                     </table>
                                 </div>
 
-                                {team.players.filter(p => statsType === 'bateo' ? (p.stats?.batting.atBats || 0) > 0 : (p.stats?.pitching.ip || 0) > 0).length === 0 && (
+                                {team.rosterEntries.map(e => e.player).filter(p => statsType === 'bateo' ? (p.stats?.batting.atBats || 0) > 0 : (p.stats?.pitching.ip || 0) > 0).length === 0 && (
                                     <div className="py-20 text-center">
                                         <Activity className="w-12 h-12 text-muted-foreground/20 mx-auto mb-4" />
                                         <p className="text-muted-foreground font-medium">No hay suficientes datos para generar esta tabla aún.</p>
@@ -1149,7 +1244,7 @@ export default function TeamProfilePage() {
                 {/* MODAL AGREGAR JUGADOR (MANUAL / CSV) */}
                 {showAddPlayerModal && (
                     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in-up">
-                        <div className="bg-surface w-full max-w-xl rounded-3xl shadow-2xl border border-muted/30 overflow-hidden flex flex-col max-h-[90vh]">
+                        <div className="bg-surface w-full max-w-3xl rounded-3xl shadow-2xl border border-muted/30 overflow-hidden flex flex-col max-h-[90vh]">
                             {/* Header */}
                             <div className="p-6 border-b border-muted/20 flex justify-between items-center bg-muted/5 shrink-0">
                                 <div>
@@ -1181,55 +1276,174 @@ export default function TeamProfilePage() {
 
                             {/* Tab: Manual */}
                             {addPlayerTab === 'manual' && (
-                                <form onSubmit={handleAddPlayerManual} className="p-6 space-y-4 overflow-y-auto">
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Nombre *</label>
-                                            <input required type="text" value={newPlayerForm.firstName} onChange={e => setNewPlayerForm({ ...newPlayerForm, firstName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" placeholder="Juan" />
+                                <div className="flex flex-col lg:flex-row overflow-y-auto h-full">
+                                    <form onSubmit={handleAddPlayerManual} className="p-6 space-y-4 flex-1 border-b lg:border-b-0 lg:border-r border-muted/20">
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Nombre *</label>
+                                                <input required type="text" value={newPlayerForm.firstName} onChange={e => setNewPlayerForm({ ...newPlayerForm, firstName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" placeholder="Juan" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Apellido Paterno *</label>
+                                                <input required type="text" value={newPlayerForm.lastName} onChange={e => setNewPlayerForm({ ...newPlayerForm, lastName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" placeholder="Pérez" />
+                                            </div>
                                         </div>
                                         <div>
-                                            <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Apellido *</label>
-                                            <input required type="text" value={newPlayerForm.lastName} onChange={e => setNewPlayerForm({ ...newPlayerForm, lastName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" placeholder="Pérez" />
+                                            <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Apellido Materno <span className="normal-case font-normal">(opcional)</span></label>
+                                            <input type="text" value={newPlayerForm.secondLastName} onChange={e => setNewPlayerForm({ ...newPlayerForm, secondLastName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" placeholder="García" />
                                         </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">CURP <span className="normal-case font-normal">(opcional)</span></label>
+                                                <input type="text" maxLength={18} value={newPlayerForm.curp} onChange={e => setNewPlayerForm({ ...newPlayerForm, curp: e.target.value.toUpperCase() })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium font-mono tracking-wide" placeholder="AAAA000000AAAAAA00" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Fecha de Nac. <span className="normal-case font-normal">(opcional)</span></label>
+                                                <input type="date" value={newPlayerForm.birthDate} onChange={e => setNewPlayerForm({ ...newPlayerForm, birthDate: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" />
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-4 gap-2 sm:gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Dorsal</label>
+                                                <input type="number" min={0} max={99} value={newPlayerForm.number} onChange={e => setNewPlayerForm({ ...newPlayerForm, number: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" placeholder="5" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Pos.</label>
+                                                <select value={newPlayerForm.position} onChange={e => setNewPlayerForm({ ...newPlayerForm, position: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium">
+                                                    <option value="INF">INF</option>
+                                                    <option value="OF">OF</option>
+                                                    <option value="P">P</option>
+                                                    <option value="C">C</option>
+                                                    <option value="1B">1B</option>
+                                                    <option value="2B">2B</option>
+                                                    <option value="3B">3B</option>
+                                                    <option value="SS">SS</option>
+                                                    <option value="LF">LF</option>
+                                                    <option value="CF">CF</option>
+                                                    <option value="RF">RF</option>
+                                                    <option value="DH">DH</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Bat.</label>
+                                                <select value={newPlayerForm.bats} onChange={e => setNewPlayerForm({ ...newPlayerForm, bats: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium">
+                                                    <option value="R">R</option>
+                                                    <option value="L">L</option>
+                                                    <option value="S">S</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Tira</label>
+                                                <select value={newPlayerForm.throws} onChange={e => setNewPlayerForm({ ...newPlayerForm, throws: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium">
+                                                    <option value="R">R</option>
+                                                    <option value="L">L</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div className="flex justify-end pt-4 border-t border-muted/10">
+                                            <button 
+                                                type="submit" 
+                                                disabled={addingPlayer || checkingLive || (liveValidation?.level === 'team') || (liveValidation?.level === 'tournament')} 
+                                                className="px-6 py-3 w-full sm:w-auto bg-primary text-primary-foreground rounded-xl font-black text-sm transition-colors hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-2"
+                                            >
+                                                {addingPlayer ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Plus className="w-4 h-4" />}
+                                                Agregar Jugador
+                                            </button>
+                                        </div>
+                                    </form>
+
+                                    {/* Verification Column */}
+                                    <div className="w-full lg:w-[280px] shrink-0 bg-muted/5 flex flex-col p-6">
+                                        <h3 className="text-[11px] font-black uppercase tracking-widest text-muted-foreground mb-4">
+                                            Verificación
+                                        </h3>
+                                        
+                                        {checkingLive ? (
+                                            <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
+                                                <span className="w-6 h-6 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin mb-3"></span>
+                                                <p className="text-xs font-bold">Analizando perfil...</p>
+                                            </div>
+                                        ) : !liveValidation ? (
+                                            <div className="flex flex-col items-center justify-center h-40 text-center text-muted-foreground/40 space-y-3">
+                                                <Search className="w-8 h-8" />
+                                                <p className="text-xs font-medium px-4">Ingresa el nombre y apellido para verificar la identidad del jugador.</p>
+                                            </div>
+                                        ) : liveValidation.level === 'none' ? (
+                                            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-5 flex flex-col items-center text-center">
+                                                <div className="w-12 h-12 bg-emerald-500/20 rounded-full flex items-center justify-center mb-3">
+                                                    <CheckCircle className="w-6 h-6 text-emerald-500" />
+                                                </div>
+                                                <h4 className="text-sm font-black text-emerald-500 mb-1">Perfil Único</h4>
+                                                <p className="text-xs text-emerald-500/80 font-medium leading-relaxed">
+                                                    No hay coincidencias en la base de datos. Se creará un registro nuevo.
+                                                </p>
+                                            </div>
+                                        ) : liveValidation.level === 'global' ? (
+                                            <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-5 flex flex-col items-center text-center">
+                                                <div className="w-12 h-12 bg-amber-500/20 rounded-full flex items-center justify-center mb-3">
+                                                    <AlertTriangle className="w-6 h-6 text-amber-500" />
+                                                </div>
+                                                <h4 className="text-sm font-black text-amber-500 mb-1">Homónimo / Existente</h4>
+                                                <div className="bg-surface border border-amber-500/20 rounded-xl p-3 mt-3 w-full mb-3 text-left">
+                                                    <p className="text-xs font-bold text-foreground truncate">{liveValidation.existing?.firstName} {liveValidation.existing?.lastName}</p>
+                                                    <p className="text-[10px] text-muted-foreground mt-0.5 max-w-[200px] truncate">
+                                                        Juega en: {liveValidation.existing?.team?.name || 'Agente Libre'}
+                                                    </p>
+                                                </div>
+                                                <div className="flex flex-col gap-2 w-full">
+                                                    <button 
+                                                        type="button"
+                                                        onClick={async () => {
+                                                            if (!team?.tournament?.id) return;
+                                                            setAddingPlayer(true);
+                                                            try {
+                                                                await api.post('/roster', {
+                                                                    playerId: liveValidation.existing.id,
+                                                                    teamId,
+                                                                    tournamentId: team.tournament.id,
+                                                                });
+                                                                setShowAddPlayerModal(false);
+                                                                window.location.reload();
+                                                            } catch (err: any) {
+                                                                alert(err?.response?.data?.message || 'Error al vincular jugador');
+                                                            } finally { setAddingPlayer(false); }
+                                                        }}
+                                                        disabled={addingPlayer}
+                                                        className="w-full py-2 bg-amber-500 text-amber-950 text-[11px] font-black rounded-lg hover:bg-amber-400 transition"
+                                                    >
+                                                        Sí, es él (Añadir al roster)
+                                                    </button>
+                                                    <button 
+                                                        type="button"
+                                                        onClick={async () => {
+                                                            await handleAddPlayerManual({ preventDefault: () => {} } as any, true);
+                                                        }}
+                                                        disabled={addingPlayer}
+                                                        className="w-full py-2 border border-amber-500/30 text-amber-500/80 text-[11px] font-bold rounded-lg hover:bg-amber-500/10 transition"
+                                                    >
+                                                        No, crear una variante nueva
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-5 flex flex-col items-center text-center">
+                                                <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center mb-3">
+                                                    <XCircle className="w-6 h-6 text-red-500" />
+                                                </div>
+                                                <h4 className="text-sm font-black text-red-500 mb-1">No Permitido</h4>
+                                                <p className="text-xs text-red-500/80 font-medium mb-3">
+                                                    Este jugador ya se encuentra en el roster de {liveValidation.level === 'team' ? 'este equipo' : 'este torneo'}.
+                                                </p>
+                                                <div className="bg-surface border border-red-500/20 rounded-xl p-3 w-full text-left">
+                                                    <p className="text-xs font-bold text-foreground truncate">{liveValidation.existing?.firstName} {liveValidation.existing?.lastName}</p>
+                                                    <p className="text-[10px] text-red-400 mt-0.5 truncate font-medium">
+                                                        Equipo: {liveValidation.existing?.team?.name || 'Desconocido'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
-                                    <div className="grid grid-cols-3 gap-4">
-                                        <div>
-                                            <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase"># Dorsal</label>
-                                            <input type="number" min={0} max={99} value={newPlayerForm.number} onChange={e => setNewPlayerForm({ ...newPlayerForm, number: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" placeholder="5" />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Posición</label>
-                                            <select value={newPlayerForm.position} onChange={e => setNewPlayerForm({ ...newPlayerForm, position: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium">
-                                                <option value="INF">INF</option>
-                                                <option value="OF">OF</option>
-                                                <option value="P">P</option>
-                                                <option value="C">C</option>
-                                                <option value="1B">1B</option>
-                                                <option value="2B">2B</option>
-                                                <option value="3B">3B</option>
-                                                <option value="SS">SS</option>
-                                                <option value="LF">LF</option>
-                                                <option value="CF">CF</option>
-                                                <option value="RF">RF</option>
-                                                <option value="DH">DH</option>
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Bats</label>
-                                            <select value={newPlayerForm.bats} onChange={e => setNewPlayerForm({ ...newPlayerForm, bats: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium">
-                                                <option value="R">R</option>
-                                                <option value="L">L</option>
-                                                <option value="S">S</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-end pt-2">
-                                        <button type="submit" disabled={addingPlayer} className="px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-black text-sm transition-colors hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2">
-                                            {addingPlayer ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Plus className="w-4 h-4" />}
-                                            Agregar Jugador
-                                        </button>
-                                    </div>
-                                </form>
+                                </div>
                             )}
 
                             {/* Tab: CSV */}
@@ -1247,51 +1461,149 @@ export default function TeamProfilePage() {
                                         </button>
                                     </div>
 
-                                    {/* File input */}
-                                    {csvRows.length === 0 ? (
+                                    {/* PASO 1: Subir archivo */}
+                                    {importStep === 'upload' && csvRows.length === 0 && (
                                         <label className="flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed border-muted/30 rounded-2xl cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-colors">
                                             <Upload className="w-8 h-8 text-muted-foreground" />
                                             <div className="text-center">
                                                 <p className="text-sm font-bold text-foreground">Seleccionar archivo CSV</p>
-                                                <p className="text-xs text-muted-foreground mt-0.5">Columnas: Nombre, Apellido, Número, Posición, Bats, Throws</p>
+                                                <p className="text-xs text-muted-foreground mt-0.5">Columnas: Nombre, Apellido, Ap. Materno, Número, Posición, Bats, Throws</p>
                                             </div>
                                             <input type="file" accept=".csv" onChange={handleCsvFile} className="hidden" />
                                         </label>
-                                    ) : (
+                                    )}
+
+                                    {/* Archivo cargado — verificar */}
+                                    {importStep === 'upload' && csvRows.length > 0 && (
                                         <>
-                                            {/* Preview table */}
                                             <div className="flex items-center justify-between">
-                                                <p className="text-sm font-bold text-foreground">{csvRows.length} jugador{csvRows.length !== 1 ? 'es' : ''} encontrado{csvRows.length !== 1 ? 's' : ''}</p>
-                                                <button onClick={() => { setCsvRows([]); setCsvError(''); }} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Cambiar archivo</button>
+                                                <p className="text-sm font-bold text-foreground">{csvRows.length} jugador{csvRows.length !== 1 ? 'es' : ''} en el archivo</p>
+                                                <button onClick={resetCsvState} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Cambiar archivo</button>
                                             </div>
-                                            <div className="overflow-x-auto rounded-xl border border-muted/20">
+                                            <div className="overflow-x-auto rounded-xl border border-muted/20 max-h-48">
                                                 <table className="w-full text-xs">
-                                                    <thead>
+                                                    <thead className="sticky top-0 bg-surface">
                                                         <tr className="bg-muted/10 border-b border-muted/20">
                                                             <th className="text-left p-2.5 font-bold text-muted-foreground uppercase tracking-wider">Nombre</th>
-                                                            <th className="text-left p-2.5 font-bold text-muted-foreground uppercase tracking-wider">Apellido</th>
+                                                            <th className="text-left p-2.5 font-bold text-muted-foreground uppercase tracking-wider">Apellidos</th>
                                                             <th className="text-center p-2.5 font-bold text-muted-foreground uppercase tracking-wider">#</th>
                                                             <th className="text-center p-2.5 font-bold text-muted-foreground uppercase tracking-wider">Pos</th>
-                                                            <th className="text-center p-2.5 font-bold text-muted-foreground uppercase tracking-wider">Bats</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
                                                         {csvRows.map((r, i) => (
                                                             <tr key={i} className={`border-b border-muted/10 last:border-0 ${!r.firstName || !r.lastName ? 'bg-red-500/5' : ''}`}>
                                                                 <td className="p-2.5 font-medium text-foreground">{r.firstName || <span className="text-red-400">—</span>}</td>
-                                                                <td className="p-2.5 font-medium text-foreground">{r.lastName || <span className="text-red-400">—</span>}</td>
+                                                                <td className="p-2.5 font-medium text-foreground">{r.lastName}{r.secondLastName ? ` ${r.secondLastName}` : ''}</td>
                                                                 <td className="p-2.5 text-center text-muted-foreground">{r.number || '—'}</td>
                                                                 <td className="p-2.5 text-center text-muted-foreground">{r.position || 'INF'}</td>
-                                                                <td className="p-2.5 text-center text-muted-foreground">{r.bats || 'R'}</td>
                                                             </tr>
                                                         ))}
                                                     </tbody>
                                                 </table>
                                             </div>
                                             <div className="flex justify-end pt-1">
-                                                <button onClick={handleCsvImport} disabled={importingCsv} className="px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-black text-sm transition-colors hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2">
-                                                    {importingCsv ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Upload className="w-4 h-4" />}
-                                                    Importar {csvRows.filter(r => r.firstName && r.lastName).length} Jugadores
+                                                <button onClick={handleCsvPreview} disabled={importingCsv} className="px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-black text-sm transition-colors hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2">
+                                                    {importingCsv ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Search className="w-4 h-4" />}
+                                                    Verificar duplicados
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {/* PASO 2: Preview con colores */}
+                                    {importStep === 'preview' && importPreview && (
+                                        <>
+                                            {/* Resumen */}
+                                            {importSummary && (
+                                                <div className="flex gap-2 flex-wrap">
+                                                    {importSummary.pendingConfirm > 0 && (
+                                                        <span className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-xs font-bold text-emerald-400">
+                                                            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                                                            {importSummary.pendingConfirm} nuevos
+                                                        </span>
+                                                    )}
+                                                    {importSummary.globalWarnings > 0 && (
+                                                        <span className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs font-bold text-amber-400">
+                                                            <span className="w-2 h-2 rounded-full bg-amber-400" />
+                                                            {importSummary.globalWarnings} ya en sistema
+                                                        </span>
+                                                    )}
+                                                    {importSummary.blocked > 0 && (
+                                                        <span className="flex items-center gap-1.5 px-2.5 py-1 bg-red-500/10 border border-red-500/20 rounded-lg text-xs font-bold text-red-400">
+                                                            <span className="w-2 h-2 rounded-full bg-red-400" />
+                                                            {importSummary.blocked} bloqueados
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            <div className="overflow-x-auto rounded-xl border border-muted/20 max-h-64">
+                                                <table className="w-full text-xs">
+                                                    <thead className="sticky top-0 bg-surface">
+                                                        <tr className="bg-muted/10 border-b border-muted/20">
+                                                            <th className="p-2.5 w-8" />
+                                                            <th className="text-left p-2.5 font-bold text-muted-foreground uppercase tracking-wider">Jugador</th>
+                                                            <th className="text-left p-2.5 font-bold text-muted-foreground uppercase tracking-wider">Estado</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {importPreview.map((r) => {
+                                                            const isBlocked = r.status === 'duplicate_team' || r.status === 'duplicate_tournament';
+                                                            const isWarning = r.status === 'duplicate_global';
+                                                            const isNew = r.status === 'pending_confirm';
+                                                            const rowBg = isBlocked ? 'bg-red-500/5' : isWarning ? 'bg-amber-500/5' : 'bg-emerald-500/5';
+                                                            return (
+                                                                <tr key={r.row} className={`border-b border-muted/10 last:border-0 ${rowBg}`}>
+                                                                    <td className="p-2.5 text-center">
+                                                                        {isBlocked ? (
+                                                                            <span className="w-4 h-4 flex items-center justify-center mx-auto text-red-400">✕</span>
+                                                                        ) : (
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={importChecked.has(r.row)}
+                                                                                onChange={e => {
+                                                                                    const next = new Set(importChecked);
+                                                                                    e.target.checked ? next.add(r.row) : next.delete(r.row);
+                                                                                    setImportChecked(next);
+                                                                                }}
+                                                                                className="accent-primary"
+                                                                            />
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="p-2.5 font-medium text-foreground">
+                                                                        {r.firstName} {r.lastName}{r.secondLastName ? ` ${r.secondLastName}` : ''}
+                                                                    </td>
+                                                                    <td className="p-2.5">
+                                                                        {isNew && <span className="text-emerald-400 font-bold">Nuevo</span>}
+                                                                        {isWarning && (
+                                                                            <span className="text-amber-400 font-bold" title={`Ya registrado en: ${r.existing?.team?.name} (${r.existing?.team?.tournament?.name})`}>
+                                                                                En: {r.existing?.team?.name}
+                                                                            </span>
+                                                                        )}
+                                                                        {r.status === 'duplicate_team' && <span className="text-red-400 font-bold">Ya en este equipo</span>}
+                                                                        {r.status === 'duplicate_tournament' && (
+                                                                            <span className="text-red-400 font-bold">En torneo: {r.existing?.team?.name}</span>
+                                                                        )}
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+
+                                            <div className="flex items-center justify-between pt-1">
+                                                <button onClick={resetCsvState} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                                                    Volver a cargar archivo
+                                                </button>
+                                                <button
+                                                    onClick={handleConfirmImport}
+                                                    disabled={confirmingImport || importChecked.size === 0}
+                                                    className="px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-black text-sm transition-colors hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2"
+                                                >
+                                                    {confirmingImport ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                                                    Confirmar ({importChecked.size} jugadores)
                                                 </button>
                                             </div>
                                         </>

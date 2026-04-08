@@ -74,13 +74,22 @@ export class StreamerService {
         // Create home players (keep created records for lineup)
         const homePlayers: any[] = [];
         for (const p of (data.homePlayers || [])) {
-            const player = await this.prisma.player.create({
+            const player = await (this.prisma.player as any).create({
                 data: {
                     firstName: p.firstName,
                     lastName: p.lastName,
+                    position: p.position ?? null,
+                    isStreamerCreated: true,
+                },
+            });
+            await (this.prisma.rosterEntry as any).create({
+                data: {
+                    playerId: player.id,
+                    teamId: homeTeam.id,
+                    tournamentId,
                     number: p.number ?? null,
                     position: p.position ?? null,
-                    teamId: homeTeam.id,
+                    isActive: true,
                 },
             });
             homePlayers.push({ ...player, position: p.position });
@@ -94,13 +103,22 @@ export class StreamerService {
         // Create away players (keep created records for lineup)
         const awayPlayers: any[] = [];
         for (const p of (data.awayPlayers || [])) {
-            const player = await this.prisma.player.create({
+            const player = await (this.prisma.player as any).create({
                 data: {
                     firstName: p.firstName,
                     lastName: p.lastName,
+                    position: p.position ?? null,
+                    isStreamerCreated: true,
+                },
+            });
+            await (this.prisma.rosterEntry as any).create({
+                data: {
+                    playerId: player.id,
+                    teamId: awayTeam.id,
+                    tournamentId,
                     number: p.number ?? null,
                     position: p.position ?? null,
-                    teamId: awayTeam.id,
+                    isActive: true,
                 },
             });
             awayPlayers.push({ ...player, position: p.position });
@@ -145,17 +163,26 @@ export class StreamerService {
         if (homePlayers.length > 0) await createLineups(homePlayers, homeTeam.id);
         if (awayPlayers.length > 0) await createLineups(awayPlayers, awayTeam.id);
 
-        // Create reserve/bench players — Player records only, NO lineup entry
+        // Create reserve/bench players — Player + RosterEntry, NO lineup entry
         // They will appear in "puedenEntrar" for substitutions
         const createReserves = async (reserves: { firstName: string; lastName: string; number?: number }[], teamId: string) => {
             for (const r of reserves) {
-                await this.prisma.player.create({
+                const player = await (this.prisma.player as any).create({
                     data: {
                         firstName: r.firstName,
                         lastName: r.lastName,
+                        position: null,
+                        isStreamerCreated: true,
+                    },
+                });
+                await (this.prisma.rosterEntry as any).create({
+                    data: {
+                        playerId: player.id,
+                        teamId,
+                        tournamentId,
                         number: r.number ?? null,
                         position: null,
-                        teamId,
+                        isActive: true,
                     },
                 });
             }
@@ -182,13 +209,27 @@ export class StreamerService {
             throw new ForbiddenException('El equipo no pertenece a este juego.');
         }
 
-        const player = await this.prisma.player.create({
+        const game2 = await this.prisma.game.findUnique({
+            where: { id: gameId },
+            select: { tournamentId: true },
+        }) as any;
+
+        const player = await (this.prisma.player as any).create({
             data: {
                 firstName: playerData.firstName,
                 lastName: playerData.lastName,
+                position: null,
+                isStreamerCreated: true,
+            },
+        });
+        await (this.prisma.rosterEntry as any).create({
+            data: {
+                playerId: player.id,
+                teamId,
+                tournamentId: game2.tournamentId,
                 number: playerData.number ?? null,
                 position: null,
-                teamId,
+                isActive: true,
             },
         });
 
@@ -205,8 +246,22 @@ export class StreamerService {
         const game = await this.prisma.game.findUnique({
             where: { id: gameId },
             include: {
-                homeTeam: { include: { players: true } },
-                awayTeam: { include: { players: true } },
+                homeTeam: {
+                    include: {
+                        rosterEntries: {
+                            where: { isActive: true },
+                            include: { player: true },
+                        },
+                    },
+                },
+                awayTeam: {
+                    include: {
+                        rosterEntries: {
+                            where: { isActive: true },
+                            include: { player: true },
+                        },
+                    },
+                },
             },
         }) as any;
 
@@ -215,15 +270,16 @@ export class StreamerService {
         // Delete existing lineups first (clean slate)
         await this.prisma.lineup.deleteMany({ where: { gameId } });
 
-        const insertLineups = async (players: any[], teamId: string) => {
-            for (let i = 0; i < players.length; i++) {
+        const insertLineups = async (entries: any[], teamId: string) => {
+            for (let i = 0; i < entries.length; i++) {
+                const entry = entries[i];
                 await this.prisma.lineup.create({
                     data: {
                         gameId,
                         teamId,
-                        playerId: players[i].id,
+                        playerId: entry.player.id,
                         battingOrder: i + 1,
-                        position: players[i].position || 'UT',
+                        position: entry.position || entry.player.position || 'UT',
                         isStarter: true,
                         isActive: true,
                     } as any,
@@ -231,10 +287,12 @@ export class StreamerService {
             }
         };
 
-        if (game.homeTeam.players.length > 0) await insertLineups(game.homeTeam.players, game.homeTeamId);
-        if (game.awayTeam.players.length > 0) await insertLineups(game.awayTeam.players, game.awayTeamId);
+        const homeEntries = game.homeTeam.rosterEntries;
+        const awayEntries = game.awayTeam.rosterEntries;
+        if (homeEntries.length > 0) await insertLineups(homeEntries, game.homeTeamId);
+        if (awayEntries.length > 0) await insertLineups(awayEntries, game.awayTeamId);
 
-        return { created: (game.homeTeam.players.length + game.awayTeam.players.length) };
+        return { created: (homeEntries.length + awayEntries.length) };
     }
 
     // ─── List quick games ────────────────────────────────────────────────────────
@@ -288,18 +346,18 @@ export class StreamerService {
         const game = await this.prisma.game.findUnique({
             where: { id: gameId },
             include: {
-                homeTeam: { include: { players: true } },
-                awayTeam: { include: { players: true } },
+                homeTeam: { include: { rosterEntries: { where: { isActive: true }, include: { player: true } } } },
+                awayTeam: { include: { rosterEntries: { where: { isActive: true }, include: { player: true } } } },
                 plays: {
                     orderBy: { timestamp: 'asc' },
                     include: {
-                        batter: { select: { id: true, firstName: true, lastName: true, number: true } },
-                        pitcher: { select: { id: true, firstName: true, lastName: true, number: true } },
+                        batter: { select: { id: true, firstName: true, lastName: true } },
+                        pitcher: { select: { id: true, firstName: true, lastName: true } },
                     },
                 },
                 lineups: {
                     include: {
-                        player: { select: { id: true, firstName: true, lastName: true, number: true } },
+                        player: { select: { id: true, firstName: true, lastName: true } },
                     },
                     orderBy: { battingOrder: 'asc' },
                 },

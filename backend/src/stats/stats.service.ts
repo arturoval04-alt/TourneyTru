@@ -32,11 +32,15 @@ export class StatsService {
                         firstName: true,
                         lastName: true,
                         photoUrl: true,
-                        team: { select: { id: true, name: true, shortName: true } },
+                        rosterEntries: {
+                            where: { tournamentId, isActive: true },
+                            select: { team: { select: { id: true, name: true, shortName: true } } },
+                            take: 1,
+                        },
                     },
                 },
             },
-        });
+        } as any);
 
         const map: Record<string, {
             playerId: string; firstName: string; lastName: string; photoUrl: string | null;
@@ -53,17 +57,19 @@ export class StatsService {
         const gsMap: Record<string, number> = {};
         for (const l of lineups) gsMap[l.playerId] = (gsMap[l.playerId] || 0) + 1;
 
-        for (const play of plays) {
+        for (const play of (plays as any[])) {
             const b = play.batter;
+            if (!b) continue;
+            const team = b.rosterEntries?.[0]?.team;
             if (!map[b.id]) {
                 map[b.id] = {
                     playerId: b.id,
                     firstName: b.firstName,
                     lastName: b.lastName,
                     photoUrl: b.photoUrl ?? null,
-                    teamId: b.team.id,
-                    teamName: b.team.name,
-                    teamShortName: b.team.shortName || b.team.name.substring(0, 2).toUpperCase(),
+                    teamId: team?.id ?? '',
+                    teamName: team?.name ?? '',
+                    teamShortName: team?.shortName || (team?.name ?? '').substring(0, 2).toUpperCase(),
                     ab: 0, h: 0, h2: 0, h3: 0, hr: 0,
                     r: 0, rbi: 0, bb: 0, ibb: 0, so: 0, hbp: 0, sf: 0, sh: 0,
                     sb: 0, cs: 0, roe: 0, gp: new Set(), gs: gsMap[b.id] || 0,
@@ -125,11 +131,15 @@ export class StatsService {
                         firstName: true,
                         lastName: true,
                         photoUrl: true,
-                        team: { select: { id: true, name: true, shortName: true } },
+                        rosterEntries: {
+                            where: { tournamentId, isActive: true },
+                            select: { team: { select: { id: true, name: true, shortName: true } } },
+                            take: 1,
+                        },
                     },
                 },
             },
-        });
+        } as any);
 
         const map: Record<string, {
             playerId: string; firstName: string; lastName: string; photoUrl: string | null;
@@ -145,17 +155,19 @@ export class StatsService {
         const gsMap: Record<string, number> = {};
         for (const l of lineups) gsMap[l.playerId] = (gsMap[l.playerId] || 0) + 1;
 
-        for (const play of plays) {
+        for (const play of (plays as any[])) {
             const p = play.pitcher;
+            if (!p) continue;
+            const team = p.rosterEntries?.[0]?.team;
             if (!map[p.id]) {
                 map[p.id] = {
                     playerId: p.id,
                     firstName: p.firstName,
                     lastName: p.lastName,
                     photoUrl: p.photoUrl ?? null,
-                    teamId: p.team.id,
-                    teamName: p.team.name,
-                    teamShortName: p.team.shortName || p.team.name.substring(0, 2).toUpperCase(),
+                    teamId: team?.id ?? '',
+                    teamName: team?.name ?? '',
+                    teamShortName: team?.shortName || (team?.name ?? '').substring(0, 2).toUpperCase(),
                     outs: 0, h: 0, r: 0, er: 0, bb: 0, so: 0, hr: 0, hbp: 0, bf: 0, wp: 0, bk: 0, gp: new Set(), gs: gsMap[p.id] || 0,
                 };
             }

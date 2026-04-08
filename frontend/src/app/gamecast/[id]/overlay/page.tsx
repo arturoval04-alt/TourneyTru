@@ -70,6 +70,7 @@ function OverlayContent() {
         tournamentName,
         playLogs,
         homeBatterIndex, awayBatterIndex,
+        socketConnected,
     } = useGameStore();
 
     // Fondo transparente para OBS
@@ -94,6 +95,31 @@ function OverlayContent() {
             useGameStore.getState().disconnectSocket();
         };
     }, [gameId]);
+
+    // Badge de reconexión — visible solo cuando el socket se cae (para OBS/YoloBox)
+    useEffect(() => {
+        const BADGE_ID = 'overlay-reconnect-badge';
+        let el = document.getElementById(BADGE_ID);
+        if (!socketConnected) {
+            if (!el) {
+                el = document.createElement('div');
+                el.id = BADGE_ID;
+                el.style.cssText = [
+                    'position:fixed', 'top:8px', 'right:8px', 'z-index:9999',
+                    'background:rgba(220,38,38,0.85)', 'color:#fff',
+                    'padding:3px 10px', 'border-radius:9999px',
+                    'font-size:11px', 'font-weight:700', 'font-family:monospace',
+                    'letter-spacing:0.05em', 'pointer-events:none',
+                    'backdrop-filter:blur(4px)',
+                ].join(';');
+                el.textContent = '⚡ SIN SEÑAL';
+                document.body.appendChild(el);
+            }
+        } else {
+            el?.remove();
+        }
+        return () => { document.getElementById(BADGE_ID)?.remove(); };
+    }, [socketConnected]);
 
     // Boxscore para stats ricas
     useEffect(() => {

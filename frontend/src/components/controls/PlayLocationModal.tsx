@@ -209,8 +209,8 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
     // ── DP Step 2: Who got out? ──────────────────────────────────────
     if (dpStep2) {
         return createPortal(
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
-                <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-md w-full p-6 shadow-2xl">
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[200] p-2 sm:p-4">
+                <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-md w-full p-4 sm:p-6 shadow-2xl max-h-[100dvh] overflow-y-auto">
                     <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs font-bold text-slate-500 bg-slate-800 px-2 py-0.5 rounded">Paso 2/2</span>
                         <h2 className="text-xl font-black text-red-400 uppercase tracking-wide">Doble Play</h2>
@@ -276,8 +276,8 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
     if (phantomOutStep) {
         const { markPhantomOut } = useGameStore.getState();
         return createPortal(
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
-                <div className="bg-slate-900 border border-yellow-500/40 rounded-xl max-w-sm w-full p-6 shadow-2xl">
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[200] p-2 sm:p-4">
+                <div className="bg-slate-900 border border-yellow-500/40 rounded-xl max-w-sm w-full p-4 sm:p-6 shadow-2xl max-h-[100dvh] overflow-y-auto">
                     <div className="flex items-center gap-2 mb-3">
                         <AlertTriangle className="w-6 h-6 text-yellow-400 shrink-0" />
                         <h2 className="text-lg font-black text-yellow-400 uppercase tracking-wide">¿Out Fantasma?</h2>
@@ -320,13 +320,13 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
 
     // ── Step 1: Location picker ──────────────────────────────────────
     const modalContent = (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-sm w-full p-6 shadow-2xl flex flex-col">
-                <h2 className="text-xl font-black justify-center flex text-emerald-400 mb-2 uppercase tracking-wide">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[200] p-2 sm:p-4">
+            <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-sm w-full p-3 sm:p-6 shadow-2xl flex flex-col max-h-[100dvh] overflow-y-auto">
+                <h2 className="text-base sm:text-xl font-black justify-center flex text-emerald-400 mb-1 sm:mb-2 uppercase tracking-wide">
                     Dirección: {playName}
                 </h2>
 
-                <p className="text-center text-slate-400 text-sm mb-4">
+                <p className="text-center text-slate-400 text-xs sm:text-sm mb-2 sm:mb-4">
                     {playType === 'Out'
                         ? playName === 'Doble Play'
                             ? 'Selecciona los fielders en orden (ej: SS, 2B, 1B → 6-4-3). Luego indicarás quién fue out.'
@@ -334,7 +334,7 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
                         : 'Toca la zona / jugador donde fue el batazo.'}
                 </p>
 
-                <div className="relative w-full aspect-square bg-emerald-700 rounded-t-full rounded-b-xl border-2 border-emerald-900 mb-4 overflow-hidden">
+                <div className="relative w-full aspect-square bg-emerald-700 rounded-t-full rounded-b-xl border-2 border-emerald-900 mb-2 sm:mb-4 overflow-hidden">
                     <div className="absolute top-[50%] left-[50%] w-[55%] h-[55%] -translate-x-1/2 -translate-y-[40%] rotate-45 flex items-center justify-center">
                         <div className="absolute inset-0 bg-amber-700 border-2 border-emerald-900" />
                         <div className="absolute inset-[15%] bg-emerald-700 rounded-sm" />
@@ -347,7 +347,7 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
                                 key={pos.id}
                                 onClick={() => handlePosClick(pos.id)}
                                 className={clsx(
-                                    'absolute w-10 h-10 rounded-full flex items-center justify-center text-sm font-black border-2 transition-all shadow-lg active:scale-90',
+                                    'absolute w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-xs sm:text-sm font-black border-2 transition-all shadow-lg active:scale-90',
                                     isSelected
                                         ? 'bg-amber-400 text-amber-900 border-amber-200 shadow-amber-500/50'
                                         : 'bg-slate-100/90 text-slate-800 border-slate-300 hover:bg-white'
@@ -360,16 +360,16 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
                     })}
                 </div>
 
-                <div className="bg-slate-800 p-3 rounded text-center text-amber-400 font-mono font-bold text-lg mb-4 h-12 flex items-center justify-center border border-slate-700">
+                <div className="bg-slate-800 p-2 sm:p-3 rounded text-center text-amber-400 font-mono font-bold text-base sm:text-lg mb-2 sm:mb-4 h-10 sm:h-12 flex items-center justify-center border border-slate-700">
                     {selectedPositions.length > 0 ? selectedPositions.join(' - ') : '...'}
                 </div>
 
                 <div className="flex justify-between gap-3">
-                    <button onClick={() => { setSelectedPositions([]); onClose(); }} className="w-1/2 py-3 rounded font-bold text-slate-300 bg-slate-800 hover:bg-slate-700">Cancelar</button>
+                    <button onClick={() => { setSelectedPositions([]); onClose(); }} className="w-1/2 py-2.5 sm:py-3 rounded font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 text-sm sm:text-base">Cancelar</button>
                     <button
                         onClick={handleConfirm}
                         disabled={playName === 'Doble Play' && selectedPositions.length === 0}
-                        className="w-1/2 py-3 rounded font-bold text-slate-900 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="w-1/2 py-2.5 sm:py-3 rounded font-bold text-slate-900 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed text-sm sm:text-base"
                     >
                         {playName === 'Doble Play' ? 'Siguiente →' : 'Confirmar'}
                     </button>

@@ -13,7 +13,7 @@ interface TeamItem {
     shortName?: string;
     logoUrl?: string;
     managerName?: string;
-    _count?: { players: number };
+    _count?: { rosterEntries: number };
     tournament?: { id: string; name: string; category?: string; rulesType?: string };
 }
 
@@ -185,7 +185,7 @@ export default function EquiposPage() {
                                             </div>
                                             <div className="flex items-center gap-3 text-sm text-muted-foreground font-medium group/line">
                                                 <Users className="w-4 h-4 text-muted-foreground/70 shrink-0 group-hover/line:text-blue-500 transition-colors" />
-                                                <span><span className="font-bold text-foreground text-base leading-none">{team._count?.players || 0}</span> jugadores registrados</span>
+                                                <span><span className="font-bold text-foreground text-base leading-none">{team._count?.rosterEntries || 0}</span> jugadores registrados</span>
                                             </div>
                                         </div>
 
