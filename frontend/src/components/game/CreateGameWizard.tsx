@@ -119,8 +119,17 @@ export default function CreateGameWizard({
     if (context === 'admin') {
       api.get('/leagues').then((r) => setLeagues(r.data)).catch(() => {});
     }
-    if (context === 'scorekeeper' && propLeagueId) {
-      loadTournaments(propLeagueId);
+    if (context === 'scorekeeper') {
+      if (propLeagueId) {
+        // leagueId llegó correctamente desde el padre
+        loadTournaments(propLeagueId);
+      } else {
+        // Fallback: obtener leagueId fresco desde el servidor
+        api.get('/auth/me').then(({ data }) => {
+          const lid = data.scorekeeperLeagueId;
+          if (lid) loadTournaments(lid);
+        }).catch(() => {});
+      }
     }
     // Presi: torneos asignados pre-cargados directamente sin leagueId
     if (initialTournaments && initialTournaments.length > 0) {
@@ -149,9 +158,13 @@ export default function CreateGameWizard({
 
   const loadTournaments = useCallback(async (leagueId: string) => {
     try {
-      const { data } = await api.get(`/leagues/${leagueId}/torneos`);
-      setTournaments(data);
-    } catch {}
+      // Usar /torneos?leagueId= en lugar de /leagues/:id/torneos para evitar
+      // el privacy check que bloquea silenciosamente a scorekeepers
+      const { data } = await api.get(`/torneos`, { params: { leagueId } });
+      setTournaments(Array.isArray(data) ? data : []);
+    } catch {
+      setTournaments([]);
+    }
   }, []);
 
   const loadTournamentData = useCallback(async (tId: string) => {
