@@ -272,7 +272,13 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
           pitcherId: validPitcherId,
           batterRosterEntryId: batterRosterEntryId ?? null,
           pitcherRosterEntryId: pitcherRosterEntryId ?? null,
-        } as any
+          runnersOnBase: playInfo.runners_on_base ?? '000',
+          ballsOnPlay: playInfo.balls_on_play ?? 0,
+          strikesOnPlay: playInfo.strikes_on_play ?? 0,
+          swingsInPA: playInfo.swings_in_pa ?? 0,
+          contactsInPA: playInfo.contacts_in_pa ?? 0,
+          pitchesInPA: playInfo.pitches_in_pa ?? 0,
+        }
       }));
       this.logger.log(`Jugada guardada (Play ID: ${play?.id}, Result: ${resultCode})`);
       // Notificar al scorekeeper el ID del play guardado (para soporte de undo)

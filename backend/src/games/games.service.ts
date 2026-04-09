@@ -1037,19 +1037,48 @@ export class GamesService {
             };
         });
 
-        // Compute current outs from the last play's state
-        const currentHalfPlays = game.plays.filter(
-            (p) => p.inning === game.currentInning && p.half === game.half,
-        );
-        const currentOuts = currentHalfPlays.reduce((sum, p) => sum + p.outsRecorded, 0) % 3;
-
-        // Compute batter indices — solo jugadores activos y solo PAs reales
+        // ── Derivar inning/half/outs DESDE las jugadas ────────────────────────
+        // No confiar en game.currentInning / game.half porque pueden estar
+        // desactualizados si hubo jugadas offline enviadas con fullState: null
         const NON_PA_CODES = ['SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED', 'RUNNER_OUT', 'UNDO'];
         const isPAPlay = (p: any) => {
             const code = (p.result || '').split('|')[0].toUpperCase().trim();
             return !NON_PA_CODES.some((x) => code.startsWith(x));
         };
 
+        const sortedPlays = [...game.plays].sort(
+            (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+        );
+
+        let derivedInning = 1;
+        let derivedHalf: 'top' | 'bottom' = 'top';
+        let outsInCurrentHalf = 0;
+
+        for (const play of sortedPlays) {
+            outsInCurrentHalf += play.outsRecorded;
+            if (outsInCurrentHalf >= 3) {
+                outsInCurrentHalf = 0;
+                if (derivedHalf === 'top') {
+                    derivedHalf = 'bottom';
+                } else {
+                    derivedHalf = 'top';
+                    derivedInning++;
+                }
+            }
+        }
+        const currentOuts = outsInCurrentHalf;
+
+        // Si el juego ya tiene estado más avanzado en la BD (jugadas en vivo sincronizadas),
+        // usar el mayor de los dos para no retroceder
+        const dbInning = game.currentInning ?? 1;
+        const dbHalf = game.half ?? 'top';
+        const dbIsAhead =
+            dbInning > derivedInning ||
+            (dbInning === derivedInning && dbHalf === 'bottom' && derivedHalf === 'top');
+        const activeInning = dbIsAhead ? dbInning : derivedInning;
+        const activeHalf   = dbIsAhead ? dbHalf   : derivedHalf;
+
+        // ── Batter indices desde jugadas (siempre desde plays, no desde DB) ─
         // Helper: exclude defense-only players covered by a DH from the batting lineup
         const filterBattingLineup = (lp: any[]) => {
             const covered = new Set<string>(
@@ -1071,9 +1100,17 @@ export class GamesService {
         const awayBatterIndex = awayLp.length > 0 ? awayPA % awayLp.length : 0;
         const homeBatterIndex = homeLp.length > 0 ? homePA % homeLp.length : 0;
 
+        // Sincronizar game record si la derivación está más adelantada que la BD
+        if (!dbIsAhead && game.status === 'in_progress') {
+            this.prisma.game.update({
+                where: { id: game.id },
+                data: { currentInning: activeInning, half: activeHalf },
+            }).catch(() => {});
+        }
+
         // Determine current batter
-        const currentLineup = game.half === 'top' ? awayLp : homeLp;
-        const currentIndex = game.half === 'top' ? awayBatterIndex : homeBatterIndex;
+        const currentLineup = activeHalf === 'top' ? awayLp : homeLp;
+        const currentIndex = activeHalf === 'top' ? awayBatterIndex : homeBatterIndex;
         const currentLineupItem = currentLineup[currentIndex];
         const currentBatter = currentLineupItem?.player
             ? `${currentLineupItem.player.firstName} ${currentLineupItem.player.lastName}`
