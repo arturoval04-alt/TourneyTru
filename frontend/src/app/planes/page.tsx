@@ -39,7 +39,7 @@ const plans = [
         priceNote: "MXN / mes",
         features: [
             { label: "1 liga", icon: "🏟️" },
-            { label: "1 torneo", icon: "🏆" },
+            { label: "4 torneos", icon: "🏆" },
             { label: "20 equipos por torneo", icon: "🛡️" },
             { label: "Jugadores ilimitados", icon: "⚾" },
             { label: "Juegos ilimitados", icon: "📅" },

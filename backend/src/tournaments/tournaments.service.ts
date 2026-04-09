@@ -1,12 +1,16 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTournamentDto, UpdateTournamentDto } from './dto/tournament.dto';
+import { DelegatesService } from '../delegates/delegates.service';
 
 type Requestor = { userId?: string; role?: string; scorekeeperLeagueId?: string | null };
 
 @Injectable()
 export class TournamentsService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+        private delegatesService: DelegatesService,
+    ) { }
 
     async create(data: CreateTournamentDto) {
         // Verificar cuota de torneos por liga
@@ -158,6 +162,11 @@ export class TournamentsService {
             await this.prisma.$executeRaw`UPDATE tournaments SET is_private = ${isPrivate ? 1 : 0} WHERE id = ${id}`;
         }
 
+        // Al activar el torneo, desactivar todos los delegados automáticamente
+        if ((updateData as any).status === 'active') {
+            await this.delegatesService.deactivateAllForTournament(id);
+        }
+
         return result;
     }
 
@@ -165,11 +174,13 @@ export class TournamentsService {
         await this.findOne(id, requestor);
         return this.prisma.$transaction(async (tx: any) => {
             // Remove records with NoAction FK constraints before tournament deletion
+            await tx.$executeRaw`DELETE FROM tournament_organizers WHERE tournament_id = ${id}`;
+            await tx.$executeRaw`DELETE FROM team_delegates WHERE tournament_id = ${id}`;
             await tx.$executeRaw`DELETE FROM roster_entries WHERE tournament_id = ${id}`;
             await tx.$executeRaw`DELETE FROM player_stats WHERE tournament_id = ${id}`;
             // Delete games and their child records (plays, lineups, lineup_changes, game_umpires cascade)
             await tx.$executeRaw`DELETE FROM games WHERE tournament_id = ${id}`;
-            // Delete tournament — remaining relations cascade: teams→players, organizers, news, standings, fields
+            // Delete tournament — remaining relations cascade: teams→players, news, standings, fields
             return tx.tournament.delete({ where: { id } });
         });
     }

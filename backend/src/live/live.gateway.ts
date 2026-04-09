@@ -227,6 +227,35 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const resultCode = rawResult.includes('|') ? rawResult.split('|')[0] : rawResult;
       const resultDescription = rawResult.includes('|') ? rawResult.split('|')[1] : null;
 
+      // Resolver RosterEntry IDs usando el torneo y equipo del juego
+      let batterRosterEntryId: string | undefined;
+      let pitcherRosterEntryId: string | undefined;
+      try {
+        const gameRecord = await this.prisma.game.findUnique({
+          where: { id: gameId },
+          select: { tournamentId: true, homeTeamId: true, awayTeamId: true },
+        });
+        if (gameRecord) {
+          const half = playInfo.half as string;
+          const batterTeamId = half === 'top' ? gameRecord.awayTeamId : gameRecord.homeTeamId;
+          const pitcherTeamId = half === 'top' ? gameRecord.homeTeamId : gameRecord.awayTeamId;
+          const [batterEntry, pitcherEntry] = await Promise.all([
+            validBatterId ? this.prisma.rosterEntry.findFirst({
+              where: { playerId: validBatterId, teamId: batterTeamId, tournamentId: gameRecord.tournamentId },
+              select: { id: true },
+            }) : null,
+            validPitcherId ? this.prisma.rosterEntry.findFirst({
+              where: { playerId: validPitcherId, teamId: pitcherTeamId, tournamentId: gameRecord.tournamentId },
+              select: { id: true },
+            }) : null,
+          ]);
+          batterRosterEntryId = batterEntry?.id;
+          pitcherRosterEntryId = pitcherEntry?.id;
+        }
+      } catch (e) {
+        this.logger.warn('No se pudo resolver RosterEntry IDs para la jugada:', e);
+      }
+
       play = await this.withRetry(() => this.prisma.play.create({
         data: {
           gameId,
@@ -241,6 +270,15 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
           scored: playInfo.scored || false,
           batterId: validBatterId,
           pitcherId: validPitcherId,
+          batterRosterEntryId: batterRosterEntryId ?? null,
+          pitcherRosterEntryId: pitcherRosterEntryId ?? null,
+          // Contexto sabermérico
+          runnersOnBase: playInfo.runners_on_base ?? '000',
+          ballsOnPlay:   playInfo.balls_on_play   ?? 0,
+          strikesOnPlay: playInfo.strikes_on_play ?? 0,
+          swingsInPA:    playInfo.swings_in_pa    ?? 0,
+          contactsInPA:  playInfo.contacts_in_pa  ?? 0,
+          pitchesInPA:   playInfo.pitches_in_pa   ?? 0,
         } as any
       }));
       this.logger.log(`Jugada guardada (Play ID: ${play?.id}, Result: ${resultCode})`);

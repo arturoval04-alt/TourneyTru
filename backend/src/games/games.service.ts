@@ -1429,6 +1429,19 @@ export class GamesService {
         // 4. Delete existing plays for this game (in case of re-submission attempt)
         await this.prisma.play.deleteMany({ where: { gameId } });
 
+        // 4b. Pre-cargar RosterEntries del torneo para asignar IDs al crear jugadas
+        const rosterEntries = await this.prisma.rosterEntry.findMany({
+            where: {
+                tournamentId: game.tournamentId,
+                teamId: { in: [game.homeTeamId, game.awayTeamId] },
+            },
+            select: { id: true, playerId: true, teamId: true },
+        });
+        // Map: "playerId:teamId" → rosterEntryId
+        const rosterEntryMap = new Map<string, string>(
+            rosterEntries.map(re => [`${re.playerId}:${re.teamId}`, re.id])
+        );
+
         // 5. Build Play records from batter entries
         const playsToCreate: any[] = [];
         let playTimestamp = new Date(game.scheduledDate);
@@ -1438,6 +1451,8 @@ export class GamesService {
             half: string,
             pitcherMap: Map<string, string>,
             defaultPitcherId: string,
+            batterTeamId: string,
+            pitcherTeamId: string,
         ) => {
             // Distribute plate appearances across innings
             // We use runsByInning to figure out how many innings existed, then distribute
@@ -1523,6 +1538,8 @@ export class GamesService {
                     scored: runsScored > 0,
                     batterId: batter.playerId,
                     pitcherId,
+                    batterRosterEntryId: rosterEntryMap.get(`${batter.playerId}:${batterTeamId}`) ?? null,
+                    pitcherRosterEntryId: rosterEntryMap.get(`${pitcherId}:${pitcherTeamId}`) ?? null,
                     timestamp: playTimestamp,
                 });
 
@@ -1541,8 +1558,10 @@ export class GamesService {
         const defaultAwayPitcher = dto.awayPitchers[0]?.playerId || awayLineup.find(l => this.normalizePosition(l.position) === 'P')?.playerId || awayLineup[0]?.playerId;
         const defaultHomePitcher = dto.homePitchers[0]?.playerId || homeLineup.find(l => this.normalizePosition(l.position) === 'P')?.playerId || homeLineup[0]?.playerId;
 
-        processBatters(dto.awayBatters, 'top', homePitcherMap, defaultHomePitcher);
-        processBatters(dto.homeBatters, 'bottom', awayPitcherMap, defaultAwayPitcher);
+        // top: away batea (batterTeamId=away), home pichea (pitcherTeamId=home)
+        processBatters(dto.awayBatters, 'top', homePitcherMap, defaultHomePitcher, game.awayTeamId, game.homeTeamId);
+        // bottom: home batea (batterTeamId=home), away pichea (pitcherTeamId=away)
+        processBatters(dto.homeBatters, 'bottom', awayPitcherMap, defaultAwayPitcher, game.homeTeamId, game.awayTeamId);
 
         // 6. Create all plays in a transaction
         if (playsToCreate.length > 0) {

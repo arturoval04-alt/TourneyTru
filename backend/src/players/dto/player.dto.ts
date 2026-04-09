@@ -22,6 +22,9 @@ export class CreatePlayerDto {
     @IsOptional() @IsIn(['M', 'F', 'O'])
     sex?: string;
 
+    @IsOptional() @IsString() @MaxLength(100)
+    birthPlace?: string;
+
     // Atributos deportivos
     @IsOptional() @IsString() @MaxLength(10)
     position?: string;
@@ -70,6 +73,9 @@ export class UpdatePlayerDto {
     @IsOptional() @IsIn(['M', 'F', 'O'])
     sex?: string;
 
+    @IsOptional() @IsString() @MaxLength(100)
+    birthPlace?: string;
+
     @IsOptional() @IsString() @MaxLength(10)
     position?: string;
 
@@ -115,6 +121,9 @@ export class BulkPlayerItem {
 
     @IsOptional() @IsIn(['M', 'F', 'O'])
     sex?: string;
+
+    @IsOptional() @IsString() @MaxLength(100)
+    birthPlace?: string;
 
     @IsOptional() @IsInt() @Min(0) @Max(99)
     number?: number;

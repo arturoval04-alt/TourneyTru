@@ -63,6 +63,10 @@ type BaseState = {
     homeTeamShort: string;
     awayTeamShort: string;
     tournamentName: string;
+    // ─── Contadores del turno al bate actual (swing metrics) ─────────────────
+    paSwings: number;    // swings y fallas en el turno actual
+    paContacts: number;  // fouls + bolas en juego del turno actual
+    paPitches: number;   // total de pitcheos vistos en el turno actual
 };
 
 export interface GameState extends BaseState {
@@ -98,6 +102,7 @@ export interface GameState extends BaseState {
     // Acciones (Play by play basics)
     addBall: () => void;
     addStrike: () => void;
+    addSwing: () => void;
     addFoul: () => void;
     addOut: (customLogText?: string, isGroundout?: boolean, emitPlay?: boolean) => void;
     registerHit: (basesAdvanced: number, customLogText?: string) => void;
@@ -138,6 +143,8 @@ interface QueuedPlay {
         inning: number; half: string; outs_before_play: number; result: string;
         rbi: number; runs_scored: number; outs_recorded: number;
         batter_id: string | null; pitcher_id: string | null;
+        runners_on_base?: string; balls_on_play?: number; strikes_on_play?: number;
+        swings_in_pa?: number; contacts_in_pa?: number; pitches_in_pa?: number;
     };
 }
 
@@ -196,6 +203,15 @@ const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsSc
     const currentPitcher = defensiveLineup.find((item: LineupItem) => item.position === "1" || item.position === "P");
     const activePitcherId = currentPitcher ? currentPitcher.playerId : null;
 
+    // Contexto sabermérico: se captura justo antes de que el turno termine
+    const b = stateSnapshot.bases;
+    const runnersOnBase = `${b.first ? '1' : '0'}${b.second ? '1' : '0'}${b.third ? '1' : '0'}`;
+    const ballsOnPlay = stateSnapshot.balls;
+    const strikesOnPlay = stateSnapshot.strikes;
+    const paSwings = stateSnapshot.paSwings;
+    const paContacts = stateSnapshot.paContacts;
+    const paPitches = stateSnapshot.paPitches;
+
     const payloadInning = inningOverride !== null ? inningOverride : stateSnapshot.inning;
     const payloadHalf = halfOverride !== null ? halfOverride : stateSnapshot.half;
     const payloadOutsBefore = outsBeforeOverride !== null ? outsBeforeOverride : Math.max(0, stateSnapshot.outs - outsOffensive);
@@ -236,7 +252,14 @@ const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsSc
                 batter_id: activeBatterId,
                 pitcher_id: activePitcherId,
                 scored: resultStr.includes('RUN_SCORED') || (resCode === 'HR' && activeBatterId === stateSnapshot.currentBatterId),
-                playbackId: timestamp
+                playbackId: timestamp,
+                // Contexto sabermérico
+                runners_on_base: runnersOnBase,
+                balls_on_play: ballsOnPlay,
+                strikes_on_play: strikesOnPlay,
+                swings_in_pa: paSwings,
+                contacts_in_pa: paContacts,
+                pitches_in_pa: paPitches,
             },
             fullState: {
                 inning: payloadInning,
@@ -265,6 +288,12 @@ const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsSc
             outs_before_play: payloadOutsBefore, result: resultStr,
             rbi: runsScored, runs_scored: runsScored, outs_recorded: outsOffensive,
             batter_id: activeBatterId, pitcher_id: activePitcherId,
+            runners_on_base: runnersOnBase,
+            balls_on_play: ballsOnPlay,
+            strikes_on_play: strikesOnPlay,
+            swings_in_pa: paSwings,
+            contacts_in_pa: paContacts,
+            pitches_in_pa: paPitches,
         };
         const queueId = addPlayToQueue(stateSnapshot.gameId, playPayload);
         useGameStore.setState({ pendingPlays: getPlayQueue(stateSnapshot.gameId).length });
@@ -363,6 +392,9 @@ export const useGameStore = create<GameState>()(
             pendingPlays: 0,
             socketConnected: false,
             phantomOutCandidates: [],
+            paSwings: 0,
+            paContacts: 0,
+            paPitches: 0,
 
             clearEndGamePrompt: () => set({ shouldPromptEndGame: false }),
 
@@ -430,6 +462,7 @@ export const useGameStore = create<GameState>()(
                     homeTeamLogoUrl: state.homeTeamLogoUrl, awayTeamLogoUrl: state.awayTeamLogoUrl,
                     homeTeamShort: state.homeTeamShort, awayTeamShort: state.awayTeamShort,
                     tournamentName: state.tournamentName,
+                    paSwings: state.paSwings, paContacts: state.paContacts, paPitches: state.paPitches,
                 };
                 // Resetear el tracking de IDs de la nueva acción que está por comenzar
                 currentActionPlayIds = [];
@@ -769,6 +802,8 @@ export const useGameStore = create<GameState>()(
 
             cycleBatter: () => {
                 const state = get();
+                // Resetear contadores del turno al cambiar de bateador
+                set({ paSwings: 0, paContacts: 0, paPitches: 0 });
                 // Use BATTING ORDER (excludes FLEX) for rotation — FLEX never bats
                 if (state.half === 'top') {
                     const nextIndex = (state.awayBatterIndex + 1) % (state.awayBattingOrder.length || 1);
@@ -815,6 +850,7 @@ export const useGameStore = create<GameState>()(
                     half: newHalf,
                     inning: newInning,
                     phantomOutCandidates: [],
+                    paSwings: 0, paContacts: 0, paPitches: 0,
                     playLogs: [{ text: '', inningString: `${dividerSymbol} ${newInning}` }, ...s.playLogs],
                 }));
 
@@ -842,6 +878,7 @@ export const useGameStore = create<GameState>()(
             addBall: () => {
                 get().saveHistory();
                 const balls = get().balls + 1;
+                set(s => ({ paPitches: s.paPitches + 1 }));
                 if (balls >= 4) {
                     // ... (lógica de BB existente)
                     const state = get();
@@ -879,6 +916,7 @@ export const useGameStore = create<GameState>()(
             addStrike: () => {
                 get().saveHistory();
                 const strikes = get().strikes + 1;
+                set(s => ({ paPitches: s.paPitches + 1 }));
                 if (strikes >= 3) {
                     const batter = get().currentBatter;
                     get().addOut(`KS|${batter} es Ponchado Tirándole (K)`);
@@ -889,9 +927,25 @@ export const useGameStore = create<GameState>()(
                 }
             },
 
-            addFoul: () => { 
+            // Strike tirándole y fallando: cuenta como strike Y como swing (whiff)
+            addSwing: () => {
+                get().saveHistory();
+                const strikes = get().strikes + 1;
+                set(s => ({ paPitches: s.paPitches + 1, paSwings: s.paSwings + 1 }));
+                if (strikes >= 3) {
+                    const batter = get().currentBatter;
+                    get().addOut(`KS|${batter} es Ponchado Tirándole (K)`);
+                } else {
+                    set({ strikes });
+                    syncStateToBackend(get);
+                }
+            },
+
+            addFoul: () => {
+                // Foul = swing con contacto: siempre suma pitcheo y contacto, solo suma strike si hay < 2
+                set(s => ({ paPitches: s.paPitches + 1, paContacts: s.paContacts + 1 }));
                 if (get().strikes < 2) {
-                    set({ strikes: get().strikes + 1 }); 
+                    set({ strikes: get().strikes + 1 });
                     syncStateToBackend(get);
                 }
             },

@@ -103,8 +103,8 @@ export default function GameScheduled() {
                         api.get(`/torneos/${torId}/stats/pitching`),
                     ]);
                     setTournament(torRes.data);
-                    setBatting(batRes.data || []);
-                    setPitching(pitRes.data || []);
+                    setBatting(batRes.data?.rows || []);
+                    setPitching(pitRes.data?.rows || []);
                 } catch (e) {
                     console.error('Error loading tournament stats', e);
                 }

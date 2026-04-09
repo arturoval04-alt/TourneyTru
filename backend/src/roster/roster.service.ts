@@ -9,9 +9,6 @@ export class RosterService {
     async addToRoster(dto: AddRosterEntryDto) {
         const player = await this.prisma.player.findUnique({ where: { id: dto.playerId } }) as any;
         if (!player) throw new NotFoundException('Jugador no encontrado');
-        if (!player.isVerified) {
-            throw new ForbiddenException('Solo jugadores verificados pueden participar en múltiples equipos');
-        }
 
         // Verificar que el equipo y torneo existen
         const team = await this.prisma.team.findUnique({ where: { id: dto.teamId } });
@@ -33,11 +30,16 @@ export class RosterService {
                 throw new ConflictException('El jugador ya está registrado en este equipo para este torneo');
             }
             // Reactivar si fue removido antes
-            return (this.prisma as any).rosterEntry.update({
+            const reactivated = await (this.prisma as any).rosterEntry.update({
                 where: { id: existing.id },
                 data: { isActive: true, leftAt: null, number: dto.number, position: dto.position },
                 include: { player: { select: { id: true, firstName: true, lastName: true, photoUrl: true, isVerified: true } }, team: { select: { id: true, name: true } } },
             });
+            // Auto-verificar al jugador (ya aparece en 2+ equipos)
+            if (!player.isVerified) {
+                await this.prisma.player.update({ where: { id: dto.playerId }, data: { isVerified: true, verifiedAt: new Date(), verificationMethod: 'auto_roster' } });
+            }
+            return reactivated;
         }
 
         // Verificar cuota de jugadores en el equipo (jugadores directos + roster entries activos)
@@ -64,7 +66,7 @@ export class RosterService {
             }
         }
 
-        return (this.prisma as any).rosterEntry.create({
+        const entry = await (this.prisma as any).rosterEntry.create({
             data: {
                 playerId: dto.playerId,
                 teamId: dto.teamId,
@@ -78,6 +80,13 @@ export class RosterService {
                 tournament: { select: { id: true, name: true, season: true } },
             },
         });
+
+        // Auto-verificar al jugador (ya aparece en 2+ equipos)
+        if (!player.isVerified) {
+            await this.prisma.player.update({ where: { id: dto.playerId }, data: { isVerified: true, verifiedAt: new Date(), verificationMethod: 'auto_roster' } });
+        }
+
+        return entry;
     }
 
     async removeFromRoster(id: string) {

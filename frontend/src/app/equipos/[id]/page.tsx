@@ -26,6 +26,8 @@ interface ImportRowResult {
         firstName: string;
         lastName: string;
         secondLastName?: string | null;
+        photoUrl?: string | null;
+        birthPlace?: string | null;
         isVerified: boolean;
         team: { id: string; name: string; shortName?: string | null; tournament: { id: string; name: string; season: string } };
     };
@@ -137,7 +139,7 @@ export default function TeamProfilePage() {
     // Add Player Modal state
     const [showAddPlayerModal, setShowAddPlayerModal] = useState(false);
     const [addPlayerTab, setAddPlayerTab] = useState<'manual' | 'csv'>('manual');
-    const [newPlayerForm, setNewPlayerForm] = useState({ firstName: '', lastName: '', secondLastName: '', number: '', position: 'INF', bats: 'R', throws: 'R', curp: '', birthDate: '' });
+    const [newPlayerForm, setNewPlayerForm] = useState({ firstName: '', lastName: '', secondLastName: '', number: '', position: 'INF', bats: 'R', throws: 'R', curp: '', birthDate: '', birthPlace: '' });
     const [addingPlayer, setAddingPlayer] = useState(false);
     const [csvRows, setCsvRows] = useState<{ firstName: string; lastName: string; secondLastName: string; number: string; position: string; bats: string; throws: string }[]>([]);
     const [csvError, setCsvError] = useState('');
@@ -324,13 +326,14 @@ export default function TeamProfilePage() {
             throws: newPlayerForm.throws,
             curp: newPlayerForm.curp || undefined,
             birthDate: newPlayerForm.birthDate || undefined,
+            birthPlace: newPlayerForm.birthPlace || undefined,
             teamId,
             tournamentId: team?.tournament?.id,
             ...(forceCreate ? { forceCreate: true } : {}),
         };
         try {
             await api.post('/players', payload);
-            setNewPlayerForm({ firstName: '', lastName: '', secondLastName: '', number: '', position: 'INF', bats: 'R', throws: 'R', curp: '', birthDate: '' });
+            setNewPlayerForm({ firstName: '', lastName: '', secondLastName: '', number: '', position: 'INF', bats: 'R', throws: 'R', curp: '', birthDate: '', birthPlace: '' });
             setShowAddPlayerModal(false);
             window.location.reload();
         } catch (err: any) {
@@ -340,7 +343,7 @@ export default function TeamProfilePage() {
     };
 
     const downloadCsvTemplate = () => {
-        const csv = 'Nombre,Apellido,ApellidoMaterno,Número,Posición,Bats,Throws\nJuan,Pérez,García,5,SS,R,R\nMaría,López,,12,OF,L,R';
+        const csv = 'Nombre,Apellido,ApellidoMaterno,Número,Posición,Bats,Throws,CURP,FechaNacimiento,LugarNacimiento\nJuan,Pérez,García,5,SS,R,R,,1990-05-24,Hermosillo\nMaría,López,,12,OF,L,R,AAAA000000AAAAAA00,,';
         const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -372,6 +375,9 @@ export default function TeamProfilePage() {
                     position: cols[4] || 'INF',
                     bats: cols[5] || 'R',
                     throws: cols[6] || 'R',
+                    curp: cols[7] || '',
+                    birthDate: cols[8] || '',
+                    birthPlace: cols[9] || '',
                 };
             }).filter(r => r.firstName || r.lastName);
             if (rows.length === 0) { setCsvError('No se encontraron jugadores válidos'); return; }
@@ -399,6 +405,9 @@ export default function TeamProfilePage() {
                     position: r.position || undefined,
                     bats: ['R', 'L', 'S'].includes(r.bats) ? r.bats : undefined,
                     throws: ['R', 'L'].includes(r.throws) ? r.throws : undefined,
+                    curp: r.curp || undefined,
+                    birthDate: r.birthDate || undefined,
+                    birthPlace: r.birthPlace || undefined,
                 })),
             });
             setImportPreview(data.results);
@@ -433,6 +442,9 @@ export default function TeamProfilePage() {
                     position: orig?.position || undefined,
                     bats: orig?.bats || undefined,
                     throws: orig?.throws || undefined,
+                    curp: orig?.curp || undefined,
+                    birthDate: orig?.birthDate || undefined,
+                    birthPlace: orig?.birthPlace || undefined,
                 };
             });
         const toRoster = selected
@@ -1302,6 +1314,10 @@ export default function TeamProfilePage() {
                                                 <input type="date" value={newPlayerForm.birthDate} onChange={e => setNewPlayerForm({ ...newPlayerForm, birthDate: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" />
                                             </div>
                                         </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Lugar de Nacimiento <span className="normal-case font-normal">(opcional)</span></label>
+                                            <input type="text" maxLength={100} value={newPlayerForm.birthPlace} onChange={e => setNewPlayerForm({ ...newPlayerForm, birthPlace: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" placeholder="Ej: Hermosillo, Sonora" />
+                                        </div>
                                         <div className="grid grid-cols-4 gap-2 sm:gap-4">
                                             <div>
                                                 <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Dorsal</label>
@@ -1385,10 +1401,27 @@ export default function TeamProfilePage() {
                                                 </div>
                                                 <h4 className="text-sm font-black text-amber-500 mb-1">Homónimo / Existente</h4>
                                                 <div className="bg-surface border border-amber-500/20 rounded-xl p-3 mt-3 w-full mb-3 text-left">
-                                                    <p className="text-xs font-bold text-foreground truncate">{liveValidation.existing?.firstName} {liveValidation.existing?.lastName}</p>
-                                                    <p className="text-[10px] text-muted-foreground mt-0.5 max-w-[200px] truncate">
-                                                        Juega en: {liveValidation.existing?.team?.name || 'Agente Libre'}
-                                                    </p>
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-amber-500/30 shrink-0 bg-muted/10">
+                                                            {liveValidation.existing?.photoUrl ? (
+                                                                <img src={liveValidation.existing.photoUrl} alt="" className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${liveValidation.existing?.firstName}${liveValidation.existing?.lastName}`} alt="" className="w-full h-full" />
+                                                            )}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-xs font-bold text-foreground truncate">{liveValidation.existing?.firstName} {liveValidation.existing?.lastName} {liveValidation.existing?.secondLastName || ''}</p>
+                                                            <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                                                                Juega en: {liveValidation.existing?.team?.name || 'Agente Libre'}
+                                                            </p>
+                                                            {liveValidation.existing?.birthPlace && (
+                                                                <p className="text-[10px] text-muted-foreground truncate">📍 {liveValidation.existing.birthPlace}</p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <a href={`/jugadores/${liveValidation.existing?.id}`} target="_blank" rel="noopener noreferrer" className="text-[10px] font-bold text-amber-500 hover:text-amber-400 underline underline-offset-2 transition-colors">
+                                                        Ver perfil completo →
+                                                    </a>
                                                 </div>
                                                 <div className="flex flex-col gap-2 w-full">
                                                     <button 
@@ -1409,7 +1442,7 @@ export default function TeamProfilePage() {
                                                             } finally { setAddingPlayer(false); }
                                                         }}
                                                         disabled={addingPlayer}
-                                                        className="w-full py-2 bg-amber-500 text-amber-950 text-[11px] font-black rounded-lg hover:bg-amber-400 transition"
+                                                        className="w-full py-2 bg-amber-500 text-amber-950 text-[11px] font-black rounded-lg hover:bg-amber-400 transition cursor-pointer disabled:opacity-50"
                                                     >
                                                         Sí, es él (Añadir al roster)
                                                     </button>
@@ -1419,7 +1452,7 @@ export default function TeamProfilePage() {
                                                             await handleAddPlayerManual({ preventDefault: () => {} } as any, true);
                                                         }}
                                                         disabled={addingPlayer}
-                                                        className="w-full py-2 border border-amber-500/30 text-amber-500/80 text-[11px] font-bold rounded-lg hover:bg-amber-500/10 transition"
+                                                        className="w-full py-2 border border-amber-500/30 text-amber-500/80 text-[11px] font-bold rounded-lg hover:bg-amber-500/10 transition cursor-pointer disabled:opacity-50"
                                                     >
                                                         No, crear una variante nueva
                                                     </button>
@@ -1572,14 +1605,27 @@ export default function TeamProfilePage() {
                                                                         )}
                                                                     </td>
                                                                     <td className="p-2.5 font-medium text-foreground">
-                                                                        {r.firstName} {r.lastName}{r.secondLastName ? ` ${r.secondLastName}` : ''}
+                                                                        <div className="flex items-center gap-2">
+                                                                            {isWarning && r.existing?.photoUrl && (
+                                                                                <img src={r.existing.photoUrl} alt="" className="w-6 h-6 rounded-full object-cover border border-amber-500/30 shrink-0" />
+                                                                            )}
+                                                                            <span>{r.firstName} {r.lastName}{r.secondLastName ? ` ${r.secondLastName}` : ''}</span>
+                                                                        </div>
                                                                     </td>
                                                                     <td className="p-2.5">
                                                                         {isNew && <span className="text-emerald-400 font-bold">Nuevo</span>}
                                                                         {isWarning && (
-                                                                            <span className="text-amber-400 font-bold" title={`Ya registrado en: ${r.existing?.team?.name} (${r.existing?.team?.tournament?.name})`}>
-                                                                                En: {r.existing?.team?.name}
-                                                                            </span>
+                                                                            <div className="flex flex-col gap-0.5">
+                                                                                <span className="text-amber-400 font-bold" title={`Ya registrado en: ${r.existing?.team?.name} (${r.existing?.team?.tournament?.name})`}>
+                                                                                    En: {r.existing?.team?.name}
+                                                                                </span>
+                                                                                {r.existing?.birthPlace && (
+                                                                                    <span className="text-[10px] text-muted-foreground">📍 {r.existing.birthPlace}</span>
+                                                                                )}
+                                                                                <a href={`/jugadores/${r.existing?.id}`} target="_blank" rel="noopener noreferrer" className="text-[10px] text-amber-500 hover:text-amber-400 underline underline-offset-2">
+                                                                                    Ver perfil →
+                                                                                </a>
+                                                                            </div>
                                                                         )}
                                                                         {r.status === 'duplicate_team' && <span className="text-red-400 font-bold">Ya en este equipo</span>}
                                                                         {r.status === 'duplicate_tournament' && (

@@ -7,9 +7,10 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { getUser } from '@/lib/auth';
 import api from "@/lib/api";
-import { ArrowLeft, MapPin, Calendar, Users, Target, Clock, Settings, Radio, X, CheckCircle2, CheckCircle, ChevronRight, Trophy, Lock, Download, Edit3, Check, ChevronDown, Swords, Upload, FileText, Plus } from "lucide-react";
+import { ArrowLeft, MapPin, Calendar, Users, Target, Clock, Settings, Radio, X, CheckCircle2, CheckCircle, ChevronRight, Trophy, Lock, Download, Edit3, Check, ChevronDown, Swords, Upload, FileText, Plus, Trash2 } from "lucide-react";
 import CreateGameWizard from "@/components/game/CreateGameWizard";
 import ImageUploader from "@/components/ui/ImageUploader";
+import { uploadFileToCloudinary } from "@/lib/cloudinary";
 
 export default function TournamentProfilePage() {
     const params = useParams();
@@ -92,6 +93,67 @@ export default function TournamentProfilePage() {
         } finally {
             setSaving(false);
         }
+    };
+
+    // ── Documentos ────────────────────────────────────────────────────
+    interface TournamentDoc {
+        id: string;
+        name: string;
+        fileUrl: string;
+        fileType: string;
+        category: string;
+        createdAt: string;
+        uploadedBy?: { firstName: string; lastName: string };
+    }
+    const [documents, setDocuments] = useState<TournamentDoc[]>([]);
+    const [uploadingDoc, setUploadingDoc] = useState(false);
+
+    const fetchDocuments = useCallback(async () => {
+        try {
+            const { data } = await api.get(`/documents/tournament/${tournamentId}`);
+            setDocuments(data || []);
+        } catch { /* público, silencioso */ }
+    }, [tournamentId]);
+
+    useEffect(() => { fetchDocuments(); }, [fetchDocuments]);
+
+    const handleUploadDocument = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const name = window.prompt('Nombre del documento:', file.name.replace(/\.[^.]+$/, ''));
+        if (!name) { e.target.value = ''; return; }
+        const categoryInput = window.prompt('Categoría (convocatoria / reglas / modo_juego / general):', 'general');
+        const category = ['convocatoria', 'reglas', 'modo_juego', 'general'].includes(categoryInput || '') ? (categoryInput || 'general') : 'general';
+        setUploadingDoc(true);
+        try {
+            const fileUrl = await uploadFileToCloudinary(file);
+            const fileType = file.name.split('.').pop()?.toLowerCase() || 'pdf';
+            await api.post('/documents', { tournamentId, name, fileUrl, fileType, category });
+            await fetchDocuments();
+        } catch (err: any) {
+            alert(err?.message || 'Error al subir documento');
+        } finally { setUploadingDoc(false); e.target.value = ''; }
+    };
+
+    const handleDeleteDocument = async (docId: string) => {
+        if (!window.confirm('¿Eliminar este documento?')) return;
+        try {
+            await api.delete(`/documents/${docId}`);
+            setDocuments(prev => prev.filter(d => d.id !== docId));
+        } catch (err: any) {
+            alert(err?.response?.data?.message || 'Error al eliminar documento');
+        }
+    };
+
+    const downloadPlayerTemplate = () => {
+        window.open(`${process.env.NEXT_PUBLIC_API_URL}/api/documents/template/players`, '_blank');
+    };
+
+    const CATEGORY_LABELS: Record<string, string> = {
+        convocatoria: 'Convocatoria',
+        reglas: 'Reglamento',
+        modo_juego: 'Modo de Juego',
+        general: 'General',
     };
 
     const [isAddingField, setIsAddingField] = useState(false);
@@ -1157,6 +1219,74 @@ export default function TournamentProfilePage() {
                                             </div>
                                         )}
                                     </section>
+                                    {/* ══ DOCUMENTOS ══ */}
+                                    {(tournament?.status === 'upcoming' || tournament?.status === 'active') && (
+                                        <section className="bg-surface border border-muted/30 rounded-2xl p-6 shadow-sm">
+                                            <div className="flex justify-between items-center mb-5">
+                                                <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                                                    <FileText className="w-5 h-5 text-primary" /> Documentos
+                                                </h3>
+                                                {canEdit && (
+                                                    <label className={`flex items-center gap-1.5 text-xs font-bold cursor-pointer px-3 py-1.5 rounded-lg border transition ${uploadingDoc ? 'border-muted/20 text-muted-foreground cursor-not-allowed' : 'border-primary/40 text-primary hover:bg-primary/10'}`}>
+                                                        {uploadingDoc ? 'Subiendo...' : <><Plus className="w-3.5 h-3.5" /> Subir documento</>}
+                                                        {!uploadingDoc && <input type="file" accept=".pdf,.doc,.docx,.png,.jpg" onChange={handleUploadDocument} className="hidden" />}
+                                                    </label>
+                                                )}
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                {/* Plantilla de jugadores — siempre presente */}
+                                                <div className="flex items-center justify-between p-3 bg-muted/5 border border-muted/20 rounded-xl hover:border-primary/30 transition-colors group">
+                                                    <div className="flex items-center gap-3 min-w-0">
+                                                        <div className="w-8 h-8 rounded-lg bg-green-500/10 flex items-center justify-center shrink-0">
+                                                            <FileText className="w-4 h-4 text-green-400" />
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <p className="text-sm font-bold text-foreground truncate">Plantilla de Jugadores</p>
+                                                            <p className="text-[10px] text-muted-foreground uppercase font-bold">CSV · Para importar roster</p>
+                                                        </div>
+                                                    </div>
+                                                    <button onClick={downloadPlayerTemplate} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-green-400 hover:bg-green-500/10 rounded-lg transition">
+                                                        <Download className="w-3.5 h-3.5" /> Descargar
+                                                    </button>
+                                                </div>
+
+                                                {/* Documentos subidos */}
+                                                {documents.map(doc => (
+                                                    <div key={doc.id} className="flex items-center justify-between p-3 bg-muted/5 border border-muted/20 rounded-xl hover:border-primary/30 transition-colors group">
+                                                        <div className="flex items-center gap-3 min-w-0">
+                                                            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                                                                <FileText className="w-4 h-4 text-primary" />
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="text-sm font-bold text-foreground truncate">{doc.name}</p>
+                                                                <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wide">
+                                                                    {CATEGORY_LABELS[doc.category] || doc.category} · {doc.fileType.toUpperCase()}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 shrink-0">
+                                                            <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/10 rounded-lg transition">
+                                                                <Download className="w-3.5 h-3.5" /> Abrir
+                                                            </a>
+                                                            {canEdit && (
+                                                                <button onClick={() => handleDeleteDocument(doc.id)} className="p-1.5 text-muted-foreground/40 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all rounded-lg">
+                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))}
+
+                                                {documents.length === 0 && (
+                                                    <p className="text-xs text-muted-foreground italic text-center py-3">
+                                                        {canEdit ? 'Sube la convocatoria, el reglamento y el modo de juego.' : 'No hay documentos publicados aún.'}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </section>
+                                    )}
+
                                 </div>
 
                                 <div className="space-y-6">
@@ -1472,56 +1602,198 @@ export default function TournamentProfilePage() {
                         })()}
 
                         {activeTab === 'posiciones' && (
-                            <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm animate-fade-in-up">
-                                <div className="p-6 border-b border-muted/20">
-                                    <h3 className="text-lg font-bold text-foreground">Tabla de Posiciones</h3>
-                                </div>
-                                {!standingsLoaded ? (
-                                    <div className="p-12 text-center text-muted-foreground text-sm">Cargando...</div>
-                                ) : !standings || standings.length === 0 ? (
-                                    <div className="p-6 text-center">
-                                        <Target className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-                                        <p className="text-muted-foreground">No hay equipos registrados.</p>
+                            <div className="space-y-6 animate-fade-in-up">
+
+                                {/* ── PODIO (solo torneo finalizado) ── */}
+                                {tournament?.status === 'finished' && standingsLoaded && standings && standings.length >= 1 && (() => {
+                                    const [first, second, third] = standings;
+                                    const TeamLogo = ({ s, size }: { s: typeof standings[0]; size: string }) => (
+                                        <div className={`${size} rounded-2xl bg-surface border-2 border-muted/30 flex items-center justify-center font-black text-foreground overflow-hidden shadow-lg`}>
+                                            {s.logoUrl ? <img src={s.logoUrl} alt={s.name} className="w-full h-full object-contain p-1" /> : (s.shortName || s.name.substring(0, 2).toUpperCase())}
+                                        </div>
+                                    );
+                                    return (
+                                        <div className="bg-surface border border-muted/30 rounded-2xl p-8 shadow-sm">
+                                            <h3 className="text-center text-xs font-black text-muted-foreground uppercase tracking-widest mb-8">Campeones del Torneo</h3>
+                                            <div className="flex items-end justify-center gap-4 sm:gap-8">
+                                                {/* 2do lugar */}
+                                                {second && (
+                                                    <div className="flex flex-col items-center gap-3 pb-2">
+                                                        <TeamLogo s={second} size="w-16 h-16 sm:w-20 sm:h-20" />
+                                                        <div className="text-center">
+                                                            <p className="text-2xl">🥈</p>
+                                                            <p className="font-black text-foreground text-sm mt-1 max-w-[100px] truncate">{second.name}</p>
+                                                            <p className="text-xs text-muted-foreground">{second.w}G · {second.l}P</p>
+                                                        </div>
+                                                        <div className="w-20 sm:w-24 h-14 bg-muted/20 border-t-2 border-muted/30 rounded-t-xl flex items-center justify-center">
+                                                            <span className="text-2xl font-black text-muted-foreground">2</span>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {/* 1er lugar */}
+                                                <div className="flex flex-col items-center gap-3">
+                                                    <div className="relative">
+                                                        <TeamLogo s={first} size="w-20 h-20 sm:w-28 sm:h-28 border-amber-500/50" />
+                                                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-3xl">🏆</div>
+                                                    </div>
+                                                    <div className="text-center">
+                                                        <p className="text-3xl">🥇</p>
+                                                        <p className="font-black text-foreground text-base mt-1 max-w-[130px] truncate">{first.name}</p>
+                                                        <p className="text-xs text-amber-400 font-bold">{first.w}G · {first.l}P · {first.pct}</p>
+                                                    </div>
+                                                    <div className="w-20 sm:w-24 h-20 bg-amber-500/10 border-t-2 border-amber-500/40 rounded-t-xl flex items-center justify-center">
+                                                        <span className="text-3xl font-black text-amber-400">1</span>
+                                                    </div>
+                                                </div>
+                                                {/* 3er lugar */}
+                                                {third && (
+                                                    <div className="flex flex-col items-center gap-3 pb-2">
+                                                        <TeamLogo s={third} size="w-14 h-14 sm:w-18 sm:h-18" />
+                                                        <div className="text-center">
+                                                            <p className="text-2xl">🥉</p>
+                                                            <p className="font-black text-foreground text-sm mt-1 max-w-[100px] truncate">{third.name}</p>
+                                                            <p className="text-xs text-muted-foreground">{third.w}G · {third.l}P</p>
+                                                        </div>
+                                                        <div className="w-20 sm:w-24 h-10 bg-amber-900/10 border-t-2 border-amber-900/30 rounded-t-xl flex items-center justify-center">
+                                                            <span className="text-xl font-black text-amber-700">3</span>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* ── TABLA GENERAL ── */}
+                                <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm">
+                                    <div className="p-6 border-b border-muted/20">
+                                        <h3 className="text-lg font-bold text-foreground">Tabla General</h3>
                                     </div>
-                                ) : (
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-left">
-                                            <thead className="bg-muted/5">
-                                                <tr>
-                                                    {['#', 'Equipo', 'JJ', 'JG', 'JP', 'PCT', 'GB', 'CE', 'CA'].map(h => (
-                                                        <th key={h} className="px-6 py-4 font-bold text-muted-foreground text-xs uppercase tracking-wider text-center first:text-left">{h}</th>
-                                                    ))}
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-muted/10">
-                                                {standings.map((s, i) => (
-                                                    <tr key={s.teamId} className={`hover:bg-muted/5 transition-colors ${i === 0 ? 'bg-primary/5' : ''}`}>
-                                                        <td className="px-6 py-4 font-black text-foreground">{i + 1}</td>
-                                                        <td className="px-6 py-4">
-                                                            <div className="flex items-center gap-3">
-                                                                <div className="w-8 h-8 rounded-lg bg-primary text-white font-bold flex items-center justify-center text-xs overflow-hidden shrink-0">
-                                                                    {s.logoUrl ? <img src={s.logoUrl} alt={s.name} className="w-full h-full object-contain" /> : s.shortName}
-                                                                </div>
-                                                                <span className="font-bold text-foreground">{s.name}</span>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-6 py-4 text-center font-bold text-muted-foreground">{s.gp}</td>
-                                                        <td className="px-6 py-4 text-center font-bold text-emerald-600 dark:text-emerald-400">{s.w}</td>
-                                                        <td className="px-6 py-4 text-center font-bold text-red-600 dark:text-red-400">{s.l}</td>
-                                                        <td className="px-6 py-4 text-center font-black text-foreground">{s.pct}</td>
-                                                        <td className="px-6 py-4 text-center font-bold text-muted-foreground">{i === 0 ? '-' : s.gb}</td>
-                                                        <td className="px-6 py-4 text-center font-bold text-muted-foreground">{s.rs}</td>
-                                                        <td className="px-6 py-4 text-center font-bold text-muted-foreground">{s.ra}</td>
+                                    {!standingsLoaded ? (
+                                        <div className="p-12 text-center text-muted-foreground text-sm">Cargando...</div>
+                                    ) : !standings || standings.length === 0 ? (
+                                        <div className="p-6 text-center">
+                                            <Target className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+                                            <p className="text-muted-foreground">No hay equipos registrados.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left">
+                                                <thead className="bg-muted/5">
+                                                    <tr>
+                                                        {['#', 'Equipo', 'JJ', 'JG', 'JP', 'PCT', 'GB', 'CE', 'CA'].map(h => (
+                                                            <th key={h} className="px-6 py-4 font-bold text-muted-foreground text-xs uppercase tracking-wider text-center first:text-left">{h}</th>
+                                                        ))}
                                                     </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
+                                                </thead>
+                                                <tbody className="divide-y divide-muted/10">
+                                                    {standings.map((s, i) => (
+                                                        <tr key={s.teamId} className={`hover:bg-muted/5 transition-colors ${i === 0 ? 'bg-primary/5' : ''}`}>
+                                                            <td className="px-6 py-4 font-black text-foreground flex items-center gap-2">
+                                                                {i === 0 && <span className="text-amber-400">🥇</span>}
+                                                                {i === 1 && <span className="text-muted-foreground">🥈</span>}
+                                                                {i === 2 && <span className="text-amber-700">🥉</span>}
+                                                                {i > 2 && i + 1}
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="w-8 h-8 rounded-lg bg-primary text-white font-bold flex items-center justify-center text-xs overflow-hidden shrink-0">
+                                                                        {s.logoUrl ? <img src={s.logoUrl} alt={s.name} className="w-full h-full object-contain" /> : s.shortName}
+                                                                    </div>
+                                                                    <span className="font-bold text-foreground">{s.name}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center font-bold text-muted-foreground">{s.gp}</td>
+                                                            <td className="px-6 py-4 text-center font-bold text-emerald-600 dark:text-emerald-400">{s.w}</td>
+                                                            <td className="px-6 py-4 text-center font-bold text-red-600 dark:text-red-400">{s.l}</td>
+                                                            <td className="px-6 py-4 text-center font-black text-foreground">{s.pct}</td>
+                                                            <td className="px-6 py-4 text-center font-bold text-muted-foreground">{i === 0 ? '-' : s.gb}</td>
+                                                            <td className="px-6 py-4 text-center font-bold text-muted-foreground">{s.rs}</td>
+                                                            <td className="px-6 py-4 text-center font-bold text-muted-foreground">{s.ra}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         )}
 
-                        {activeTab === 'estadisticas' && (
+                        {activeTab === 'estadisticas' && tournament?.status === 'finished' && statsLoaded && (
+                            <div className="space-y-8 animate-fade-in-up">
+                                <div className="text-center">
+                                    <h3 className="text-2xl font-black text-foreground mb-1">Campeones Individuales</h3>
+                                    <p className="text-sm text-muted-foreground">{tournament?.name} · {tournament?.season}</p>
+                                </div>
+
+                                {/* Bateo */}
+                                <div>
+                                    <h4 className="text-xs font-black text-muted-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
+                                        <span className="w-6 h-px bg-muted/40 inline-block" /> Líderes de Bateo <span className="w-6 h-px bg-muted/40 inline-block" />
+                                    </h4>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                                        {[
+                                            { label: 'Promedio de Bateo', key: 'avg', icon: '⚾', sort: (a: any, b: any) => parseFloat(b.avg) - parseFloat(a.avg), qualified: true },
+                                            { label: 'Home Runs', key: 'hr', icon: '💥', sort: (a: any, b: any) => b.hr - a.hr, qualified: false },
+                                            { label: 'Carreras Impulsadas', key: 'rbi', icon: '🏃', sort: (a: any, b: any) => b.rbi - a.rbi, qualified: false },
+                                            { label: 'OPS', key: 'ops', icon: '📊', sort: (a: any, b: any) => parseFloat(b.ops) - parseFloat(a.ops), qualified: true },
+                                            { label: 'Hits', key: 'h', icon: '🎯', sort: (a: any, b: any) => b.h - a.h, qualified: false },
+                                            { label: 'Bases Robadas', key: 'sb', icon: '💨', sort: (a: any, b: any) => (b.sb || 0) - (a.sb || 0), qualified: false },
+                                        ].map(cat => {
+                                            const pool = cat.qualified ? (battingStats || []).filter(p => p.qualified) : (battingStats || []);
+                                            const champion = [...pool].sort(cat.sort)[0];
+                                            if (!champion) return null;
+                                            return (
+                                                <div key={cat.label} className="bg-surface border border-muted/30 rounded-2xl p-5 shadow-sm hover:border-primary/30 hover:-translate-y-1 transition-all duration-300 text-center">
+                                                    <p className="text-2xl mb-2">{cat.icon}</p>
+                                                    <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-3">{cat.label}</p>
+                                                    <div className="w-14 h-14 rounded-full mx-auto mb-3 overflow-hidden border-2 border-amber-500/30 shadow-md bg-muted/20">
+                                                        <img src={champion.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${champion.firstName}${champion.lastName}`} alt="" className="w-full h-full object-cover" />
+                                                    </div>
+                                                    <p className="font-black text-foreground text-sm leading-tight">{champion.firstName} {champion.lastName}</p>
+                                                    <p className="text-[10px] text-muted-foreground mb-2">{champion.teamName}</p>
+                                                    <p className="text-2xl font-black text-amber-400">{(champion as any)[cat.key]}</p>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Pitcheo */}
+                                <div>
+                                    <h4 className="text-xs font-black text-muted-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
+                                        <span className="w-6 h-px bg-muted/40 inline-block" /> Líderes de Pitcheo <span className="w-6 h-px bg-muted/40 inline-block" />
+                                    </h4>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                                        {[
+                                            { label: 'ERA Más Baja', key: 'era', icon: '🏆', sort: (a: any, b: any) => parseFloat(a.era) - parseFloat(b.era), qualified: true },
+                                            { label: 'Más Victorias', key: 'w', icon: '✅', sort: (a: any, b: any) => b.w - a.w, qualified: true },
+                                            { label: 'Más Ponches', key: 'so', icon: '🔥', sort: (a: any, b: any) => b.so - a.so, qualified: true },
+                                            { label: 'Más Salvados', key: 'sv', icon: '🛡️', sort: (a: any, b: any) => (b.sv || 0) - (a.sv || 0), qualified: false },
+                                        ].map(cat => {
+                                            const pool = cat.qualified ? (pitchingStats || []).filter(p => p.qualified) : (pitchingStats || []);
+                                            const champion = [...pool].sort(cat.sort)[0];
+                                            if (!champion) return null;
+                                            return (
+                                                <div key={cat.label} className="bg-surface border border-muted/30 rounded-2xl p-5 shadow-sm hover:border-primary/30 hover:-translate-y-1 transition-all duration-300 text-center">
+                                                    <p className="text-2xl mb-2">{cat.icon}</p>
+                                                    <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-3">{cat.label}</p>
+                                                    <div className="w-14 h-14 rounded-full mx-auto mb-3 overflow-hidden border-2 border-primary/30 shadow-md bg-muted/20">
+                                                        <img src={champion.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${champion.firstName}${champion.lastName}`} alt="" className="w-full h-full object-cover" />
+                                                    </div>
+                                                    <p className="font-black text-foreground text-sm leading-tight">{champion.firstName} {champion.lastName}</p>
+                                                    <p className="text-[10px] text-muted-foreground mb-2">{champion.teamName}</p>
+                                                    <p className="text-2xl font-black text-primary">{(champion as any)[cat.key]}</p>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'estadisticas' && tournament?.status !== 'finished' && (
                             <div className="space-y-8 animate-fade-in-up">
                                 {/* Stats config for organizers/presi/admin */}
                                 {canEdit && (

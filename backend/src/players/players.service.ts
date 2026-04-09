@@ -71,6 +71,8 @@ export class PlayersService {
                 firstName: true,
                 lastName: true,
                 secondLastName: true,
+                photoUrl: true,
+                birthPlace: true,
                 isVerified: true,
                 rosterEntries: {
                     where: { isActive: true },
@@ -115,6 +117,8 @@ export class PlayersService {
                 firstName: candidate.firstName,
                 lastName: candidate.lastName,
                 secondLastName: candidate.secondLastName,
+                photoUrl: candidate.photoUrl,
+                birthPlace: candidate.birthPlace,
                 isVerified: candidate.isVerified,
                 team: matchEntry?.team ?? null,
                 rosterEntries: candidate.rosterEntries,
@@ -234,6 +238,7 @@ export class PlayersService {
                     curp: data.curp ?? null,
                     birthDate: data.birthDate ? new Date(data.birthDate) : null,
                     sex: data.sex ?? null,
+                    birthPlace: data.birthPlace ?? null,
                     position: data.position ?? null,
                     bats: data.bats ?? 'R',
                     throws: data.throws ?? 'R',
@@ -296,6 +301,95 @@ export class PlayersService {
             orderBy: { lastName: 'asc' },
         });
     }
+
+    // ── DIRECTORY ────────────────────────────────────────────────────────────
+
+    async getDirectory(params: {
+        page?: number;
+        limit?: number;
+        search?: string;
+        leagueId?: string;
+        tournamentId?: string;
+        teamId?: string;
+        requestingUser?: { id: string; role: string };
+    }) {
+        const page = params.page ? Number(params.page) : 1;
+        const limit = params.limit ? Number(params.limit) : 24;
+        const skip = (page - 1) * limit;
+
+        const where: any = {
+            isStreamerCreated: false,
+        };
+
+        if (params.search && params.search.trim().length >= 2) {
+            const q = params.search.trim();
+            where.OR = [
+                { firstName: { contains: q } },
+                { lastName: { contains: q } },
+            ];
+        }
+
+        // Filtros jerárquicos
+        if (params.teamId) {
+            where.rosterEntries = { some: { teamId: params.teamId, isActive: true } };
+        } else if (params.tournamentId) {
+            where.rosterEntries = { some: { tournamentId: params.tournamentId, isActive: true } };
+        } else if (params.leagueId) {
+            where.rosterEntries = { some: { team: { tournament: { leagueId: params.leagueId } }, isActive: true } };
+        }
+        // Si no hay filtro de equipo, torneo o liga, mostramos TODO el directorio global 
+        // (incluyendo jugadores "libres" sin equipo activo).
+
+        const [total, data] = await Promise.all([
+            (this.prisma.player as any).count({ where }),
+            (this.prisma.player as any).findMany({
+                where,
+                select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    secondLastName: true,
+                    position: true,
+                    photoUrl: true,
+                    birthPlace: true,
+                    bats: true,
+                    throws: true,
+                    isVerified: true,
+                    _count: { select: { rosterEntries: { where: { isActive: true } } } },
+                    rosterEntries: {
+                        where: { isActive: true },
+                        select: {
+                            number: true,
+                            team: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    shortName: true,
+                                    tournament: { select: { id: true, name: true, season: true } },
+                                },
+                            },
+                        },
+                        orderBy: { joinedAt: 'desc' },
+                        take: 1, // Para sacar la referencia de su último equipo
+                    },
+                },
+                orderBy: { createdAt: 'desc' },
+                skip,
+                take: limit,
+            })
+        ]);
+
+        return {
+            data,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit),
+            }
+        };
+    }
+
 
     // ── SEARCH ───────────────────────────────────────────────────────────────
 
@@ -544,6 +638,7 @@ export class PlayersService {
                         curp: p.curp ?? null,
                         birthDate: p.birthDate ? new Date(p.birthDate) : null,
                         sex: p.sex ?? null,
+                        birthPlace: (p as any).birthPlace ?? null,
                         position: p.position ?? null,
                         bats: p.bats ?? 'R',
                         throws: p.throws ?? 'R',
@@ -615,10 +710,207 @@ export class PlayersService {
         });
     }
 
+    // ── MERGE ────────────────────────────────────────────────────────────────
+    
+    async merge(primaryId: string, duplicateId: string, reqUser: any) {
+        if (primaryId === duplicateId) {
+            throw new HttpException('No puedes fusionar a un jugador consigo mismo.', HttpStatus.BAD_REQUEST);
+        }
+
+        const primaryPlayer = await this.prisma.player.findUnique({ where: { id: primaryId } });
+        const duplicatePlayer = await this.prisma.player.findUnique({
+            where: { id: duplicateId },
+            include: {
+                rosterEntries: {
+                    include: { team: { include: { tournament: { include: { league: true } } } } }
+                }
+            }
+        });
+
+        if (!primaryPlayer || !duplicatePlayer) {
+            throw new NotFoundException('Uno de los jugadores especificados no existe.');
+        }
+
+        // VALIDACIÓN DE SEGURIDAD (Mismas reglas que DELETE)
+        if (reqUser && reqUser.role !== 'admin') {
+            for (const entry of duplicatePlayer.rosterEntries) {
+                const trn = entry.team?.tournament;
+                const isAdmin = trn?.adminId === reqUser.id || trn?.league?.adminId === reqUser.id;
+                if (!isAdmin) {
+                    throw new ForbiddenException('No puedes fusionar a este jugador porque el duplicado pertenece a o ha jugado en ligas/torneos que tú no administras.');
+                }
+            }
+        }
+
+        // PROCEDER CON FUSIÓN TRANSACCIONAL
+        return this.prisma.$transaction(async (tx: any) => {
+            // 1. Simple Updates for Games, Plays, Lineups
+            await tx.$executeRaw`UPDATE games SET mvp_batter1_id = ${primaryId} WHERE mvp_batter1_id = ${duplicateId}`;
+            await tx.$executeRaw`UPDATE games SET mvp_batter2_id = ${primaryId} WHERE mvp_batter2_id = ${duplicateId}`;
+            await tx.$executeRaw`UPDATE games SET winning_pitcher_id = ${primaryId} WHERE winning_pitcher_id = ${duplicateId}`;
+            await tx.$executeRaw`UPDATE games SET losing_pitcher_id = ${primaryId} WHERE losing_pitcher_id = ${duplicateId}`;
+            await tx.$executeRaw`UPDATE games SET save_pitcher_id = ${primaryId} WHERE save_pitcher_id = ${duplicateId}`;
+
+            await tx.$executeRaw`UPDATE plays SET batter_id = ${primaryId} WHERE batter_id = ${duplicateId}`;
+            await tx.$executeRaw`UPDATE plays SET pitcher_id = ${primaryId} WHERE pitcher_id = ${duplicateId}`;
+
+            await tx.$executeRaw`UPDATE lineups SET player_id = ${primaryId} WHERE player_id = ${duplicateId}`;
+            
+            await tx.$executeRaw`UPDATE lineup_changes SET player_in_id = ${primaryId} WHERE player_in_id = ${duplicateId}`;
+            await tx.$executeRaw`UPDATE lineup_changes SET player_out_id = ${primaryId} WHERE player_out_id = ${duplicateId}`;
+
+            // 2. Resolver colisiones de RosterEntry
+            const primaryRosters = await tx.rosterEntry.findMany({ where: { playerId: primaryId } });
+            for (const dupEntry of duplicatePlayer.rosterEntries) {
+                const collision = primaryRosters.find((p: any) => p.teamId === dupEntry.teamId && p.tournamentId === dupEntry.tournamentId);
+                if (collision) {
+                    // El primario ya está en este equipo, destruimos el entry del duplicado para evitar UNIQUE constraint error
+                    await tx.rosterEntry.delete({ where: { id: dupEntry.id } });
+                } else {
+                    // El primario no estaba aquí, le pasamos la propiedad del entry
+                    await tx.rosterEntry.update({
+                        where: { id: dupEntry.id },
+                        data: { playerId: primaryId }
+                    });
+                }
+            }
+
+            // 3. Resolver colisiones de Estadísticas (PlayerStat)
+            const duplicateStats = await tx.playerStat.findMany({ where: { playerId: duplicateId } });
+            const primaryStats = await tx.playerStat.findMany({ where: { playerId: primaryId } });
+
+            for (const dupStat of duplicateStats) {
+                // Buscamos si hay estadisticas del primario en el MISMO torneo y equipo
+                const collision = primaryStats.find((p: any) => 
+                    p.teamId === dupStat.teamId && p.tournamentId === dupStat.tournamentId
+                );
+
+                if (collision) {
+                    // Hay colisión! Sumamos todo matemáticamente al primario y borramos el dupStat.
+                    await tx.playerStat.update({
+                        where: { id: collision.id },
+                        data: {
+                            atBats: collision.atBats + dupStat.atBats,
+                            runs: collision.runs + dupStat.runs,
+                            hits: collision.hits + dupStat.hits,
+                            h2: collision.h2 + dupStat.h2,
+                            h3: collision.h3 + dupStat.h3,
+                            hr: collision.hr + dupStat.hr,
+                            rbi: collision.rbi + dupStat.rbi,
+                            bb: collision.bb + dupStat.bb,
+                            so: collision.so + dupStat.so,
+                            hbp: collision.hbp + dupStat.hbp,
+                            sac: collision.sac + dupStat.sac,
+                            gamesPlayed: collision.gamesPlayed + dupStat.gamesPlayed,
+                            gamesStarted: collision.gamesStarted + dupStat.gamesStarted,
+                            plateAppearances: collision.plateAppearances + dupStat.plateAppearances,
+                            sacFlies: collision.sacFlies + dupStat.sacFlies,
+                            sacBunts: collision.sacBunts + dupStat.sacBunts,
+                            stolenBases: collision.stolenBases + dupStat.stolenBases,
+                            caughtStealing: collision.caughtStealing + dupStat.caughtStealing,
+                            groundDP: collision.groundDP + dupStat.groundDP,
+                            totalBases: collision.totalBases + dupStat.totalBases,
+                            ibb: collision.ibb + dupStat.ibb,
+                            // Pitching
+                            wins: collision.wins + dupStat.wins,
+                            losses: collision.losses + dupStat.losses,
+                            ipOuts: collision.ipOuts + dupStat.ipOuts,
+                            hAllowed: collision.hAllowed + dupStat.hAllowed,
+                            erAllowed: collision.erAllowed + dupStat.erAllowed,
+                            bbAllowed: collision.bbAllowed + dupStat.bbAllowed,
+                            soPitching: collision.soPitching + dupStat.soPitching,
+                            gamesStartedP: collision.gamesStartedP + dupStat.gamesStartedP,
+                            battersFaced: collision.battersFaced + dupStat.battersFaced,
+                            hrAllowed: collision.hrAllowed + dupStat.hrAllowed,
+                            wildPitches: collision.wildPitches + dupStat.wildPitches,
+                            saves: collision.saves + dupStat.saves,
+                            errors: collision.errors + dupStat.errors,
+                        }
+                    });
+                    await tx.playerStat.delete({ where: { id: dupStat.id } });
+                } else {
+                    // No hay colision, el primario nunca habia jugado ahí. Le damos el record completo.
+                    await tx.playerStat.update({
+                        where: { id: dupStat.id },
+                        data: { playerId: primaryId }
+                    });
+                }
+            }
+
+            // 4. Se asegura el estado verificado del principal si asimiló identidades robustas
+            await tx.player.update({
+                where: { id: primaryId },
+                data: { isVerified: true }
+            });
+
+            // 5. Destrucción final del Duplicado vacío.
+            return tx.player.delete({ where: { id: duplicateId } });
+        });
+    }
+
     // ── REMOVE ───────────────────────────────────────────────────────────────
 
-    async remove(id: string) {
-        await this.findOne(id);
-        return this.prisma.player.delete({ where: { id } });
+    async remove(id: string, reqUser?: { id: string; role: string }) {
+        const player = await this.prisma.player.findUnique({
+            where: { id },
+            include: {
+                rosterEntries: {
+                    include: {
+                        team: {
+                            include: {
+                                tournament: {
+                                    include: { league: true }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        if (!player) {
+            throw new NotFoundException(`Jugador con id ${id} no encontrado`);
+        }
+
+        // Validación de Permisos si no es el Super Admin "admin"
+        if (reqUser && reqUser.role !== 'admin') {
+            // Regla 1: Jugador verificado (múltiples equipos) no puede ser eliminado por organizadores/presis
+            if (player.rosterEntries.length > 1) {
+                throw new ForbiddenException('No puedes eliminar definitivamente a este jugador porque ya está participando en más de un equipo en el sistema. Por favor, si lo quieres fuera, solo dalo de baja de tu equipo desde el perfil del equipo.');
+            }
+
+            // Regla 2: Si tiene 1 registro, debe ser estrictamente en una liga del usuario
+            if (player.rosterEntries.length === 1) {
+                const trn = player.rosterEntries[0].team?.tournament;
+                const isAdmin = trn?.adminId === reqUser.id || trn?.league?.adminId === reqUser.id;
+                if (!isAdmin) {
+                    throw new ForbiddenException('No puedes eliminar a este jugador porque pertenece a una liga o torneo que no administras.');
+                }
+            }
+        }
+
+        // Proceder con el borrado transaccional manual ya que las policies CASCADE del schema pueden ser restrictivas
+        return this.prisma.$transaction(async (tx: any) => {
+            // 1. Quitar referencias de MVP y Pitcher Ganador/Perdedor/Salvamento en los Juegos
+            await tx.$executeRaw`UPDATE games SET mvp_batter1_id = NULL WHERE mvp_batter1_id = ${id}`;
+            await tx.$executeRaw`UPDATE games SET mvp_batter2_id = NULL WHERE mvp_batter2_id = ${id}`;
+            await tx.$executeRaw`UPDATE games SET winning_pitcher_id = NULL WHERE winning_pitcher_id = ${id}`;
+            await tx.$executeRaw`UPDATE games SET losing_pitcher_id = NULL WHERE losing_pitcher_id = ${id}`;
+            await tx.$executeRaw`UPDATE games SET save_pitcher_id = NULL WHERE save_pitcher_id = ${id}`;
+            
+            // 2. Eliminar estadísticas y jugadas activas si el jugador formó parte
+            await tx.playerStat.deleteMany({ where: { playerId: id } });
+            await tx.lineup.deleteMany({ where: { playerId: id } });
+            await tx.lineupChange.deleteMany({ where: { playerInId: id } });
+            await tx.lineupChange.deleteMany({ where: { playerOutId: id } });
+            await tx.play.deleteMany({ where: { batterId: id } });
+            await tx.play.deleteMany({ where: { pitcherId: id } });
+            
+            // 3. Eliminar la inscripción a los equipos (Rosters)
+            await tx.rosterEntry.deleteMany({ where: { playerId: id } });
+            
+            // 4. Eliminar el registro Maestro del Jugador
+            return tx.player.delete({ where: { id } });
+        });
     }
 }

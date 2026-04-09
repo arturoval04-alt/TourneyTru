@@ -2,6 +2,7 @@ import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query, Re
 import { PlayersService } from './players.service';
 import { CreatePlayerDto, UpdatePlayerDto, BulkCreatePlayersDto, ConfirmImportDto } from './dto/player.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 
 @Controller('api/players')
 export class PlayersController {
@@ -59,6 +60,31 @@ export class PlayersController {
         return this.playersService.searchVerified(q, excludeTeamId);
     }
 
+    @Get('directory')
+    @UseGuards(OptionalJwtAuthGuard)
+    getDirectory(
+        @Query('page') page?: string,
+        @Query('limit') limit?: string,
+        @Query('q') search?: string,
+        @Query('leagueId') leagueId?: string,
+        @Query('tournamentId') tournamentId?: string,
+        @Query('teamId') teamId?: string,
+        @Request() req?: any
+    ) {
+        // Obtenemos el usuario si está logueado y usó JWT (se asume que si el jwt-auth no es guard global,
+        // hay que inyectar opcionalmente o usar el token manual. Para este caso, req.user existirá si
+        // pasaron token, pero @Get('directory') es público, así que puede no haber req.user).
+        return this.playersService.getDirectory({
+            page: page ? parseInt(page, 10) : undefined,
+            limit: limit ? parseInt(limit, 10) : undefined,
+            search,
+            leagueId,
+            tournamentId,
+            teamId,
+            requestingUser: req?.user
+        });
+    }
+
     @Get()
     findAll(@Query('teamId') teamId?: string) {
         return this.playersService.findAll({ teamId });
@@ -69,6 +95,12 @@ export class PlayersController {
         return this.playersService.findOne(id);
     }
 
+    @Post('merge')
+    @UseGuards(JwtAuthGuard)
+    mergePlayers(@Body() body: { primaryId: string, duplicateId: string }, @Request() req: any) {
+        return this.playersService.merge(body.primaryId, body.duplicateId, req.user);
+    }
+
     @Patch(':id')
     @UseGuards(JwtAuthGuard)
     update(@Param('id') id: string, @Body() updatePlayerDto: UpdatePlayerDto) {
@@ -77,7 +109,7 @@ export class PlayersController {
 
     @Delete(':id')
     @UseGuards(JwtAuthGuard)
-    remove(@Param('id') id: string) {
-        return this.playersService.remove(id);
+    remove(@Param('id') id: string, @Request() req: any) {
+        return this.playersService.remove(id, req.user);
     }
 }

@@ -8,13 +8,13 @@ import CreateGameWizard from '@/components/game/CreateGameWizard';
 import ImageUploader from '@/components/ui/ImageUploader';
 import api from '@/lib/api';
 import { uploadToCloudinary } from '@/lib/cloudinary';
-import { CheckCircle, AlertTriangle, XCircle, Search, Plus } from 'lucide-react';
+import { CheckCircle, AlertTriangle, XCircle, Search, Plus, MapPin, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function AdminDashboard() {
     const router = useRouter();
 
     // -- Types --
-    type TabType = 'perfil' | 'ligas' | 'torneos' | 'equipos' | 'jugadores' | 'juegos' | 'usuarios' | 'plan';
+    type TabType = 'perfil' | 'ligas' | 'torneos' | 'equipos' | 'jugadores' | 'juegos' | 'usuarios' | 'plan' | 'delegados';
 
     interface GameData {
         id: string;
@@ -158,6 +158,23 @@ export default function AdminDashboard() {
     const [myScorekeepers, setMyScorekeepers] = useState<UserData[]>([]);
     const [games, setGames] = useState<GameData[]>([]);
 
+    // -- Delegados --
+    interface DelegateData {
+        id: string;
+        isActive: boolean;
+        createdAt: string;
+        user: { id: string; firstName: string; lastName: string; email: string; phone?: string };
+        team: { id: string; name: string; logoUrl?: string };
+        createdBy: { id: string; firstName: string; lastName: string };
+    }
+    const [delegates, setDelegates] = useState<DelegateData[]>([]);
+    const [delegateTournamentId, setDelegateTournamentId] = useState('');
+    const [showDelegateModal, setShowDelegateModal] = useState(false);
+    const [delegateForm, setDelegateForm] = useState({
+        firstName: '', lastName: '', email: '', password: '', phone: '', teamId: '', tournamentId: '',
+    });
+    const [delegateTeams, setDelegateTeams] = useState<TeamData[]>([]);
+
     // -- Filtros de juegos --
     const [filterLeague, setFilterLeague] = useState('');
     const [filterTournament, setFilterTournament] = useState('');
@@ -175,6 +192,37 @@ export default function AdminDashboard() {
 
     // -- Form: Jugadores --
     const [selectedTeam, setSelectedTeam] = useState('');
+    
+    // -- Admin Directory Jugadores --
+    const [directoryPlayers, setDirectoryPlayers] = useState<any[]>([]);
+    const [directoryMeta, setDirectoryMeta] = useState<any>({ total: 0, page: 1, limit: 12, totalPages: 1 });
+    const [directoryPage, setDirectoryPage] = useState(1);
+    const [directorySearch, setDirectorySearch] = useState("");
+    const [directorySearchDebounced, setDirectorySearchDebounced] = useState("");
+    const [directoryLoading, setDirectoryLoading] = useState(false);
+
+    useEffect(() => {
+        const handler = setTimeout(() => setDirectorySearchDebounced(directorySearch), 400);
+        return () => clearTimeout(handler);
+    }, [directorySearch]);
+
+    useEffect(() => {
+        if (activeTab !== 'jugadores') return;
+        setDirectoryLoading(true);
+        const params: any = { page: directoryPage, limit: 12 };
+        if (directorySearchDebounced.length >= 2) params.q = directorySearchDebounced;
+        if (selectedTeam) params.teamId = selectedTeam;
+        else if (selectedTournament) params.tournamentId = selectedTournament;
+        // Si no hay filtros, el endpoint por defecto usará req.user para filtrar automáticamente.
+
+        api.get('/players/directory', { params })
+            .then(({ data }) => {
+                setDirectoryPlayers(data.data || []);
+                setDirectoryMeta(data.meta || { total: 0, page: 1, limit: 12, totalPages: 1 });
+            })
+            .catch(console.error)
+            .finally(() => setDirectoryLoading(false));
+    }, [activeTab, directoryPage, directorySearchDebounced, selectedTeam, selectedTournament]);
 
     // -- Form: Create Tournament --
     const [tournForm, setTournForm] = useState({
@@ -197,12 +245,17 @@ export default function AdminDashboard() {
 
     // -- Form: Create Player --
     const [playerForm, setPlayerForm] = useState({
-        firstName: '', lastName: '', secondLastName: '', curp: '', birthDate: '', number: '', position: 'INF', bats: 'R', throws: 'R', photoUrl: '', team_id: ''
+        firstName: '', lastName: '', secondLastName: '', curp: '', birthDate: '', birthPlace: '', number: '', position: 'INF', bats: 'R', throws: 'R', photoUrl: '', team_id: ''
     });
     const [showEditPlayerModal, setShowEditPlayerModal] = useState(false);
     const [editingPlayer, setEditingPlayer] = useState<any>(null);
     const [liveValidation, setLiveValidation] = useState<any>(null);
     const [checkingLive, setCheckingLive] = useState(false);
+
+    // FUSIÓN STATES
+    const [mergeMode, setMergeMode] = useState(false);
+    const [mergePrimary, setMergePrimary] = useState<any>(null);
+    const [mergeDuplicate, setMergeDuplicate] = useState<any>(null);
     
     // Live Validation for Dashboard
     useEffect(() => {
@@ -306,6 +359,50 @@ export default function AdminDashboard() {
             const { data } = await api.get('/users/my-scorekeepers');
             setMyScorekeepers(data || []);
         } catch (err) { console.error("Error fetching scorekeepers:", err); }
+    };
+
+    const fetchDelegates = async (tournamentId: string) => {
+        if (!tournamentId) return;
+        try {
+            const { data } = await api.get(`/delegates/tournament/${tournamentId}`);
+            setDelegates(data || []);
+        } catch (err) { console.error('Error fetching delegates:', err); }
+    };
+
+    const handleCreateDelegate = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setSaving(true);
+        try {
+            const { data } = await api.post('/delegates', {
+                ...delegateForm,
+                tournamentId: delegateForm.tournamentId || delegateTournamentId,
+            });
+            setDelegates(prev => [...prev, data]);
+            setShowDelegateModal(false);
+            setDelegateForm({ firstName: '', lastName: '', email: '', password: '', phone: '', teamId: '', tournamentId: '' });
+        } catch (err: any) {
+            alert(err?.response?.data?.message || 'Error al crear delegado');
+        } finally { setSaving(false); }
+    };
+
+    const handleToggleDelegate = async (delegate: DelegateData) => {
+        try {
+            const { data } = await api.patch(`/delegates/${delegate.id}/toggle`);
+            setDelegates(prev => prev.map(d => d.id === delegate.id ? { ...d, isActive: data.isActive } : d));
+        } catch (err: any) {
+            alert(err?.response?.data?.message || 'Error al cambiar estado del delegado');
+        }
+    };
+
+    const handleDeleteDelegate = async (delegate: DelegateData) => {
+        const name = `${delegate.user.firstName} ${delegate.user.lastName}`;
+        if (!confirm(`¿Eliminar la cuenta del delegado "${name}" y su acceso?\nEsta acción no se puede deshacer.`)) return;
+        try {
+            await api.delete(`/delegates/${delegate.id}`);
+            setDelegates(prev => prev.filter(d => d.id !== delegate.id));
+        } catch (err: any) {
+            alert(err?.response?.data?.message || 'Error al eliminar delegado');
+        }
     };
 
     const handleDeleteStaff = async (user: UserData) => {
@@ -651,11 +748,12 @@ export default function AdminDashboard() {
                 bats: playerForm.bats,
                 throws: playerForm.throws,
                 photoUrl: playerForm.photoUrl || null,
+                birthPlace: playerForm.birthPlace || undefined,
                 ...(forceCreate ? { forceCreate: true } : {}),
             });
             alert('Jugador Registrado Satisfactoriamente');
             setShowPlayerModal(false);
-            setPlayerForm({ firstName: '', lastName: '', secondLastName: '', curp: '', birthDate: '', number: '', position: 'INF', bats: 'R', throws: 'R', photoUrl: '', team_id: '' });
+            setPlayerForm({ firstName: '', lastName: '', secondLastName: '', curp: '', birthDate: '', birthPlace: '', number: '', position: 'INF', bats: 'R', throws: 'R', photoUrl: '', team_id: '' });
             if (selectedTeam === playerForm.team_id) {
                 api.get('/players', { params: { teamId: selectedTeam } })
                     .then(({ data }) => setPlayers(data || []))
@@ -680,6 +778,7 @@ export default function AdminDashboard() {
             secondLastName: player.secondLastName || '',
             curp: player.curp || '',
             birthDate: player.birthDate ? new Date(player.birthDate).toISOString().split('T')[0] : '',
+            birthPlace: player.birthPlace || '',
             number: player.number?.toString() || '',
             position: player.position || 'INF',
             bats: player.bats || 'R',
@@ -724,11 +823,12 @@ export default function AdminDashboard() {
                 bats: playerForm.bats || 'R',
                 throws: playerForm.throws || 'R',
                 photoUrl: playerForm.photoUrl || undefined,
+                birthPlace: playerForm.birthPlace || undefined,
             });
             alert('Jugador Actualizado');
             setShowEditPlayerModal(false);
             setEditingPlayer(null);
-            setPlayerForm({ firstName: '', lastName: '', secondLastName: '', curp: '', birthDate: '', number: '', position: 'INF', bats: 'R', throws: 'R', photoUrl: '', team_id: '' });
+            setPlayerForm({ firstName: '', lastName: '', secondLastName: '', curp: '', birthDate: '', birthPlace: '', number: '', position: 'INF', bats: 'R', throws: 'R', photoUrl: '', team_id: '' });
             if (selectedTeam) {
                 api.get('/players', { params: { teamId: selectedTeam } })
                     .then(({ data }) => setPlayers(data || []))
@@ -738,6 +838,63 @@ export default function AdminDashboard() {
             console.error(err);
             alert('Error al actualizar jugador'); 
         } finally { setSaving(false); }
+    };
+
+    const handleDeleteGlobalPlayer = async () => {
+        if (!editingPlayer) return;
+        if (!confirm('¿Estás seguro de que deseas eliminar permanentemente a este jugador de la base de datos maestra?')) return;
+        setSaving(true);
+        try {
+            await api.delete(`/players/${editingPlayer.id}`);
+            alert('Jugador eliminado permanentemente del sistema.');
+            setShowEditPlayerModal(false);
+            setEditingPlayer(null);
+            
+            // Refrescar vistas locales
+            setDirectoryPlayers(prev => prev.filter((p: any) => p.id !== editingPlayer.id));
+            setPlayers(prev => prev.filter((p: any) => p.id !== editingPlayer.id));
+        } catch (err: any) {
+            alert(err?.response?.data?.message || 'Error al eliminar. Probablemente participando en torneos que no administras.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleMergePlayers = async () => {
+        if (!mergePrimary || !mergeDuplicate) return;
+        if (!confirm(`ESTÁS A PUNTO DE FUSIONAR AL JUGADOR DUPLICADO [${mergeDuplicate.firstName} ${mergeDuplicate.lastName}] 
+HACIA EL JUGADOR PRINCIPAL [${mergePrimary.firstName} ${mergePrimary.lastName}].
+
+ESTA ACCIÓN SUMARÁ TODO SU HISTORIAL AL PRINCIPAL Y ELIMINARÁ AL DUPLICADO PARA SIEMPRE.
+No se puede deshacer. ¿Deseas continuar?`)) return;
+
+        setSaving(true);
+        try {
+            await api.post('/players/merge', {
+                primaryId: mergePrimary.id,
+                duplicateId: mergeDuplicate.id
+            });
+            alert('¡Fusión completada con éxito!');
+            
+            // Cleanup UI
+            setMergePrimary(null);
+            setMergeDuplicate(null);
+            setMergeMode(false);
+            
+            // Reload directory explicitly to show merged stats/rosters
+            const params: any = { page: directoryPage, limit: 12 };
+            if (directorySearchDebounced.length >= 2) params.q = directorySearchDebounced;
+            if (selectedTeam) params.teamId = selectedTeam;
+            else if (selectedTournament) params.tournamentId = selectedTournament;
+            
+            const { data } = await api.get('/players/directory', { params });
+            setDirectoryPlayers(data.data || []);
+            setDirectoryMeta(data.meta || { total: 0, page: 1, limit: 12, totalPages: 1 });
+        } catch (err: any) {
+            alert(err?.response?.data?.message || 'Error al fusionar jugadores. Revisa permisos.');
+        } finally {
+            setSaving(false);
+        }
     };
 
     const handleCreateUser = async (e: React.FormEvent) => {
@@ -987,6 +1144,7 @@ export default function AdminDashboard() {
             { id: 'jugadores', label: 'Jugadores', icon: '⚾', roles: null },
             { id: 'juegos', label: 'Juegos & Stats', icon: '📊', roles: null },
             { id: 'usuarios', label: (userRole === 'organizer' || userRole === 'presi') ? 'Mi Personal' : 'Control de Accesos', icon: '🔑', roles: ['admin', 'organizer', 'presi'] },
+            { id: 'delegados', label: 'Delegados', icon: '🪪', roles: ['admin', 'organizer', 'presi'] },
             { id: 'plan', label: 'Mi Plan', icon: '💎', roles: ['organizer'] },
         ];
         return (
@@ -1419,84 +1577,154 @@ export default function AdminDashboard() {
                             </section>
                         )}
 
-                        {/* TAB: JUGADORES */}
+                        {/* TAB: JUGADORES (DIRECTORIO GLOBAL DEL ADMIN) */}
                         {activeTab === 'jugadores' && (
                             <section className="animate-fade-in-up">
-                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                                    <h2 className="text-xl font-black text-foreground flex items-center gap-2">
-                                        <span className="w-2 h-4 bg-primary rounded-full"></span> Jugadores del Roster
+                                <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
+                                    <h2 className="text-xl font-black text-foreground flex items-center gap-2 whitespace-nowrap">
+                                        <span className="w-2 h-4 bg-primary rounded-full"></span> Directorio de Jugadores
                                     </h2>
-                                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                                    <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto">
+                                        <div className="relative flex-grow sm:flex-grow-0">
+                                            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                                            <input
+                                                type="text"
+                                                placeholder="Buscar jugador..."
+                                                className="w-full sm:w-48 pl-10 pr-3 py-2 bg-surface text-foreground border border-muted/30 rounded-lg outline-none focus:ring-1 focus:ring-primary text-sm transition"
+                                                value={directorySearch}
+                                                onChange={(e) => { setDirectorySearch(e.target.value); setDirectoryPage(1); }}
+                                            />
+                                        </div>
                                         <select
-                                            className="w-full sm:w-48 bg-surface border border-muted/30 text-foreground rounded-lg p-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm"
+                                            className="flex-grow sm:flex-grow-0 sm:w-40 bg-surface border border-muted/30 text-foreground rounded-lg p-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm"
                                             value={selectedTournament}
-                                            onChange={(e) => setSelectedTournament(e.target.value)}
+                                            onChange={(e) => { setSelectedTournament(e.target.value); setDirectoryPage(1); }}
                                         >
-                                            <option value="">1. Torneo...</option>
+                                            <option value="">Todos los Torneos</option>
                                             {tournaments.map((t: TournamentData) => <option key={t.id} value={t.id}>{t.name}</option>)}
                                         </select>
                                         <select
                                             disabled={!selectedTournament}
-                                            className="w-full sm:w-48 bg-surface border border-muted/30 text-foreground rounded-lg p-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm disabled:opacity-50"
+                                            className="flex-grow sm:flex-grow-0 sm:w-40 bg-surface border border-muted/30 text-foreground rounded-lg p-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm disabled:opacity-50"
                                             value={selectedTeam}
-                                            onChange={(e) => setSelectedTeam(e.target.value)}
+                                            onChange={(e) => { setSelectedTeam(e.target.value); setDirectoryPage(1); }}
                                         >
-                                            <option value="">2. Equipo...</option>
+                                            <option value="">Todos los Equipos</option>
                                             {teams.map((t: TeamData) => <option key={t.id} value={t.id}>{t.name}</option>)}
                                         </select>
                                         {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (() => {
                                             const maxPlayers = (userRole === 'admin' || userRole === 'presi') ? 999 : (currentUser?.maxPlayersPerTeam ?? 25);
                                             const atPlayerQuota = userRole !== 'admin' && !!selectedTeam && players.length >= maxPlayers;
                                             return (
-                                                <button
-                                                    onClick={() => !atPlayerQuota && setShowPlayerModal(true)}
-                                                    disabled={atPlayerQuota}
-                                                    title={atPlayerQuota ? `Límite de tu plan: ${maxPlayers} jugador(es) por equipo` : undefined}
-                                                    className={`px-5 py-2 min-w-max font-bold rounded-lg transition text-sm flex items-center gap-2 ${atPlayerQuota ? 'bg-muted/30 text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-md hover:shadow-primary/40 cursor-pointer'}`}
-                                                >
-                                                    {atPlayerQuota ? `Límite alcanzado (${maxPlayers})` : '+ Alta Jugador'}
-                                                </button>
+                                                <div className="flex gap-2 flex-grow sm:flex-grow-0">
+                                                    <button
+                                                        onClick={() => {
+                                                            setMergeMode(!mergeMode);
+                                                            if (mergeMode) {
+                                                                setMergePrimary(null);
+                                                                setMergeDuplicate(null);
+                                                            }
+                                                        }}
+                                                        className={`px-4 py-2 font-bold rounded-lg transition text-sm flex items-center justify-center gap-2 border ${mergeMode ? 'bg-orange-500/10 text-orange-500 border-orange-500/50' : 'bg-surface text-muted-foreground border-muted/30 hover:border-orange-500/30 hover:text-orange-500'}`}
+                                                    >
+                                                        {mergeMode ? 'Cancelar Fusión' : 'Modo Fusión'}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => !atPlayerQuota && setShowPlayerModal(true)}
+                                                        disabled={atPlayerQuota || !selectedTournament}
+                                                        title={!selectedTournament ? "Filtra por un Torneo primero para dar alta" : atPlayerQuota ? `Límite de tu plan: ${maxPlayers} jugador(es) por equipo` : undefined}
+                                                        className={`px-5 py-2 min-w-max font-bold transition text-sm flex items-center justify-center gap-2 rounded-lg ${atPlayerQuota || !selectedTournament ? 'bg-muted/30 text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-md hover:shadow-primary/40 cursor-pointer'}`}
+                                                    >
+                                                        {atPlayerQuota ? `Límite alcanzado (${maxPlayers})` : '+ Alta Jugador'}
+                                                    </button>
+                                                </div>
                                             );
                                         })()}
                                     </div>
                                 </div>
+
+                                {/* FUSION BANNER */}
+                                {mergeMode && (
+                                    <div className="mb-6 p-4 rounded-xl border border-orange-500/30 bg-orange-500/5 flex flex-col md:flex-row items-center justify-between gap-4 animate-fade-in-up">
+                                        <div className="flex-1 flex flex-col sm:flex-row gap-4 items-center w-full">
+                                            <div className="flex-1 p-3 bg-surface rounded-lg border border-emerald-500/30 shadow-sm flex items-center gap-3 min-w-[200px] w-full relative overflow-hidden">
+                                                <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+                                                <div>
+                                                    <p className="text-[10px] font-black uppercase text-emerald-500 tracking-wider">Jugador Principal (Se queda)</p>
+                                                    <p className="text-sm font-bold text-foreground">
+                                                        {mergePrimary ? `${mergePrimary.firstName} ${mergePrimary.lastName}` : <span className="opacity-50 font-normal">Aún no seleccionado...</span>}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="flex-1 p-3 bg-surface rounded-lg border border-red-500/30 shadow-sm flex items-center gap-3 min-w-[200px] w-full relative overflow-hidden">
+                                                <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
+                                                <div>
+                                                    <p className="text-[10px] font-black uppercase text-red-500 tracking-wider">Clón (Desaparecerá)</p>
+                                                    <p className="text-sm font-bold text-foreground">
+                                                        {mergeDuplicate ? `${mergeDuplicate.firstName} ${mergeDuplicate.lastName}` : <span className="opacity-50 font-normal">Aún no seleccionado...</span>}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={handleMergePlayers}
+                                            disabled={!mergePrimary || !mergeDuplicate || saving}
+                                            className="w-full md:w-auto px-6 py-3 bg-orange-500 hover:bg-orange-600 disabled:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed text-white font-black rounded-xl shadow-lg shadow-orange-500/20 transition-all uppercase tracking-wider text-xs"
+                                        >
+                                            {saving ? 'Fusionando...' : 'Ejecutar Fusión'}
+                                        </button>
+                                    </div>
+                                )}
+
                                 <div className="bg-surface border border-muted/30 rounded-2xl overflow-x-auto overflow-y-hidden shadow-sm">
                                     <table className="w-full text-left text-sm text-muted-foreground">
                                         <thead className="bg-muted/10 text-xs uppercase text-foreground font-black tracking-wider border-b border-muted/20">
                                             <tr>
                                                 <th className="px-6 py-4">Jugador</th>
-                                                <th className="px-6 py-4">Equipos</th>
+                                                <th className="px-6 py-4">Equipos Registrado</th>
                                                 <th className="px-6 py-4">Posición</th>
                                                 <th className="px-6 py-4 text-right">Acciones</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-muted/10">
-                                            {!selectedTeam ? (
+                                            {directoryLoading ? (
                                                 <tr>
                                                     <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
-                                                        Por favor, selecciona un Torneo y después un Equipo en el menú superior para ver su Roster.
+                                                        <div className="flex flex-col items-center justify-center opacity-60">
+                                                            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin mb-3"></div>
+                                                            <span>Cargando directorio...</span>
+                                                        </div>
                                                     </td>
                                                 </tr>
-                                            ) : players.length === 0 ? (
+                                            ) : directoryPlayers.length === 0 ? (
                                                 <tr>
                                                     <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
-                                                        No hay jugadores registrados en el roster de este equipo. Clic en &quot;+ Alta Jugador&quot;.
+                                                        No se encontraron jugadores que coincidan con la búsqueda o los filtros actuales.
                                                     </td>
                                                 </tr>
-                                            ) : players.map((player: any) => (
+                                            ) : directoryPlayers.map((player: any) => (
                                                 <tr key={player.id} className="hover:bg-muted/5 transition-colors">
-                                                    <td className="px-6 py-4">
+                                                    <td className="px-6 py-4 min-w-[200px]">
                                                         <div className="font-bold text-foreground flex items-center gap-3">
-                                                            <div className="w-8 h-8 rounded-full bg-muted/20 flex items-center justify-center overflow-hidden border border-muted/30">
+                                                            <div className="w-9 h-9 rounded-full bg-muted/20 flex items-center justify-center overflow-hidden border border-muted/30 shrink-0">
                                                                 {player.photoUrl ? (
                                                                     <img src={player.photoUrl} alt="Photo" className="w-full h-full object-cover" />
                                                                 ) : (
                                                                     <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${player.firstName}${player.lastName}`} alt="Avatar" className="w-full h-full opacity-60" />
                                                                 )}
                                                             </div>
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="w-5 text-center bg-muted/20 rounded text-[10px] py-0.5">{player.number || '00'}</span>
-                                                                {player.firstName} {player.lastName}
+                                                            <div className="flex flex-col">
+                                                                <div className="flex items-center gap-1.5 leading-none mb-1">
+                                                                    <span>{player.firstName} {player.lastName} {player.secondLastName || ''}</span>
+                                                                    {player.isVerified && (
+                                                                        <span className="text-blue-500 shrink-0" title="Perfil Verificado">
+                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zM10.9 16.5L6.5 12.1l1.4-1.4 3 3 7.2-7.2 1.4 1.4-8.6 8.6z"/></svg>
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <span className="text-[10px] text-muted-foreground/70 font-semibold flex items-center gap-1 uppercase truncate max-w-[200px]" title={player.birthPlace || 'Sin lugar de nac.'}>
+                                                                    <MapPin size={10} /> {player.birthPlace || 'Sin origen registrado'}
+                                                                </span>
                                                             </div>
                                                         </div>
                                                     </td>
@@ -1504,28 +1732,58 @@ export default function AdminDashboard() {
                                                         <span className="bg-muted/10 px-2 py-1 rounded-md">
                                                             {player._count?.rosterEntries === 1 ? '1 Equipo' : `${player._count?.rosterEntries || 0} Equipos`}
                                                         </span>
+                                                        {player.rosterEntries?.[0]?.team?.name && (
+                                                            <div className="text-[10px] lowercase normal-case mt-1 font-medium italic opacity-70">
+                                                                Ej: {player.rosterEntries[0].team.name}
+                                                            </div>
+                                                        )}
                                                     </td>
                                                     <td className="px-6 py-4">
                                                         <span className="bg-primary/10 text-primary px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-tighter">{player.position || 'INF'}</span>
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
-                                                        <Link href={`/torneos/${selectedTournament}/jugadores/${player.id}`} className="text-muted-foreground hover:text-foreground font-bold text-xs mr-4 transition-colors">
-                                                            Ficha
-                                                        </Link>
-                                                        {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (
+                                                        {mergeMode ? (
+                                                            <div className="flex items-center justify-end gap-2">
+                                                                {mergePrimary?.id === player.id ? (
+                                                                    <span className="bg-emerald-500/20 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border border-emerald-500/30">
+                                                                        Principal
+                                                                    </span>
+                                                                ) : mergeDuplicate?.id === player.id ? (
+                                                                    <span className="bg-orange-500/20 text-orange-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border border-orange-500/30">
+                                                                        Clón
+                                                                    </span>
+                                                                ) : (
+                                                                    <>
+                                                                        <button
+                                                                            onClick={() => setMergePrimary(player)}
+                                                                            disabled={!!mergePrimary}
+                                                                            className="text-[10px] font-bold px-2 py-1 bg-emerald-500/5 hover:bg-emerald-500/20 text-emerald-600 rounded transition disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                        >
+                                                                            Elegir Principal
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => setMergeDuplicate(player)}
+                                                                            disabled={!!mergeDuplicate}
+                                                                            className="text-[10px] font-bold px-2 py-1 bg-orange-500/5 hover:bg-orange-500/20 text-orange-600 rounded transition disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                        >
+                                                                            Elegir Clón
+                                                                        </button>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        ) : (
                                                             <>
-                                                                <button
-                                                                    onClick={() => handleEditPlayer(player)}
-                                                                    className="text-blue-500/70 hover:text-blue-500 font-bold text-xs transition-colors mr-3"
-                                                                >
-                                                                    Editar
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => handleDeletePlayer(player)}
-                                                                    className="text-red-500/60 hover:text-red-500 font-bold text-xs transition-colors"
-                                                                >
-                                                                    Eliminar
-                                                                </button>
+                                                                <Link href={`/jugadores/${player.id}`} className="text-muted-foreground hover:text-foreground font-bold text-xs mr-4 transition-colors">
+                                                                    Ficha
+                                                                </Link>
+                                                                {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (
+                                                                    <button
+                                                                        onClick={() => handleEditPlayer(player)}
+                                                                        className="text-blue-500/70 hover:text-blue-500 font-bold text-xs transition-colors"
+                                                                    >
+                                                                        Editar
+                                                                    </button>
+                                                                )}
                                                             </>
                                                         )}
                                                     </td>
@@ -1534,6 +1792,29 @@ export default function AdminDashboard() {
                                         </tbody>
                                     </table>
                                 </div>
+
+                                {/* Pagination */}
+                                {!directoryLoading && directoryMeta.totalPages > 1 && (
+                                    <div className="flex justify-center mt-6">
+                                        <div className="flex items-center gap-2 bg-surface p-1 rounded-lg border border-muted/20 shadow-sm">
+                                            <button
+                                                onClick={() => setDirectoryPage(p => Math.max(1, p - 1))}
+                                                disabled={directoryPage === 1}
+                                                className="p-1.5 rounded text-muted-foreground disabled:opacity-30 disabled:cursor-not-allowed hover:bg-muted/10 hover:text-foreground transition"
+                                            >
+                                                <ChevronLeft size={16} />
+                                            </button>
+                                            <span className="text-xs font-bold px-3">Pág {directoryPage} de {directoryMeta.totalPages}</span>
+                                            <button
+                                                onClick={() => setDirectoryPage(p => Math.min(directoryMeta.totalPages, p + 1))}
+                                                disabled={directoryPage === directoryMeta.totalPages}
+                                                className="p-1.5 rounded text-muted-foreground disabled:opacity-30 disabled:cursor-not-allowed hover:bg-muted/10 hover:text-foreground transition"
+                                            >
+                                                <ChevronRight size={16} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                             </section>
                         )}
 
@@ -2117,6 +2398,122 @@ export default function AdminDashboard() {
                                 </div>
                             </section>
                         )}
+                        {/* TAB: DELEGADOS */}
+                        {activeTab === 'delegados' && (userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (
+                            <section className="animate-fade-in-up">
+                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 gap-3">
+                                    <h2 className="text-xl font-black text-foreground flex items-center gap-2">
+                                        <span className="w-2 h-4 bg-primary rounded-full"></span> Delegados de Equipo
+                                    </h2>
+                                    <button
+                                        onClick={() => {
+                                            setDelegateForm({ firstName: '', lastName: '', email: '', password: '', phone: '', teamId: '', tournamentId: delegateTournamentId });
+                                            setShowDelegateModal(true);
+                                        }}
+                                        disabled={!delegateTournamentId}
+                                        className="px-5 py-2 bg-primary hover:bg-primary-light text-white font-bold rounded-lg transition shadow-md hover:shadow-primary/40 text-sm flex items-center gap-2 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        + Nuevo Delegado
+                                    </button>
+                                </div>
+
+                                <p className="text-xs text-muted-foreground mb-4">
+                                    Un delegado gestiona el roster de un equipo específico durante la fase de inscripción (<span className="font-bold text-amber-400">Próximo</span>). Al activar el torneo, su acceso se desactiva automáticamente.
+                                </p>
+
+                                {/* Selector de torneo */}
+                                <div className="mb-5">
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Filtrar por Torneo</label>
+                                    <select
+                                        value={delegateTournamentId}
+                                        onChange={e => {
+                                            setDelegateTournamentId(e.target.value);
+                                            fetchDelegates(e.target.value);
+                                            if (e.target.value) {
+                                                api.get('/teams', { params: { tournamentId: e.target.value } })
+                                                    .then(({ data }) => setDelegateTeams(data || []))
+                                                    .catch(() => {});
+                                            } else {
+                                                setDelegateTeams([]);
+                                            }
+                                        }}
+                                        className="w-full sm:w-72 bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm"
+                                    >
+                                        <option value="">— Seleccionar torneo —</option>
+                                        {tournaments.map(t => (
+                                            <option key={t.id} value={t.id}>{t.name} ({t.season})</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {!delegateTournamentId ? (
+                                    <div className="bg-surface border border-muted/30 rounded-2xl p-12 text-center">
+                                        <p className="text-4xl mb-3">🪪</p>
+                                        <p className="text-muted-foreground font-bold">Selecciona un torneo para ver sus delegados.</p>
+                                    </div>
+                                ) : delegates.length === 0 ? (
+                                    <div className="bg-surface border border-muted/30 rounded-2xl p-12 text-center">
+                                        <p className="text-4xl mb-3">🪪</p>
+                                        <p className="text-muted-foreground font-bold mb-2">No hay delegados en este torneo.</p>
+                                        <p className="text-sm text-muted-foreground mb-6">Crea un delegado por equipo para que cada representante gestione su propio roster.</p>
+                                        <button
+                                            onClick={() => setShowDelegateModal(true)}
+                                            className="px-5 py-2 bg-primary hover:bg-primary-light text-white font-bold rounded-lg transition text-sm"
+                                        >
+                                            + Crear primer delegado
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {delegates.map(d => {
+                                            const tourney = tournaments.find(t => t.id === delegateTournamentId);
+                                            const isUpcoming = (tourney as any)?.status === 'upcoming';
+                                            return (
+                                                <div key={d.id} className="bg-surface border border-muted/30 rounded-2xl p-4 sm:p-5">
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                                                                <span className="font-black text-foreground">{d.user.firstName} {d.user.lastName}</span>
+                                                                <span className="px-2 py-0.5 rounded text-xs font-bold uppercase bg-teal-500/10 text-teal-400">Delegado</span>
+                                                                {!isUpcoming && (
+                                                                    <span className="px-2 py-0.5 rounded text-xs font-bold bg-amber-500/10 text-amber-400">Torneo activo — acceso suspendido</span>
+                                                                )}
+                                                            </div>
+                                                            <div className="text-xs text-muted-foreground">{d.user.email}</div>
+                                                            <div className="mt-1.5 flex flex-wrap gap-1">
+                                                                <span className="text-[10px] border border-muted/30 px-1.5 py-0.5 rounded-md bg-muted/10 text-muted-foreground">🛡️ {d.team.name}</span>
+                                                                <span className="text-[10px] border border-muted/30 px-1.5 py-0.5 rounded-md bg-muted/10 text-muted-foreground">Creado por {d.createdBy.firstName} {d.createdBy.lastName}</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-3 shrink-0">
+                                                            {/* Toggle activo/inactivo */}
+                                                            <button
+                                                                onClick={() => handleToggleDelegate(d)}
+                                                                disabled={!isUpcoming && !d.isActive}
+                                                                title={!isUpcoming ? 'Solo se puede reactivar cuando el torneo esté en Próximo' : d.isActive ? 'Desactivar acceso' : 'Activar acceso'}
+                                                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${d.isActive && isUpcoming ? 'bg-green-500' : 'bg-muted/40'} ${!isUpcoming && !d.isActive ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                                                            >
+                                                                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${d.isActive ? 'translate-x-4' : 'translate-x-1'}`} />
+                                                            </button>
+                                                            <span className={`text-xs font-bold ${d.isActive && isUpcoming ? 'text-green-400' : 'text-muted-foreground'}`}>
+                                                                {d.isActive && isUpcoming ? 'Activo' : 'Inactivo'}
+                                                            </span>
+                                                            <button
+                                                                onClick={() => handleDeleteDelegate(d)}
+                                                                className="text-red-500/50 hover:text-red-500 text-xs font-bold transition-colors"
+                                                            >
+                                                                Eliminar
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </section>
+                        )}
+
                     </main>
                 </div>
             </div>
@@ -2503,6 +2900,11 @@ export default function AdminDashboard() {
                                     </div>
                                 </div>
 
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Lugar de Nacimiento <span className="normal-case font-normal">(opcional)</span></label>
+                                    <input type="text" maxLength={100} value={playerForm.birthPlace} onChange={e => setPlayerForm({ ...playerForm, birthPlace: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej: Hermosillo, Sonora" />
+                                </div>
+
                                 <div className="flex gap-4">
                                     <div className="flex-1">
                                         <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Número (Jersey)</label>
@@ -2595,10 +2997,27 @@ export default function AdminDashboard() {
                                         </div>
                                         <h4 className="text-sm font-black text-amber-500 mb-1">Homónimo / Existente</h4>
                                         <div className="bg-surface border border-amber-500/20 rounded-xl p-3 mt-3 w-full mb-3 text-left">
-                                            <p className="text-xs font-bold text-foreground truncate">{liveValidation.existing?.firstName} {liveValidation.existing?.lastName}</p>
-                                            <p className="text-[10px] text-muted-foreground mt-0.5 max-w-[200px] truncate">
-                                                Juega en: {liveValidation.existing?.team?.name || 'Agente Libre'}
-                                            </p>
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-amber-500/30 shrink-0 bg-muted/10">
+                                                    {liveValidation.existing?.photoUrl ? (
+                                                        <img src={liveValidation.existing.photoUrl} alt="" className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${liveValidation.existing?.firstName}${liveValidation.existing?.lastName}`} alt="" className="w-full h-full" />
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-xs font-bold text-foreground truncate">{liveValidation.existing?.firstName} {liveValidation.existing?.lastName} {liveValidation.existing?.secondLastName || ''}</p>
+                                                    <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                                                        Juega en: {liveValidation.existing?.team?.name || 'Agente Libre'}
+                                                    </p>
+                                                    {liveValidation.existing?.birthPlace && (
+                                                        <p className="text-[10px] text-muted-foreground truncate">📍 {liveValidation.existing.birthPlace}</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <a href={`/jugadores/${liveValidation.existing?.id}`} target="_blank" rel="noopener noreferrer" className="text-[10px] font-bold text-amber-500 hover:text-amber-400 underline underline-offset-2 transition-colors">
+                                                Ver perfil completo →
+                                            </a>
                                         </div>
                                         <div className="flex flex-col gap-2 w-full">
                                             <button 
@@ -2670,18 +3089,7 @@ export default function AdminDashboard() {
                             Editar Jugador
                         </h2>
                         <form onSubmit={handleUpdatePlayer} className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Equipo Destino</label>
-                                <select
-                                    required
-                                    value={playerForm.team_id}
-                                    onChange={e => setPlayerForm({ ...playerForm, team_id: e.target.value })}
-                                    className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition"
-                                >
-                                    <option value="">-- Seleccionar Equipo --</option>
-                                    {teams.map((t: TeamData) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                </select>
-                            </div>
+
                             <div className="flex gap-4">
                                 <div className="flex-1">
                                     <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Nombre</label>
@@ -2707,6 +3115,11 @@ export default function AdminDashboard() {
                                     <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">FECHA DE NAC. <span className="text-muted-foreground/50 lowercase font-normal">(opcional)</span></label>
                                     <input type="date" value={playerForm.birthDate} onChange={e => setPlayerForm({ ...playerForm, birthDate: e.target.value })} max={new Date().toISOString().split('T')[0]} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition [color-scheme:dark]" />
                                 </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Lugar de Nacimiento <span className="text-muted-foreground/50 lowercase font-normal">(opcional)</span></label>
+                                <input type="text" maxLength={100} value={playerForm.birthPlace} onChange={e => setPlayerForm({ ...playerForm, birthPlace: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej: Hermosillo, Sonora" />
                             </div>
 
                             <div className="flex gap-4">
@@ -2762,6 +3175,23 @@ export default function AdminDashboard() {
                             <button type="submit" disabled={saving} className={`w-full py-3 mt-4 font-bold rounded-xl transition shadow-lg ${saving ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-primary/20 cursor-pointer active:scale-95'}`}>
                                 {saving ? 'Guardando...' : 'Actualizar Jugador'}
                             </button>
+
+                            {/* Zona de peligro */}
+                            {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (
+                                <div className="mt-6 pt-4 border-t border-red-500/20">
+                                    <p className="text-[10px] font-bold uppercase tracking-widest text-red-500/60 mb-2">Zona de peligro</p>
+                                    <button
+                                        type="button"
+                                        onClick={handleDeleteGlobalPlayer}
+                                        className="w-full py-2.5 font-bold rounded-xl border border-red-500/30 text-red-500 bg-red-500/5 hover:bg-red-500/15 transition text-sm cursor-pointer active:scale-95"
+                                    >
+                                        Eliminar Jugador Definitivamente
+                                    </button>
+                                    <p className="text-[10px] text-muted-foreground mt-1.5 text-center leading-tight">
+                                        Solo puedes borrarlo si el jugador no aparece en múltiples equipos o en ligas externas a ti.
+                                    </p>
+                                </div>
+                            )}
                         </form>
                     </div>
                 </div>
@@ -3018,6 +3448,64 @@ export default function AdminDashboard() {
 
                             <button type="submit" disabled={saving} className="w-full py-3 bg-primary hover:bg-primary-light text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all">
                                 {saving ? (editingLeague ? 'Guardando...' : 'Creando...') : (editingLeague ? 'Guardar Cambios' : 'Crear Liga')}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
+            {/* MODAL NUEVO DELEGADO */}
+            {showDelegateModal && (
+                <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
+                    <div className="bg-surface border border-muted/30 p-5 sm:p-8 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl relative animate-fade-in-up">
+                        <button onClick={() => setShowDelegateModal(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                        <h2 className="text-2xl font-black text-foreground mb-1 uppercase tracking-tight pb-4 border-b border-muted/20">Nuevo Delegado</h2>
+                        <p className="text-xs text-muted-foreground mb-4">El delegado podrá armar el roster del equipo asignado mientras el torneo esté en estado <span className="text-amber-400 font-bold">Próximo</span>.</p>
+                        <form onSubmit={handleCreateDelegate} className="space-y-4">
+                            <div className="flex gap-3">
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Nombre</label>
+                                    <input required type="text" value={delegateForm.firstName} onChange={e => setDelegateForm({ ...delegateForm, firstName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Carlos" />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Apellido</label>
+                                    <input required type="text" value={delegateForm.lastName} onChange={e => setDelegateForm({ ...delegateForm, lastName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Ramírez" />
+                                </div>
+                            </div>
+                            <div className="flex gap-3">
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Correo</label>
+                                    <input required type="email" value={delegateForm.email} onChange={e => setDelegateForm({ ...delegateForm, email: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="delegado@correo.com" />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Teléfono (opcional)</label>
+                                    <input type="tel" value={delegateForm.phone} onChange={e => setDelegateForm({ ...delegateForm, phone: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="6681234567" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Contraseña Provisoria</label>
+                                <input required type="password" value={delegateForm.password} onChange={e => setDelegateForm({ ...delegateForm, password: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="••••••••" />
+                            </div>
+                            <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl">
+                                <label className="block text-[10px] font-black text-primary mb-2 uppercase text-center">ASIGNAR A EQUIPO</label>
+                                <select
+                                    required
+                                    value={delegateForm.teamId}
+                                    onChange={e => setDelegateForm({ ...delegateForm, teamId: e.target.value, tournamentId: delegateTournamentId })}
+                                    className="w-full bg-background border border-primary/40 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm font-bold"
+                                >
+                                    <option value="">— Seleccionar equipo —</option>
+                                    {delegateTeams.map(t => (
+                                        <option key={t.id} value={t.id}>{t.name}</option>
+                                    ))}
+                                </select>
+                                {delegateTeams.length === 0 && (
+                                    <p className="text-[10px] text-muted-foreground mt-2 text-center">No hay equipos en este torneo todavía.</p>
+                                )}
+                            </div>
+                            <button type="submit" disabled={saving || delegateTeams.length === 0} className={`w-full py-3 mt-2 font-bold rounded-xl transition shadow-lg ${saving || delegateTeams.length === 0 ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-primary/20 cursor-pointer active:scale-95'}`}>
+                                {saving ? 'Creando...' : 'Crear Delegado'}
                             </button>
                         </form>
                     </div>

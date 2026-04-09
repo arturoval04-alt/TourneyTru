@@ -165,8 +165,19 @@ export default function CreateGameWizard({
         api.get(`/teams/${hId}`),
         api.get(`/teams/${aId}`),
       ]);
-      setHomePlayers(hRes.data.players ?? []);
-      setAwayPlayers(aRes.data.players ?? []);
+      const toPlayers = (teamData: any) => {
+        if (Array.isArray(teamData.players)) return teamData.players;
+        if (Array.isArray(teamData.rosterEntries)) {
+          return teamData.rosterEntries.map((e: any) => ({
+            ...e.player,
+            number: e.number ?? e.player?.number,
+            position: e.position ?? e.player?.position,
+          }));
+        }
+        return [];
+      };
+      setHomePlayers(toPlayers(hRes.data));
+      setAwayPlayers(toPlayers(aRes.data));
     } catch {}
   }, []);
 

@@ -42,6 +42,9 @@ model User {
   tournamentOrganizers TournamentOrganizer[]
   tournamentsAdmin     Tournament[]          @relation("TournamentAdmin")
   role                 Role                  @relation(fields: [roleId], references: [id])
+  delegateProfile      TeamDelegate[]        @relation("DelegateUser")
+  delegatesCreated     TeamDelegate[]        @relation("DelegateCreatedBy")
+  tournamentDocuments  TournamentDocument[]
 
   @@map("users")
 }
@@ -109,6 +112,8 @@ model Tournament {
   news          TournamentNews[]
   organizers    TournamentOrganizer[]
   rosterEntries RosterEntry[]
+  delegates     TeamDelegate[]
+  documents     TournamentDocument[]
   admin         User                  @relation("TournamentAdmin", fields: [adminId], references: [id], onUpdate: NoAction)
   league        League                @relation(fields: [leagueId], references: [id], onDelete: Cascade)
 
@@ -154,6 +159,7 @@ model Team {
   lineups       Lineup[]
   playerStats   PlayerStat[]
   rosterEntries RosterEntry[]
+  delegates     TeamDelegate[]
   homeField     Field?         @relation(fields: [homeFieldId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   tournament    Tournament     @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   standings     Standing[]
@@ -170,6 +176,7 @@ model Player {
   curp                String?   @db.NVarChar(18)
   birthDate           DateTime? @map("birth_date")
   sex                 String?   @db.NVarChar(10)   // 'M', 'F', 'O'
+  birthPlace          String?   @map("birth_place") @db.NVarChar(100)
   // ─── Atributos físicos / deportivos ───────────
   position            String?   @db.NVarChar(10)   // posición principal
   bats                String?   @default("R") @db.NVarChar(10)
@@ -399,17 +406,33 @@ model Play {
   isSacFly           Boolean  @default(false) @map("is_sac_fly")
   isDoublePlay       Boolean  @default(false) @map("is_double_play")
   // ─── Relationships ────────────────────────────
-  gameId         String   @map("game_id")
-  batterId       String   @map("batter_id")
-  pitcherId      String   @map("pitcher_id")
+  gameId                String   @map("game_id")
+  batterId              String   @map("batter_id")
+  pitcherId             String   @map("pitcher_id")
+  batterRosterEntryId   String?  @map("batter_roster_entry_id")
+  pitcherRosterEntryId  String?  @map("pitcher_roster_entry_id")
+  // ─── Situational context (sabermetrics) ──────
+  runnersOnBase         String   @default("000") @map("runners_on_base") @db.NVarChar(3)  // "000".."111" (1ra, 2da, 3ra)
+  ballsOnPlay           Int      @default(0) @map("balls_on_play")
+  strikesOnPlay         Int      @default(0) @map("strikes_on_play")
+  hitType               String?  @map("hit_type") @db.NVarChar(5)                         // "GB"|"FB"|"LD"|"PU"
+  isEarnedRun           Boolean  @default(true) @map("is_earned_run")
+  // ─── Pitch-tracking per PA (swing metrics) ───
+  swingsInPA            Int      @default(0) @map("swings_in_pa")    // swings y fallas en el turno
+  contactsInPA          Int      @default(0) @map("contacts_in_pa")  // fouls + bolas en juego
+  pitchesInPA           Int      @default(0) @map("pitches_in_pa")   // total pitcheos del turno
   timestamp      DateTime @default(now())
-  batter         Player   @relation("BatterPlay", fields: [batterId], references: [id], onUpdate: NoAction)
-  game           Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  pitcher        Player   @relation("PitcherPlay", fields: [pitcherId], references: [id], onUpdate: NoAction)
+  batter               Player       @relation("BatterPlay", fields: [batterId], references: [id], onUpdate: NoAction)
+  game                 Game         @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  pitcher              Player       @relation("PitcherPlay", fields: [pitcherId], references: [id], onUpdate: NoAction)
+  batterRosterEntry    RosterEntry? @relation("BatterRosterEntryPlay", fields: [batterRosterEntryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  pitcherRosterEntry   RosterEntry? @relation("PitcherRosterEntryPlay", fields: [pitcherRosterEntryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([gameId, inning], map: "plays_game_inning_idx")
   @@index([batterId], map: "plays_batter_idx")
   @@index([pitcherId], map: "plays_pitcher_idx")
+  @@index([batterRosterEntryId], map: "plays_batter_re_idx")
+  @@index([pitcherRosterEntryId], map: "plays_pitcher_re_idx")
   @@map("plays")
 }
 
@@ -428,9 +451,11 @@ model RosterEntry {
   isActive     Boolean    @default(true) @map("is_active")
   joinedAt     DateTime   @default(now(), map: "re_joined_at_df") @map("joined_at")
   leftAt       DateTime?  @map("left_at")
-  player       Player     @relation(fields: [playerId], references: [id], onDelete: Cascade, map: "re_player_id_fkey")
-  team         Team       @relation(fields: [teamId], references: [id], onUpdate: NoAction, map: "re_team_id_fkey")
-  tournament   Tournament @relation(fields: [tournamentId], references: [id], onUpdate: NoAction, map: "re_tournament_id_fkey")
+  player         Player     @relation(fields: [playerId], references: [id], onDelete: Cascade, map: "re_player_id_fkey")
+  team           Team       @relation(fields: [teamId], references: [id], onUpdate: NoAction, map: "re_team_id_fkey")
+  tournament     Tournament @relation(fields: [tournamentId], references: [id], onUpdate: NoAction, map: "re_tournament_id_fkey")
+  playsAsBatter  Play[]     @relation("BatterRosterEntryPlay")
+  playsAsPitcher Play[]     @relation("PitcherRosterEntryPlay")
 
   @@unique([playerId, teamId, tournamentId], map: "roster_entries_unique")
   @@index([teamId, tournamentId], map: "roster_entries_team_idx")
@@ -506,4 +531,52 @@ model Standing {
   @@unique([teamId, tournamentId], map: "standings_team_tournament_unique")
   @@index([tournamentId], map: "standings_tournament_idx")
   @@map("standings")
+}
+
+// ─────────────────────────────────────────────
+// TEAM DELEGATE — Cuenta operativa ligada a un equipo en un torneo
+// Creada por organizer o presi, sin verificación de email
+// Solo activa cuando tournament.status === 'upcoming'
+// ─────────────────────────────────────────────
+model TeamDelegate {
+  id           String     @id @default(uuid())
+  userId       String     @map("user_id")
+  teamId       String     @map("team_id")
+  tournamentId String     @map("tournament_id")
+  createdById  String     @map("created_by_id")
+  isActive     Boolean    @default(true) @map("is_active")
+  createdAt    DateTime   @default(now(), map: "td_created_at_df") @map("created_at")
+
+  user         User       @relation("DelegateUser", fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "td_user_id_fkey")
+  team         Team       @relation(fields: [teamId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "td_team_id_fkey")
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "td_tournament_id_fkey")
+  createdBy    User       @relation("DelegateCreatedBy", fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "td_created_by_id_fkey")
+
+  @@unique([userId, teamId, tournamentId], map: "team_delegates_unique")
+  @@index([tournamentId], map: "team_delegates_tournament_idx")
+  @@index([teamId], map: "team_delegates_team_idx")
+  @@map("team_delegates")
+}
+
+// ─────────────────────────────────────────────
+// TOURNAMENT DOCUMENT — PDFs y archivos del torneo
+// Subidos por organizer o presi
+// Siempre incluye la plantilla Excel de jugadores
+// ─────────────────────────────────────────────
+model TournamentDocument {
+  id           String     @id @default(uuid())
+  tournamentId String     @map("tournament_id")
+  uploadedById String     @map("uploaded_by_id")
+  name         String     @db.NVarChar(200)
+  fileUrl      String     @map("file_url") @db.NVarChar(Max)
+  fileType     String     @map("file_type") @db.NVarChar(20)
+  // categorías: 'convocatoria' | 'reglas' | 'modo_juego' | 'general'
+  category     String     @default("general") @map("category") @db.NVarChar(50)
+  createdAt    DateTime   @default(now(), map: "tdoc_created_at_df") @map("created_at")
+
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade, map: "tdoc_tournament_id_fkey")
+  uploadedBy   User       @relation(fields: [uploadedById], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "tdoc_uploaded_by_id_fkey")
+
+  @@index([tournamentId], map: "tournament_documents_tournament_idx")
+  @@map("tournament_documents")
 }

@@ -7,7 +7,7 @@ import CambiosModal from './CambiosModal';
 import EspecialesMenuModal from './EspecialesMenuModal';
 
 export default function ActionPanel() {
-    const { addBall, addStrike, addFoul, addOut, executeWildPitch, executePassedBall, registerHBP, registerIBB, registerDroppedThirdStrike, history, undo } = useGameStore();
+    const { addBall, addStrike, addSwing, addFoul, addOut, executeWildPitch, executePassedBall, registerHBP, registerIBB, registerDroppedThirdStrike, history, undo } = useGameStore();
 
     // Estado del mini-mapa modal
     const [isLocationModalOpen, setLocationModalOpen] = useState(false);
@@ -67,6 +67,7 @@ export default function ActionPanel() {
                     <div className="flex flex-col gap-2">
                         <h4 className="section-title">Pitcheos</h4>
                         <div className="grid grid-cols-3 gap-1.5">
+                            {/* Fila 1: STRIKE | BOLA | FOUL */}
                             <button onClick={() => addStrike()} className="action-btn-lift bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 sm:py-7 rounded-lg shadow-md shadow-red-900/30 text-sm min-h-[48px] min-w-[48px]">
                                 STRIKE
                             </button>
@@ -75,6 +76,10 @@ export default function ActionPanel() {
                             </button>
                             <button onClick={addFoul} className="bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold py-4 rounded-lg active:scale-95 transition-all border border-slate-600 min-h-[48px] min-w-[48px]">
                                 FOUL
+                            </button>
+                            {/* Fila 2: SWING | WP | PB */}
+                            <button onClick={() => addSwing()} className="bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold py-4 rounded-lg active:scale-95 transition-all shadow-md shadow-orange-900/30 min-h-[48px] min-w-[48px]">
+                                SWING
                             </button>
                             <button onClick={executeWildPitch} className="bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold py-4 rounded-lg active:scale-95 transition-all border border-slate-600 min-h-[48px] min-w-[48px]">
                                 WP

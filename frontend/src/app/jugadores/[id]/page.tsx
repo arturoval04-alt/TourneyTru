@@ -68,6 +68,7 @@ interface PlayerData {
     bats: string | null;
     throws: string | null;
     photoUrl: string | null;
+    birthPlace?: string | null;
     isVerified: boolean;
     playerStats: PlayerStat[];
     lineupEntries: GameEntry[];
@@ -197,7 +198,7 @@ export default function PlayerProfilePage() {
     const [activeTab, setActiveTab] = useState<Tab>("estadisticas");
     const [canEdit, setCanEdit] = useState(false);
     const [isEditingPlayer, setIsEditingPlayer] = useState(false);
-    const [playerForm, setPlayerForm] = useState({ firstName: '', lastName: '', secondLastName: '', number: '', position: '', bats: 'R', throws: 'R', photoUrl: '', curp: '', birthDate: '' });
+    const [playerForm, setPlayerForm] = useState({ firstName: '', lastName: '', secondLastName: '', number: '', position: '', bats: 'R', throws: 'R', photoUrl: '', curp: '', birthDate: '', birthPlace: '' });
     const [statsTournamentFilter, setStatsTournamentFilter] = useState<string | null>(null);
     const [gamesTournamentFilter, setGamesTournamentFilter] = useState<string | null>(null);
     const [statsType, setStatsType] = useState<'bateo' | 'pitcheo'>('bateo');
@@ -213,7 +214,7 @@ export default function PlayerProfilePage() {
                 setPlayer(p);
                 setComputedStats(statsRes.data);
                 const activeEntry = p.rosterEntries?.find((e: any) => e.isActive) ?? p.rosterEntries?.[0];
-                setPlayerForm({ firstName: p.firstName, lastName: p.lastName, secondLastName: p.secondLastName || '', number: activeEntry?.number?.toString() || p.number?.toString() || '', position: p.position || '', bats: p.bats || 'R', throws: p.throws || 'R', photoUrl: p.photoUrl || '', curp: p.curp || '', birthDate: p.birthDate ? p.birthDate.slice(0, 10) : '' });
+                setPlayerForm({ firstName: p.firstName, lastName: p.lastName, secondLastName: p.secondLastName || '', number: activeEntry?.number?.toString() || p.number?.toString() || '', position: p.position || '', bats: p.bats || 'R', throws: p.throws || 'R', photoUrl: p.photoUrl || '', curp: p.curp || '', birthDate: p.birthDate ? p.birthDate.slice(0, 10) : '', birthPlace: p.birthPlace || '' });
 
                 // Check edit permissions
                 const user = getUser();
@@ -242,6 +243,7 @@ export default function PlayerProfilePage() {
     const handleUpdatePlayer = async (e: React.SyntheticEvent) => {
         e.preventDefault();
         try {
+            const activeEntry = player?.rosterEntries?.find((e: any) => e.isActive) ?? player?.rosterEntries?.[0];
             await api.patch(`/players/${id}`, {
                 firstName: playerForm.firstName,
                 lastName: playerForm.lastName,
@@ -253,6 +255,9 @@ export default function PlayerProfilePage() {
                 photoUrl: playerForm.photoUrl,
                 curp: playerForm.curp || null,
                 birthDate: playerForm.birthDate || null,
+                birthPlace: playerForm.birthPlace || null,
+                teamId: activeEntry?.team?.id || activeEntry?.teamId,
+                tournamentId: activeEntry?.tournament?.id || activeEntry?.tournamentId,
             });
             setIsEditingPlayer(false);
             window.location.reload();
@@ -966,12 +971,16 @@ export default function PlayerProfilePage() {
                             <div>
                                 <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Fecha de Nacimiento</h4>
                                 <p className="text-foreground font-bold text-base">
-                                    {player.birthDate ? new Date(player.birthDate).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' }) : 'No registrada'}
+                                    {player.birthDate ? new Date(player.birthDate).toLocaleDateString('es-MX', { timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric' }) : 'No registrada'}
                                 </p>
                             </div>
                             <div>
                                 <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Dorsal / Posición</h4>
                                 <p className="text-foreground font-bold text-base">#{player.number || 'N/A'} — {player.position || 'N/A'}</p>
+                            </div>
+                            <div>
+                                <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Lugar de Nacimiento</h4>
+                                <p className="text-foreground font-bold text-base">{player.birthPlace || 'No registrado'}</p>
                             </div>
                         </div>
                     </div>
@@ -1013,17 +1022,15 @@ export default function PlayerProfilePage() {
                                     <input type="date" value={playerForm.birthDate} onChange={e => setPlayerForm(f => ({ ...f, birthDate: e.target.value }))} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors" />
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Número (#)</label>
-                                    <input type="text" value={playerForm.number} onChange={e => setPlayerForm(f => ({ ...f, number: e.target.value.replace(/[^0-9]/g, '') }))} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors" />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Posición</label>
-                                    <select value={playerForm.position} onChange={e => setPlayerForm(f => ({ ...f, position: e.target.value }))} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors">
-                                        {['P','C','1B','2B','3B','SS','LF','CF','RF','DH','INF','OF'].map(pos => <option key={pos} value={pos}>{pos}</option>)}
-                                    </select>
-                                </div>
+                            <div>
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Lugar de Nacimiento <span className="normal-case font-normal">(opcional)</span></label>
+                                <input type="text" maxLength={100} value={playerForm.birthPlace} onChange={e => setPlayerForm(f => ({ ...f, birthPlace: e.target.value }))} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors" placeholder="Ej: Hermosillo, Sonora" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Posición Principal</label>
+                                <select value={playerForm.position} onChange={e => setPlayerForm(f => ({ ...f, position: e.target.value }))} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors">
+                                    {['P','C','1B','2B','3B','SS','LF','CF','RF','DH','INF','OF'].map(pos => <option key={pos} value={pos}>{pos}</option>)}
+                                </select>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>

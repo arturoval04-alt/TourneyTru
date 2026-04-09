@@ -17,6 +17,8 @@ import { StatsModule } from './stats/stats.module';
 import { VisionModule } from './vision/vision.module';
 import { RosterModule } from './roster/roster.module';
 import { StreamerModule } from './streamer/streamer.module';
+import { DelegatesModule } from './delegates/delegates.module';
+import { DocumentsModule } from './documents/documents.module';
 
 @Module({
   imports: [
@@ -37,6 +39,8 @@ import { StreamerModule } from './streamer/streamer.module';
     VisionModule,
     RosterModule,
     StreamerModule,
+    DelegatesModule,
+    DocumentsModule,
   ],
   controllers: [AppController],
   providers: [

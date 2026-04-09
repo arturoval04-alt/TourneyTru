@@ -103,7 +103,7 @@ export class TeamsService {
             where,
             include: {
                 tournament: true,
-                _count: { select: { rosterEntries: true } },
+                _count: { select: { rosterEntries: { where: { isActive: true } } } },
                 ...(filters?.includePlayers ? {
                     rosterEntries: {
                         where: { isActive: true },
