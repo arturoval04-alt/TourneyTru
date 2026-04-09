@@ -69,6 +69,10 @@ export default function AdminDashboard() {
         id: string;
         firstName: string;
         lastName: string;
+        secondLastName?: string;
+        curp?: string;
+        birthDate?: string;
+        birthPlace?: string;
         number: string;
         position: string;
         photoUrl?: string;

@@ -24,6 +24,10 @@ interface PlayerItem {
     id: string;
     firstName: string;
     lastName: string;
+    secondLastName?: string;
+    curp?: string;
+    birthDate?: string;
+    birthPlace?: string;
     number?: number;
     position?: string;
     bats?: string;
@@ -38,7 +42,11 @@ interface ImportRow {
     status: ImportRowStatus;
     firstName: string;
     lastName: string;
-    existing?: { id: string; firstName: string; lastName: string; isVerified: boolean; team: { name: string; tournament: { name: string } } };
+    secondLastName?: string;
+    curp?: string;
+    birthDate?: string;
+    birthPlace?: string;
+    existing?: { id: string; firstName: string; lastName: string; secondLastName?: string; isVerified: boolean; team: { name: string; tournament: { name: string } } };
 }
 
 export default function DelegatePage() {

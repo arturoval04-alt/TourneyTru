@@ -141,7 +141,7 @@ export default function TeamProfilePage() {
     const [addPlayerTab, setAddPlayerTab] = useState<'manual' | 'csv'>('manual');
     const [newPlayerForm, setNewPlayerForm] = useState({ firstName: '', lastName: '', secondLastName: '', number: '', position: 'INF', bats: 'R', throws: 'R', curp: '', birthDate: '', birthPlace: '' });
     const [addingPlayer, setAddingPlayer] = useState(false);
-    const [csvRows, setCsvRows] = useState<{ firstName: string; lastName: string; secondLastName: string; number: string; position: string; bats: string; throws: string }[]>([]);
+    const [csvRows, setCsvRows] = useState<{ firstName: string; lastName: string; secondLastName: string; number: string; position: string; bats: string; throws: string; curp: string; birthDate: string; birthPlace: string }[]>([]);
     const [csvError, setCsvError] = useState('');
     const [importingCsv, setImportingCsv] = useState(false);
 
