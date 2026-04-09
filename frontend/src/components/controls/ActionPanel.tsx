@@ -5,6 +5,7 @@ import PlayLocationModal from './PlayLocationModal';
 import FieldersChoiceModal from './FieldersChoiceModal';
 import CambiosModal from './CambiosModal';
 import EspecialesMenuModal from './EspecialesMenuModal';
+import SacrificeModal from './SacrificeModal';
 
 export default function ActionPanel() {
     const { addBall, addStrike, addSwing, addFoul, addOut, executeWildPitch, executePassedBall, registerHBP, registerIBB, registerDroppedThirdStrike, history, undo } = useGameStore();
@@ -20,6 +21,8 @@ export default function ActionPanel() {
     const [isFieldersChoiceModalOpen, setIsFieldersChoiceModalOpen] = useState(false);
     const [isLineupChangeOpen, setIsLineupChangeOpen] = useState(false);
     const [isEspecialesMenuOpen, setIsEspecialesMenuOpen] = useState(false);
+    const [isSacrificeModalOpen, setIsSacrificeModalOpen] = useState(false);
+    const [sacrificeType, setSacrificeType] = useState<'fly' | 'bunt'>('fly');
 
     const openLocationModal = (type: 'Hit' | 'Out' | 'Error', name: string, hitNum?: number) => {
         setPlayType(type);
@@ -33,8 +36,14 @@ export default function ActionPanel() {
             case 'HBP': registerHBP(); break;
             case 'BB_INT': registerIBB(); break;
             case 'K_LLEGA': registerDroppedThirdStrike(); break;
-            case 'FLY_SAC': useGameStore.getState().executeSacrifice('fly'); break;
-            case 'BUNT_SAC': useGameStore.getState().executeSacrifice('bunt'); break;
+            case 'FLY_SAC': 
+                setSacrificeType('fly');
+                setIsSacrificeModalOpen(true);
+                break;
+            case 'BUNT_SAC': 
+                setSacrificeType('bunt');
+                setIsSacrificeModalOpen(true);
+                break;
             case 'BK': useGameStore.getState().executeBalk(); break;
             case 'MATRIZ': setIsAdvancedModalOpen(true); break;
         }
@@ -173,6 +182,7 @@ export default function ActionPanel() {
             <FieldersChoiceModal isOpen={isFieldersChoiceModalOpen} onClose={() => setIsFieldersChoiceModalOpen(false)} />
             <CambiosModal isOpen={isLineupChangeOpen} onClose={() => setIsLineupChangeOpen(false)} />
             <EspecialesMenuModal isOpen={isEspecialesMenuOpen} onClose={() => setIsEspecialesMenuOpen(false)} onAction={handleEspecialesAction} />
+            <SacrificeModal isOpen={isSacrificeModalOpen} onClose={() => setIsSacrificeModalOpen(false)} type={sacrificeType} />
 
             {isLocationModalOpen && (
                 <PlayLocationModal

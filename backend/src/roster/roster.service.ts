@@ -14,7 +14,23 @@ export class RosterService {
         const team = await this.prisma.team.findUnique({ where: { id: dto.teamId } });
         if (!team) throw new NotFoundException('Equipo no encontrado');
 
-        // Verificar si ya existe la entrada (activa o inactiva)
+        // Verificar si el jugador ya está activo en OTRO equipo del mismo torneo
+        const activeInOtherTeam = await (this.prisma as any).rosterEntry.findFirst({
+            where: {
+                playerId: dto.playerId,
+                tournamentId: dto.tournamentId,
+                teamId: { not: dto.teamId },
+                isActive: true,
+            },
+            include: { team: { select: { name: true } } },
+        });
+        if (activeInOtherTeam) {
+            throw new ConflictException(
+                `El jugador ya está activo en "${activeInOtherTeam.team.name}" en este torneo. Debe ser dado de baja primero.`
+            );
+        }
+
+        // Verificar si ya existe la entrada (activa o inactiva) en este mismo equipo
         const existing = await (this.prisma as any).rosterEntry.findUnique({
             where: {
                 playerId_teamId_tournamentId: {

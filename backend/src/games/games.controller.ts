@@ -1,8 +1,9 @@
-import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query, Request } from '@nestjs/common';
 import { GamesService } from './games.service';
 import { AssignUmpireDto, CreateGameDto, UpdateGameDto, SetGameLineupDto, ChangeLineupDto, CambioSustitucionDto, CambioPosicionDto, CambioReingresoDto } from './dto/game.dto';
 import { SubmitManualStatsDto } from './dto/manual-stats.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 
 @Controller('api/games')
 export class GamesController {
@@ -15,13 +16,23 @@ export class GamesController {
     }
 
     @Get()
+    @UseGuards(OptionalJwtAuthGuard)
     findAll(
+        @Request() req: any,
         @Query('status') status?: string,
         @Query('tournamentId') tournamentId?: string,
         @Query('limit') limit?: string,
         @Query('adminId') adminId?: string,
         @Query('leagueId') leagueId?: string,
     ) {
+        const user = req.user;
+        // Scorekeepers solo pueden ver juegos de su liga asignada — sin excepción
+        if (user?.role === 'scorekeeper') {
+            return this.gamesService.findAll({
+                status, tournamentId, limit: limit ? parseInt(limit) : undefined,
+                leagueId: user.scorekeeperLeagueId ?? '__none__',
+            });
+        }
         return this.gamesService.findAll({ status, tournamentId, limit: limit ? parseInt(limit) : undefined, adminId, leagueId });
     }
 

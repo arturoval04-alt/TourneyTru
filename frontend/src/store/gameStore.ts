@@ -113,7 +113,7 @@ export interface GameState extends BaseState {
     executePassedBall: () => void;
     executeBalk: () => void;
     executeFieldersChoice: (outRunnerId: 'first' | 'second' | 'third') => void;
-    executeSacrifice: (type: 'fly' | 'bunt') => void;
+    executeSacrifice: (type: 'fly' | 'bunt', dests?: Record<string, string>) => void;
     registerHBP: () => void;
     registerIBB: () => void;
     registerDroppedThirdStrike: () => void;
@@ -1165,37 +1165,94 @@ export const useGameStore = create<GameState>()(
                 }
             },
 
-            executeSacrifice: (type) => {
+            executeSacrifice: async (type, dests) => {
                 get().saveHistory();
                 const state = get();
-                const totalOuts = state.outs + 1;
                 const activeId = state.currentBatterId;
-                let runs = 0;
-                let scoredRunnerId: string | null = null;
-                const newBases = { ...state.bases };
-                const newBaseIds = { ...state.baseIds };
-                // Runner on 3rd scores on sacrifice
-                if (state.bases.third) {
-                    runs = 1;
-                    scoredRunnerId = state.baseIds.third;
-                    newBases.third = null; newBaseIds.third = null;
-                }
-                // Advance remaining runners (for bunt sacrifices mainly)
-                if (type === 'bunt') {
-                    if (state.bases.second && !newBases.third) {
-                        newBases.third = state.bases.second; newBaseIds.third = state.baseIds.second;
-                        newBases.second = null; newBaseIds.second = null;
-                    }
-                    if (state.bases.first && !newBases.second) {
-                        newBases.second = state.bases.first; newBaseIds.second = state.baseIds.first;
-                        newBases.first = null; newBaseIds.first = null;
-                    }
-                }
                 
-                const res = type === 'fly' ? 'SF|Fly de Sacrificio' : 'SH|Toque de Sacrificio';
-                emitPlayToBackend(get, res, runs, 1, activeId, state.inning, state.half, state.outs);
-                if (scoredRunnerId) {
-                    emitPlayToBackend(get, 'RUN_SCORED|Anote por Sacrificio', 1, 0, scoredRunnerId, state.inning, state.half, state.outs);
+                let newBases = { ...state.bases };
+                let newBaseIds = { ...state.baseIds };
+                let runs = 0;
+                let outsOnPlay = 1; // Batter is definitely OUT on a valid sacrifice
+                
+                let scoredRunnerIds: string[] = [];
+                let outRunnerIds: string[] = [];
+                let advRunnerIds: string[] = [];
+                let descSuffix = '';
+
+                // If dests provided (from modal)
+                if (dests) {
+                    newBases = { first: null, second: null, third: null };
+                    newBaseIds = { first: null, second: null, third: null };
+                    
+                    const currentRunners = [
+                        ...(state.bases.third ? [{ key:'third', name: state.bases.third, id: state.baseIds.third, startBase: '3B' }] : []),
+                        ...(state.bases.second ? [{ key:'second', name: state.bases.second, id: state.baseIds.second, startBase: '2B' }] : []),
+                        ...(state.bases.first ? [{ key:'first', name: state.bases.first, id: state.baseIds.first, startBase: '1B' }] : []),
+                    ];
+
+                    currentRunners.forEach(r => {
+                        const dest = dests[r.key];
+                        if (dest === 'home') {
+                            runs++;
+                            if (r.id) scoredRunnerIds.push(r.id);
+                            descSuffix += ` (Anota de ${r.startBase})`;
+                        } else if (dest === '3B') {
+                            newBases.third = r.name; newBaseIds.third = r.id;
+                            if (r.startBase !== '3B' && r.id) advRunnerIds.push(r.id);
+                        } else if (dest === '2B') {
+                            newBases.second = r.name; newBaseIds.second = r.id;
+                            if (r.startBase !== '2B' && r.id) advRunnerIds.push(r.id);
+                        } else if (dest === '1B') {
+                            newBases.first = r.name; newBaseIds.first = r.id;
+                        } else if (dest === 'out') {
+                            outsOnPlay++;
+                            if (r.id) outRunnerIds.push(r.id);
+                            descSuffix += ` (Out final ${r.name})`;
+                        }
+                    });
+                } else {
+                    // Fallback to legacy behaviour
+                    if (state.bases.third) {
+                        runs = 1;
+                        if (state.baseIds.third) scoredRunnerIds.push(state.baseIds.third);
+                        newBases.third = null; newBaseIds.third = null;
+                        descSuffix += ` (Anota de 3B)`;
+                    }
+                    if (type === 'bunt') {
+                        if (state.bases.second && !newBases.third) {
+                            newBases.third = state.bases.second; newBaseIds.third = state.baseIds.second;
+                            newBases.second = null; newBaseIds.second = null;
+                            if (state.baseIds.second) advRunnerIds.push(state.baseIds.second);
+                        }
+                        if (state.bases.first && !newBases.second) {
+                            newBases.second = state.bases.first; newBaseIds.second = state.baseIds.first;
+                            newBases.first = null; newBaseIds.first = null;
+                            if (state.baseIds.first) advRunnerIds.push(state.baseIds.first);
+                        }
+                    }
+                }
+
+                const totalOuts = state.outs + outsOnPlay;
+                const res = type === 'fly' ? `SF|Fly de Sacrificio${descSuffix}` : `SH|Toque de Sacrificio${descSuffix}`;
+                
+                let currentOutsInPlay = state.outs;
+                // 1. Emit runner outs (silent)
+                for (const runnerId of outRunnerIds) {
+                    await emitPlayToBackend(get, `RUNNER_OUT|Out en intento de avance`, 0, 1, runnerId, state.inning, state.half, currentOutsInPlay, true);
+                    currentOutsInPlay++;
+                }
+
+                // 2. Emit batter play
+                await emitPlayToBackend(get, res, runs, 1, activeId, state.inning, state.half, currentOutsInPlay);
+                currentOutsInPlay++;
+                
+                // 3. Emit runs and advances
+                for (const runnerId of scoredRunnerIds) {
+                    await emitPlayToBackend(get, 'RUN_SCORED|Anota por Sacrificio', 1, 0, runnerId, state.inning, state.half, currentOutsInPlay, true);
+                }
+                for (const runnerId of advRunnerIds) {
+                    await emitPlayToBackend(get, 'ADV|Avanza por Sacrificio', 0, 0, runnerId, state.inning, state.half, currentOutsInPlay, true);
                 }
 
                 if (totalOuts >= 3) {
@@ -1206,16 +1263,6 @@ export const useGameStore = create<GameState>()(
                     set({ outs: totalOuts, bases: newBases, baseIds: newBaseIds, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore }); 
                     get().cycleBatter(); 
                     syncStateToBackend(get);
-                }
-                
-                // Advancements on bunt sacrifice
-                if (type === 'bunt') {
-                    if (state.bases.second && newBaseIds.third) {
-                        emitPlayToBackend(get, 'ADV|Avanza a 3ra por Sacrificio', 0, 0, state.baseIds.second, state.inning, state.half, state.outs);
-                    }
-                    if (state.bases.first && newBaseIds.second) {
-                        emitPlayToBackend(get, 'ADV|Avanza a 2da por Sacrificio', 0, 0, state.baseIds.first, state.inning, state.half, state.outs);
-                    }
                 }
             },
 

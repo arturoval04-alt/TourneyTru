@@ -21,6 +21,8 @@ export interface CreateGameWizardProps {
   tournamentId?: string;
   /** Pre-llenado en context='scorekeeper' (auto) */
   leagueId?: string;
+  /** Torneos pre-cargados — usado por rol 'presi' que tiene torneos asignados sin leagueId */
+  initialTournaments?: { id: string; name: string; rulesType?: string }[];
   /** Si se pasa un gameId existente (scheduled), salta directo al lineup */
   existingGameId?: string;
   onClose: () => void;
@@ -66,6 +68,7 @@ export default function CreateGameWizard({
   context,
   tournamentId: propTournamentId,
   leagueId: propLeagueId,
+  initialTournaments,
   existingGameId,
   onClose,
   onGameCreated,
@@ -118,6 +121,14 @@ export default function CreateGameWizard({
     }
     if (context === 'scorekeeper' && propLeagueId) {
       loadTournaments(propLeagueId);
+    }
+    // Presi: torneos asignados pre-cargados directamente sin leagueId
+    if (initialTournaments && initialTournaments.length > 0) {
+      setTournaments(initialTournaments.map(t => ({
+        id: t.id,
+        name: t.name,
+        rulesType: t.rulesType ?? 'softball_7',
+      })));
     }
     if (propTournamentId) {
       loadTournamentData(propTournamentId);

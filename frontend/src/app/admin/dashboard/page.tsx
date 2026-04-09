@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getUser, AuthUser } from '@/lib/auth';
+import { getUser, saveSession, getAccessToken, AuthUser } from '@/lib/auth';
 import CreateGameWizard from '@/components/game/CreateGameWizard';
 import ImageUploader from '@/components/ui/ImageUploader';
 import api from '@/lib/api';
@@ -132,7 +132,19 @@ export default function AdminDashboard() {
 
     useEffect(() => {
         const storedUser = getUser();
-        if (storedUser) setCurrentUser(storedUser);
+        if (storedUser) {
+            // Si es scorekeeper y no tiene scorekeeperLeagueId en sesión local,
+            // refresca el perfil desde el servidor para obtenerlo fresco
+            if (storedUser.role === 'scorekeeper' && !storedUser.scorekeeperLeagueId) {
+                api.get('/auth/me').then(({ data }) => {
+                    const refreshed = { ...storedUser, scorekeeperLeagueId: data.scorekeeperLeagueId ?? null };
+                    saveSession(refreshed, { accessToken: getAccessToken()! });
+                    setCurrentUser(refreshed);
+                }).catch(() => setCurrentUser(storedUser));
+            } else {
+                setCurrentUser(storedUser);
+            }
+        }
         if (typeof window !== 'undefined') {
             setUserTournamentId(localStorage.getItem('userTournamentId') || null);
         }
@@ -2769,7 +2781,8 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
             {showGameModal && (
                 <CreateGameWizard
                     context={(userRole === 'scorekeeper' || userRole === 'presi') ? 'scorekeeper' : 'admin'}
-                    leagueId={(userRole === 'scorekeeper' || userRole === 'presi') ? (currentUser?.scorekeeperLeagueId ?? undefined) : undefined}
+                    leagueId={userRole === 'scorekeeper' ? (currentUser?.scorekeeperLeagueId ?? undefined) : undefined}
+                    initialTournaments={userRole === 'presi' ? ((currentUser as any)?.assignedTournaments ?? undefined) : undefined}
                     onClose={() => setShowGameModal(false)}
                 />
             )}
