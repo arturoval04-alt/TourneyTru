@@ -23,6 +23,127 @@ export class TournamentsService {
         }
     }
 
+    private async resolveTournamentUsersForCleanup(
+        tx: any,
+        tournamentId: string,
+    ): Promise<{ deleteUserIds: string[]; keepUserIds: string[] }> {
+        const candidateIds = new Set<string>();
+
+        const delegates = await (tx.teamDelegate as any).findMany({
+            where: { tournamentId },
+            select: { userId: true },
+        });
+        delegates.forEach((delegate: { userId: string }) => candidateIds.add(delegate.userId));
+
+        const organizers = await tx.tournamentOrganizer.findMany({
+            where: { tournamentId },
+            select: { userId: true },
+        });
+        organizers.forEach((organizer: { userId: string }) => candidateIds.add(organizer.userId));
+
+        if (candidateIds.size === 0) {
+            return { deleteUserIds: [], keepUserIds: [] };
+        }
+
+        const users = await tx.user.findMany({
+            where: { id: { in: Array.from(candidateIds) } },
+            include: { role: true },
+        }) as any[];
+
+        const deleteUserIds: string[] = [];
+        const keepUserIds: string[] = [];
+
+        for (const user of users) {
+            const roleName = user.role?.name;
+
+            // Las cuentas de scorekeeper son de nivel liga; al borrar torneo solo se desasignan.
+            if (roleName === 'scorekeeper') {
+                keepUserIds.push(user.id);
+                continue;
+            }
+
+            if (!['delegado', 'presi'].includes(roleName)) {
+                keepUserIds.push(user.id);
+                continue;
+            }
+
+            const [
+                otherLeaguesOwned,
+                otherTournamentsAdministered,
+                otherOrganizerAssignments,
+                otherDelegateAssignments,
+                otherDelegateCreations,
+                otherScorekeeperAssignments,
+                otherGamesCreated,
+                otherDocumentsUploaded,
+            ] = await Promise.all([
+                tx.league.count({
+                    where: { adminId: user.id },
+                }),
+                tx.tournament.count({
+                    where: {
+                        adminId: user.id,
+                        id: { not: tournamentId },
+                    },
+                }),
+                tx.tournamentOrganizer.count({
+                    where: {
+                        userId: user.id,
+                        tournamentId: { not: tournamentId },
+                    },
+                }),
+                (tx.teamDelegate as any).count({
+                    where: {
+                        userId: user.id,
+                        tournamentId: { not: tournamentId },
+                    },
+                }),
+                (tx.teamDelegate as any).count({
+                    where: {
+                        createdById: user.id,
+                        tournamentId: { not: tournamentId },
+                    },
+                }),
+                (tx.scorekeeperTournament as any).count({
+                    where: {
+                        userId: user.id,
+                        tournamentId: { not: tournamentId },
+                    },
+                }),
+                tx.game.count({
+                    where: {
+                        createdById: user.id,
+                        tournamentId: { not: tournamentId },
+                    },
+                }),
+                (tx.tournamentDocument as any).count({
+                    where: {
+                        uploadedById: user.id,
+                        tournamentId: { not: tournamentId },
+                    },
+                }),
+            ]);
+
+            const canDeleteUser =
+                otherLeaguesOwned === 0 &&
+                otherTournamentsAdministered === 0 &&
+                otherOrganizerAssignments === 0 &&
+                otherDelegateAssignments === 0 &&
+                otherDelegateCreations === 0 &&
+                otherScorekeeperAssignments === 0 &&
+                otherGamesCreated === 0 &&
+                otherDocumentsUploaded === 0;
+
+            if (canDeleteUser) {
+                deleteUserIds.push(user.id);
+            } else {
+                keepUserIds.push(user.id);
+            }
+        }
+
+        return { deleteUserIds, keepUserIds };
+    }
+
     async create(data: CreateTournamentDto) {
         // Verificar cuota de torneos por liga
         if (data.adminId && data.leagueId) {
@@ -187,15 +308,123 @@ export class TournamentsService {
     async remove(id: string, requestor?: Requestor) {
         const tournament = await this.findOne(id, requestor);
         this.assertTournamentOwnership(tournament, requestor);
+
         return this.prisma.$transaction(async (tx: any) => {
-            // Remove records with NoAction FK constraints before tournament deletion
-            await tx.$executeRaw`DELETE FROM tournament_organizers WHERE tournament_id = ${id}`;
-            await tx.$executeRaw`DELETE FROM team_delegates WHERE tournament_id = ${id}`;
-            await tx.$executeRaw`DELETE FROM roster_entries WHERE tournament_id = ${id}`;
-            await tx.$executeRaw`DELETE FROM player_stats WHERE tournament_id = ${id}`;
-            // Delete games and their child records (plays, lineups, lineup_changes, game_umpires cascade)
-            await tx.$executeRaw`DELETE FROM games WHERE tournament_id = ${id}`;
-            // Delete tournament — remaining relations cascade: teams→players, news, standings, fields
+            const teams = await tx.team.findMany({
+                where: { tournamentId: id },
+                select: { id: true },
+            });
+            const teamIds = teams.map((team: { id: string }) => team.id);
+
+            const { deleteUserIds } = await this.resolveTournamentUsersForCleanup(tx, id);
+
+            await (tx.scorekeeperTournament as any).deleteMany({
+                where: { tournamentId: id },
+            });
+
+            await (tx.teamDelegate as any).deleteMany({
+                where: { tournamentId: id },
+            });
+
+            await tx.tournamentOrganizer.deleteMany({
+                where: { tournamentId: id },
+            });
+
+            await tx.game.updateMany({
+                where: { tournamentId: id },
+                data: {
+                    mvpBatter1Id: null,
+                    mvpBatter2Id: null,
+                    winningPitcherId: null,
+                    losingPitcherId: null,
+                    savePitcherId: null,
+                },
+            });
+
+            if (teamIds.length > 0) {
+                await tx.team.updateMany({
+                    where: {
+                        id: { in: teamIds },
+                        homeFieldId: { not: null },
+                    },
+                    data: { homeFieldId: null },
+                });
+            }
+
+            // Primero juegos para que Play, Lineup, LineupChange y GameUmpire caigan por cascade.
+            await tx.game.deleteMany({
+                where: { tournamentId: id },
+            });
+
+            await tx.playerStat.deleteMany({
+                where: {
+                    OR: [
+                        { tournamentId: id },
+                        ...(teamIds.length > 0 ? [{ teamId: { in: teamIds } }] : []),
+                    ],
+                },
+            });
+
+            await tx.standing.deleteMany({
+                where: { tournamentId: id },
+            });
+
+            await tx.rosterEntry.deleteMany({
+                where: {
+                    OR: [
+                        { tournamentId: id },
+                        ...(teamIds.length > 0 ? [{ teamId: { in: teamIds } }] : []),
+                    ],
+                },
+            });
+
+            await (tx.tournamentDocument as any).deleteMany({
+                where: { tournamentId: id },
+            });
+
+            await tx.tournamentNews.deleteMany({
+                where: { tournamentId: id },
+            });
+
+            if (teamIds.length > 0) {
+                await tx.team.deleteMany({
+                    where: { id: { in: teamIds } },
+                });
+            }
+
+            await tx.field.deleteMany({
+                where: { tournamentId: id },
+            });
+
+            if (deleteUserIds.length > 0) {
+                await (tx.teamDelegate as any).deleteMany({
+                    where: {
+                        OR: [
+                            { userId: { in: deleteUserIds } },
+                            { createdById: { in: deleteUserIds } },
+                        ],
+                    },
+                });
+
+                await tx.tournamentOrganizer.deleteMany({
+                    where: { userId: { in: deleteUserIds } },
+                });
+
+                await tx.game.updateMany({
+                    where: { createdById: { in: deleteUserIds } },
+                    data: { createdById: null },
+                });
+
+                await tx.tournamentNews.updateMany({
+                    where: { authorId: { in: deleteUserIds } },
+                    data: { authorId: null },
+                });
+
+                await tx.user.deleteMany({
+                    where: { id: { in: deleteUserIds } },
+                });
+            }
+
             return tx.tournament.delete({ where: { id } });
         });
     }

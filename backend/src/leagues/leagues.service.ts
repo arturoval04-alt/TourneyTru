@@ -25,14 +25,14 @@ export class LeaguesService {
                 }
             }
         }
-        
+
         const league = await this.prisma.league.create({ data: rest as any });
 
         // isPrivate not in Prisma client type (not exported correctly) — update via raw SQL
         if (isPrivate !== undefined) {
             await this.prisma.$executeRaw`UPDATE leagues SET is_private = ${isPrivate ? 1 : 0} WHERE id = ${league.id}`;
         }
-        
+
         return { ...league, isPrivate };
     }
 
@@ -144,50 +144,286 @@ export class LeaguesService {
         return { message: 'Liga eliminada correctamente.' };
     }
 
-    // Cascade delete manual — SQL Server no propaga todos los FK automáticamente
-    async cascadeDeleteLeague(leagueId: string) {
-        const tournaments = await this.prisma.tournament.findMany({
-            where: { leagueId },
+    private async resolveLeagueUsersForCleanup(
+        tx: any,
+        leagueId: string,
+        tournamentIds: string[],
+    ): Promise<{ deleteUserIds: string[]; detachUserIds: string[] }> {
+        const candidateIds = new Set<string>();
+
+        const leagueStaff = await tx.user.findMany({
+            where: {
+                scorekeeperLeagueId: leagueId,
+                role: { name: { in: ['scorekeeper', 'presi'] } },
+            },
             select: { id: true },
         });
-        const tournamentIds = tournaments.map(t => t.id);
+        leagueStaff.forEach((user: { id: string }) => candidateIds.add(user.id));
 
-        if (tournamentIds.length > 0) {
-            const teams = await this.prisma.team.findMany({
-                where: { tournamentId: { in: tournamentIds } },
-                select: { id: true },
-            });
-            const teamIds = teams.map(t => t.id);
+        const tournamentDelegates = await (tx.teamDelegate as any).findMany({
+            where: { tournamentId: { in: tournamentIds } },
+            select: { userId: true },
+        });
+        tournamentDelegates.forEach((delegate: { userId: string }) => candidateIds.add(delegate.userId));
 
-            // 1. Limpiar FKs de jugadores en juegos (onDelete: NoAction en el schema)
-            await this.prisma.game.updateMany({
-                where: { tournamentId: { in: tournamentIds } },
-                data: {
-                    mvpBatter1Id: null,
-                    mvpBatter2Id: null,
-                    winningPitcherId: null,
-                    losingPitcherId: null,
-                    savePitcherId: null,
-                },
-            });
+        const tournamentOrganizers = await tx.tournamentOrganizer.findMany({
+            where: { tournamentId: { in: tournamentIds } },
+            select: { userId: true },
+        });
+        tournamentOrganizers.forEach((organizer: { userId: string }) => candidateIds.add(organizer.userId));
 
-            if (teamIds.length > 0) {
-                // 2. PlayerStats y RosterEntries referencian Team con NoAction
-                await this.prisma.playerStat.deleteMany({ where: { teamId: { in: teamIds } } });
-                await this.prisma.rosterEntry.deleteMany({ where: { teamId: { in: teamIds } } });
-            }
+        const tournamentScorekeepers = await (tx.scorekeeperTournament as any).findMany({
+            where: { tournamentId: { in: tournamentIds } },
+            select: { userId: true },
+        });
+        tournamentScorekeepers.forEach((assignment: { userId: string }) => candidateIds.add(assignment.userId));
 
-            // 3. TournamentOrganizer no tiene Cascade desde Tournament
-            await this.prisma.tournamentOrganizer.deleteMany({
-                where: { tournamentId: { in: tournamentIds } },
-            });
-
-            // 4. Juegos — cascadea automáticamente: Lineup, LineupChange, Play, GameUmpire
-            await this.prisma.game.deleteMany({ where: { tournamentId: { in: tournamentIds } } });
+        if (candidateIds.size === 0) {
+            return { deleteUserIds: [], detachUserIds: [] };
         }
 
-        // 5. Liga — cascadea: Tournament → Field, Team → Player, TournamentNews, Standing, Umpire, Subscription
-        await this.prisma.league.delete({ where: { id: leagueId } });
+        const users = await tx.user.findMany({
+            where: { id: { in: Array.from(candidateIds) } },
+            include: { role: true },
+        }) as any[];
+
+        const deleteUserIds: string[] = [];
+        const detachUserIds: string[] = [];
+
+        for (const user of users) {
+            const roleName = user.role?.name;
+            if (!['scorekeeper', 'presi', 'delegado'].includes(roleName)) {
+                continue;
+            }
+
+            const tournamentExclusion = tournamentIds.length > 0
+                ? { notIn: tournamentIds }
+                : { not: '__none__' };
+
+            const [
+                otherLeaguesOwned,
+                otherTournamentsAdministered,
+                otherOrganizerAssignments,
+                otherDelegateAssignments,
+                otherDelegateCreations,
+                otherScorekeeperAssignments,
+                otherDocumentsUploaded,
+            ] = await Promise.all([
+                tx.league.count({
+                    where: {
+                        adminId: user.id,
+                        id: { not: leagueId },
+                    },
+                }),
+                tx.tournament.count({
+                    where: {
+                        adminId: user.id,
+                        id: tournamentExclusion,
+                    },
+                }),
+                tx.tournamentOrganizer.count({
+                    where: {
+                        userId: user.id,
+                        tournamentId: tournamentExclusion,
+                    },
+                }),
+                (tx.teamDelegate as any).count({
+                    where: {
+                        userId: user.id,
+                        tournamentId: tournamentExclusion,
+                    },
+                }),
+                (tx.teamDelegate as any).count({
+                    where: {
+                        createdById: user.id,
+                        tournamentId: tournamentExclusion,
+                    },
+                }),
+                (tx.scorekeeperTournament as any).count({
+                    where: {
+                        userId: user.id,
+                        tournamentId: tournamentExclusion,
+                    },
+                }),
+                (tx.tournamentDocument as any).count({
+                    where: {
+                        uploadedById: user.id,
+                        tournamentId: tournamentExclusion,
+                    },
+                }),
+            ]);
+
+            const canDeleteUser =
+                otherLeaguesOwned === 0 &&
+                otherTournamentsAdministered === 0 &&
+                otherOrganizerAssignments === 0 &&
+                otherDelegateAssignments === 0 &&
+                otherDelegateCreations === 0 &&
+                otherScorekeeperAssignments === 0 &&
+                otherDocumentsUploaded === 0;
+
+            if (canDeleteUser) {
+                deleteUserIds.push(user.id);
+            } else {
+                detachUserIds.push(user.id);
+            }
+        }
+
+        return { deleteUserIds, detachUserIds };
+    }
+
+    // Cascade delete manual — SQL Server no propaga todos los FK automáticamente
+    async cascadeDeleteLeague(leagueId: string) {
+        await this.prisma.$transaction(async (tx: any) => {
+            const tournaments = await tx.tournament.findMany({
+                where: { leagueId },
+                select: { id: true },
+            });
+            const tournamentIds = tournaments.map((t: { id: string }) => t.id);
+
+            const teams = tournamentIds.length > 0
+                ? await tx.team.findMany({
+                    where: { tournamentId: { in: tournamentIds } },
+                    select: { id: true },
+                })
+                : [];
+            const teamIds = teams.map((team: { id: string }) => team.id);
+
+            const { deleteUserIds, detachUserIds } = await this.resolveLeagueUsersForCleanup(
+                tx,
+                leagueId,
+                tournamentIds,
+            );
+
+            if (tournamentIds.length > 0) {
+                await (tx.scorekeeperTournament as any).deleteMany({
+                    where: { tournamentId: { in: tournamentIds } },
+                });
+
+                await (tx.teamDelegate as any).deleteMany({
+                    where: { tournamentId: { in: tournamentIds } },
+                });
+
+                await tx.tournamentOrganizer.deleteMany({
+                    where: { tournamentId: { in: tournamentIds } },
+                });
+
+                await tx.game.updateMany({
+                    where: { tournamentId: { in: tournamentIds } },
+                    data: {
+                        mvpBatter1Id: null,
+                        mvpBatter2Id: null,
+                        winningPitcherId: null,
+                        losingPitcherId: null,
+                        savePitcherId: null,
+                    },
+                });
+
+                if (teamIds.length > 0) {
+                    await tx.team.updateMany({
+                        where: {
+                            id: { in: teamIds },
+                            homeFieldId: { not: null },
+                        },
+                        data: { homeFieldId: null },
+                    });
+                }
+
+                // Primero juegos para que Play, Lineup y LineupChange caigan por cascade.
+                await tx.game.deleteMany({
+                    where: { tournamentId: { in: tournamentIds } },
+                });
+
+                await tx.playerStat.deleteMany({
+                    where: {
+                        OR: [
+                            { tournamentId: { in: tournamentIds } },
+                            ...(teamIds.length > 0 ? [{ teamId: { in: teamIds } }] : []),
+                        ],
+                    },
+                });
+
+                await tx.standing.deleteMany({
+                    where: { tournamentId: { in: tournamentIds } },
+                });
+
+                await tx.rosterEntry.deleteMany({
+                    where: {
+                        OR: [
+                            { tournamentId: { in: tournamentIds } },
+                            ...(teamIds.length > 0 ? [{ teamId: { in: teamIds } }] : []),
+                        ],
+                    },
+                });
+
+                await (tx.tournamentDocument as any).deleteMany({
+                    where: { tournamentId: { in: tournamentIds } },
+                });
+
+                await tx.tournamentNews.deleteMany({
+                    where: { tournamentId: { in: tournamentIds } },
+                });
+
+                if (teamIds.length > 0) {
+                    await tx.team.deleteMany({
+                        where: { id: { in: teamIds } },
+                    });
+                }
+
+                await tx.field.deleteMany({
+                    where: { tournamentId: { in: tournamentIds } },
+                });
+
+                await tx.tournament.deleteMany({
+                    where: { id: { in: tournamentIds } },
+                });
+            }
+
+            if (detachUserIds.length > 0) {
+                await tx.user.updateMany({
+                    where: {
+                        id: { in: detachUserIds },
+                        scorekeeperLeagueId: leagueId,
+                    },
+                    data: { scorekeeperLeagueId: null },
+                });
+            }
+
+            if (deleteUserIds.length > 0) {
+                await (tx.scorekeeperTournament as any).deleteMany({
+                    where: { userId: { in: deleteUserIds } },
+                });
+
+                await (tx.teamDelegate as any).deleteMany({
+                    where: {
+                        OR: [
+                            { userId: { in: deleteUserIds } },
+                            { createdById: { in: deleteUserIds } },
+                        ],
+                    },
+                });
+
+                await tx.tournamentOrganizer.deleteMany({
+                    where: { userId: { in: deleteUserIds } },
+                });
+
+                await tx.game.updateMany({
+                    where: { createdById: { in: deleteUserIds } },
+                    data: { createdById: null },
+                });
+
+                await tx.tournamentNews.updateMany({
+                    where: { authorId: { in: deleteUserIds } },
+                    data: { authorId: null },
+                });
+
+                await tx.user.deleteMany({
+                    where: { id: { in: deleteUserIds } },
+                });
+            }
+
+            await tx.league.delete({ where: { id: leagueId } });
+        });
     }
 
     /** Obtiene el plan del admin de la liga para validar cuotas */
