@@ -102,8 +102,14 @@ export class DelegatesService {
         });
         if (!delegate) throw new NotFoundException('Delegado no encontrado.');
 
-        // No se puede reactivar si el torneo ya está activo o finalizado
-        if (!delegate.isActive && delegate.tournament.status !== 'upcoming') {
+        // El organizador puede ignorar el bloqueo
+        const requestor = await this.prisma.user.findUnique({
+            where: { id: requestorId },
+            include: { role: true },
+        });
+        const isAdminOrOrga = requestor?.role?.name === 'admin' || requestor?.role?.name === 'organizer';
+
+        if (!delegate.isActive && !isAdminOrOrga && delegate.tournament.status !== 'upcoming') {
             throw new BadRequestException(
                 'No se puede reactivar un delegado mientras el torneo esté activo o finalizado.',
             );
@@ -145,8 +151,12 @@ export class DelegatesService {
     }
 
     /**
-     * Verifica si el usuario es delegado activo del equipo y si el torneo está en "upcoming".
-     * Usado por los guards de teams/ y players/.
+     * Verifica si el usuario es delegado activo del equipo y si el torneo
+     * está en un estado que permite edición ('upcoming' o 'active').
+     * - 'upcoming': el delegado puede gestionar su roster libremente.
+     * - 'active': solo si el organizador/admin reactivó al delegado manualmente.
+     * - 'finished': nunca se permite edición.
+     * Usado por los guards de teams/, players/ y roster/.
      */
     async getActiveDelegateForUser(userId: string): Promise<{
         teamId: string;
@@ -156,7 +166,7 @@ export class DelegatesService {
             where: {
                 userId,
                 isActive: true,
-                tournament: { status: 'upcoming' },
+                tournament: { status: { in: ['upcoming', 'active'] } },
             },
             select: { teamId: true, tournamentId: true },
         });

@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLeagueDto, UpdateLeagueDto } from './dto/league.dto';
 
-type Requestor = { userId?: string; role?: string; scorekeeperLeagueId?: string | null };
+import { Requestor } from '../common/types';
 
 @Injectable()
 export class LeaguesService {
@@ -111,7 +111,10 @@ export class LeaguesService {
     }
 
     async update(id: string, updateData: UpdateLeagueDto, requestor?: Requestor) {
-        await this.findOne(id, requestor);
+        const league = await this.findOne(id, requestor);
+        if (requestor?.role !== 'admin' && requestor?.userId !== (league as any).adminId) {
+            throw new ForbiddenException('No tienes permiso para modificar esta liga.');
+        }
         const { isPrivate, ...rest } = updateData as any;
 
         const result = await this.prisma.league.update({
@@ -185,5 +188,24 @@ export class LeaguesService {
 
         // 5. Liga — cascadea: Tournament → Field, Team → Player, TournamentNews, Standing, Umpire, Subscription
         await this.prisma.league.delete({ where: { id: leagueId } });
+    }
+
+    /** Obtiene el plan del admin de la liga para validar cuotas */
+    async getPlanForLeague(leagueId: string) {
+        const league = await this.prisma.league.findUnique({
+            where: { id: leagueId },
+            select: {
+                admin: {
+                    select: {
+                        planLabel: true,
+                        maxLeagues: true,
+                        maxTournamentsPerLeague: true,
+                        maxTeamsPerTournament: true,
+                        maxPlayersPerTeam: true,
+                    }
+                }
+            }
+        });
+        return league?.admin;
     }
 }

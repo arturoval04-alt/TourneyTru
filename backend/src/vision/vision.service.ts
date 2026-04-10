@@ -16,8 +16,6 @@ export class VisionService {
       throw new InternalServerErrorException('GEMINI_API_KEY no está configurada en el servidor.');
     }
 
-    this.logger.log(`Usando Gemini API key: ${apiKey.substring(0, 8)}...`);
-
     const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     // Agrega esto temporalmente para ver qué modelos tienes permitidos
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;

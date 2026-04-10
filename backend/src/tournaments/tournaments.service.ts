@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateTournamentDto, UpdateTournamentDto } from './dto/tournament.dto';
 import { DelegatesService } from '../delegates/delegates.service';
 
-type Requestor = { userId?: string; role?: string; scorekeeperLeagueId?: string | null };
+import { Requestor } from '../common/types';
 
 @Injectable()
 export class TournamentsService {
@@ -11,6 +11,17 @@ export class TournamentsService {
         private prisma: PrismaService,
         private delegatesService: DelegatesService,
     ) { }
+
+    /** Lanza ForbiddenException si el requestor no es dueño ni organizador del torneo */
+    private assertTournamentOwnership(tournament: any, requestor?: Requestor) {
+        if (!requestor?.userId) throw new ForbiddenException('Se requiere autenticación.');
+        if (requestor.role === 'admin') return;
+        const isLeagueAdmin = requestor.userId === tournament.league?.adminId || requestor.userId === tournament.adminId;
+        const isOrganizer = tournament.organizers?.some((o: any) => o.userId === requestor.userId);
+        if (!isLeagueAdmin && !isOrganizer) {
+            throw new ForbiddenException('No tienes permiso para modificar este torneo.');
+        }
+    }
 
     async create(data: CreateTournamentDto) {
         // Verificar cuota de torneos por liga
@@ -82,7 +93,7 @@ export class TournamentsService {
                 const isLeagueAdmin = t.league?.adminId === requestor.userId;
                 // Scorekeeper asignado a esta liga puede ver todos sus torneos
                 const isAssignedScorekeeper = requestor.role === 'scorekeeper' &&
-                    requestor.scorekeeperLeagueId === t.leagueId;
+                    requestor.scorekeeperTournamentIds?.includes(t.id);
                 if (isAssignedScorekeeper) return true;
                 if (leaguePrivate && !isLeagueAdmin) return false;
                 if (tournPrivate && !isLeagueAdmin) return false;
@@ -125,19 +136,21 @@ export class TournamentsService {
 
         const isSystemAdmin = requestor?.role === 'admin';
 
-        // League privacy: only league admin or system admin can access
+        // League privacy: only league admin, system admin, or assigned scorekeeper can access
         if (tournament.league?.isPrivate && !isSystemAdmin) {
             const isLeagueAdmin = requestor?.userId === tournament.league.adminId;
-            if (!isLeagueAdmin) {
+            const isAssignedScorekeeper = requestor?.role === 'scorekeeper' && requestor.scorekeeperTournamentIds?.includes(tournament.id);
+            if (!isLeagueAdmin && !isAssignedScorekeeper) {
                 throw new ForbiddenException({ code: 'PRIVATE', message: 'Esta liga es privada.' });
             }
         }
 
-        // Tournament privacy: league admin, organizer, or system admin
+        // Tournament privacy: league admin, organizer, system admin, or assigned scorekeeper
         if (tournament.isPrivate && !isSystemAdmin) {
             const isLeagueAdmin = requestor?.userId === tournament.league?.adminId;
             const isOrganizer = tournament.organizers?.some((o: any) => o.userId === requestor?.userId);
-            if (!isLeagueAdmin && !isOrganizer) {
+            const isAssignedScorekeeper = requestor?.role === 'scorekeeper' && requestor.scorekeeperTournamentIds?.includes(tournament.id);
+            if (!isLeagueAdmin && !isOrganizer && !isAssignedScorekeeper) {
                 throw new ForbiddenException({ code: 'PRIVATE', message: 'Este torneo es privado.' });
             }
         }
@@ -146,7 +159,8 @@ export class TournamentsService {
     }
 
     async update(id: string, updateData: UpdateTournamentDto, requestor?: Requestor) {
-        await this.findOne(id, requestor);
+        const tournament = await this.findOne(id, requestor);
+        this.assertTournamentOwnership(tournament, requestor);
         const { startDate, isPrivate, ...rest } = updateData as any;
 
         const result = await this.prisma.tournament.update({
@@ -171,7 +185,8 @@ export class TournamentsService {
     }
 
     async remove(id: string, requestor?: Requestor) {
-        await this.findOne(id, requestor);
+        const tournament = await this.findOne(id, requestor);
+        this.assertTournamentOwnership(tournament, requestor);
         return this.prisma.$transaction(async (tx: any) => {
             // Remove records with NoAction FK constraints before tournament deletion
             await tx.$executeRaw`DELETE FROM tournament_organizers WHERE tournament_id = ${id}`;
@@ -193,8 +208,9 @@ export class TournamentsService {
         });
     }
 
-    async addOrganizer(tournamentId: string, email: string) {
-        await this.findOne(tournamentId);
+    async addOrganizer(tournamentId: string, email: string, requestor?: Requestor) {
+        const tournament = await this.findOne(tournamentId, requestor);
+        this.assertTournamentOwnership(tournament, requestor);
 
         const user = await this.prisma.user.findUnique({ where: { email } });
         if (!user) {
@@ -209,15 +225,17 @@ export class TournamentsService {
         });
     }
 
-    async removeOrganizer(tournamentId: string, organizerId: string) {
-        await this.findOne(tournamentId);
+    async removeOrganizer(tournamentId: string, organizerId: string, requestor?: Requestor) {
+        const tournament = await this.findOne(tournamentId, requestor);
+        this.assertTournamentOwnership(tournament, requestor);
         return this.prisma.tournamentOrganizer.delete({
             where: { id: organizerId }
         });
     }
 
-    async addField(tournamentId: string, name: string, location?: string, mapsUrl?: string) {
-        await this.findOne(tournamentId);
+    async addField(tournamentId: string, name: string, location?: string, mapsUrl?: string, requestor?: Requestor) {
+        const tournament = await this.findOne(tournamentId, requestor);
+        this.assertTournamentOwnership(tournament, requestor);
 
         return this.prisma.field.create({
             data: {
@@ -237,8 +255,9 @@ export class TournamentsService {
         type?: string;
         hasVideo?: boolean;
         authorId?: string;
-    }) {
-        await this.findOne(tournamentId);
+    }, requestor?: Requestor) {
+        const tournament = await this.findOne(tournamentId, requestor);
+        this.assertTournamentOwnership(tournament, requestor);
 
         return this.prisma.tournamentNews.create({
             data: {
@@ -254,15 +273,17 @@ export class TournamentsService {
         });
     }
 
-    async removeField(tournamentId: string, fieldId: string) {
-        await this.findOne(tournamentId);
+    async removeField(tournamentId: string, fieldId: string, requestor?: Requestor) {
+        const tournament = await this.findOne(tournamentId, requestor);
+        this.assertTournamentOwnership(tournament, requestor);
         return this.prisma.field.delete({
             where: { id: fieldId }
         });
     }
 
-    async finalize(id: string) {
-        await this.findOne(id);
+    async finalize(id: string, requestor?: Requestor) {
+        const tournament = await this.findOne(id, requestor);
+        this.assertTournamentOwnership(tournament, requestor);
         return this.prisma.tournament.update({
             where: { id },
             data: { status: 'completed' } as any,

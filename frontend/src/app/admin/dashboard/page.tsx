@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getUser, saveSession, getAccessToken, AuthUser } from '@/lib/auth';
+import { getUser, saveSession, AuthUser } from '@/lib/auth';
 import CreateGameWizard from '@/components/game/CreateGameWizard';
 import ImageUploader from '@/components/ui/ImageUploader';
 import api from '@/lib/api';
@@ -98,7 +98,7 @@ export default function AdminDashboard() {
     }
 
     // -- State: Navigation --
-    const [activeTab, setActiveTab] = useState<TabType>('torneos');
+    const [activeTab, setActiveTab] = useState<TabType>('perfil');
     const [saving, setSaving] = useState(false);
 
     // -- State: Modals --
@@ -133,12 +133,20 @@ export default function AdminDashboard() {
     useEffect(() => {
         const storedUser = getUser();
         if (storedUser) {
-            // Si es scorekeeper y no tiene scorekeeperLeagueId en sesión local,
-            // refresca el perfil desde el servidor para obtenerlo fresco
-            if (storedUser.role === 'scorekeeper' && !storedUser.scorekeeperLeagueId) {
+            // Refrescar el perfil desde el servidor para obtener IDs relacionales si faltan en sesión local
+            const needsScorekeeperRefresh = storedUser.role === 'scorekeeper' && !storedUser.scorekeeperLeagueId;
+            const needsDelegateRefresh = storedUser.role === 'delegado' && !storedUser.delegateTeamId;
+            
+            if (needsScorekeeperRefresh || needsDelegateRefresh) {
                 api.get('/auth/me').then(({ data }) => {
-                    const refreshed = { ...storedUser, scorekeeperLeagueId: data.scorekeeperLeagueId ?? null };
-                    saveSession(refreshed, { accessToken: getAccessToken()! });
+                    const refreshed = { 
+                        ...storedUser, 
+                        scorekeeperLeagueId: data.scorekeeperLeagueId ?? null,
+                        delegateTeamId: data.delegateTeamId ?? null,
+                        delegateTournamentId: data.delegateTournamentId ?? null,
+                        isDelegateActive: data.isDelegateActive ?? false,
+                    };
+                    saveSession(refreshed);
                     setCurrentUser(refreshed);
                 }).catch(() => setCurrentUser(storedUser));
             } else {
@@ -393,7 +401,7 @@ export default function AdminDashboard() {
                 ...delegateForm,
                 tournamentId: delegateForm.tournamentId || delegateTournamentId,
             });
-            setDelegates(prev => [...prev, data]);
+            fetchDelegates(delegateForm.tournamentId || delegateTournamentId);
             setShowDelegateModal(false);
             setDelegateForm({ firstName: '', lastName: '', email: '', password: '', phone: '', teamId: '', tournamentId: '' });
         } catch (err: any) {
@@ -459,11 +467,32 @@ export default function AdminDashboard() {
             fetchGames(adminId);
             fetchTournaments(adminId);
             fetchMyScorekeepers();
+        } else if (userRole === 'delegado') {
+            // Delegado: auto-selecciona su equipo y torneo, y carga los datos necesarios
+            if (currentUser?.delegateTournamentId) {
+                setSelectedTournament(currentUser.delegateTournamentId);
+                // Cargar el torneo para que el dropdown no esté vacío
+                api.get(`/torneos/${currentUser.delegateTournamentId}`)
+                    .then(({ data }) => {
+                        if (data) setTournaments([data]);
+                    })
+                    .catch(console.error);
+            }
+            if (currentUser?.delegateTeamId) {
+                setSelectedTeam(currentUser.delegateTeamId);
+                // Cargar el equipo para el dropdown de equipos
+                api.get(`/teams/${currentUser.delegateTeamId}`)
+                    .then(({ data }) => {
+                        if (data) setTeams([data]);
+                    })
+                    .catch(console.error);
+            }
         }
-    }, [userRole]);
+    }, [userRole, currentUser]);
 
     // Fetch Teams when Game Creation Tournament changes
     useEffect(() => {
+        if (userRole === 'delegado') return; // Delegado's team is pre-fetched and shouldn't be overwritten
         if (!selectedTournament) {
             setTeams([]);
             return;
@@ -471,7 +500,7 @@ export default function AdminDashboard() {
         api.get('/teams', { params: { tournamentId: selectedTournament } })
             .then(({ data }) => setTeams(data || []))
             .catch(err => console.error(err));
-    }, [selectedTournament]);
+    }, [selectedTournament, userRole]);
 
     // Fetch Players when Selected Team changes
     useEffect(() => {
@@ -737,7 +766,11 @@ export default function AdminDashboard() {
             setShowTeamModal(false);
             setEditingTeam(null);
             setTeamForm({ name: '', manager: '', logoUrl: '', tournament_id: '' });
-            if (selectedTournament) {
+            if (userRole === 'delegado' && currentUser?.delegateTeamId) {
+                api.get(`/teams/${currentUser.delegateTeamId}`)
+                    .then(({ data }) => setTeams(data ? [data] : []))
+                    .catch(console.error);
+            } else if (selectedTournament) {
                 api.get('/teams', { params: { tournamentId: selectedTournament } })
                     .then(({ data }) => setTeams(data || []))
                     .catch(console.error);
@@ -759,7 +792,7 @@ export default function AdminDashboard() {
                 birthDate: playerForm.birthDate || undefined,
                 number: playerForm.number ? parseInt(playerForm.number) : null,
                 teamId: playerForm.team_id,
-                tournamentId: selectedTournament, // Esto previene el error 400 y activa la detección de duplicados
+                tournamentId: selectedTournament || currentUser?.delegateTournamentId, // Esto previene el error 400 y activa la detección de duplicados
                 position: playerForm.position,
                 bats: playerForm.bats,
                 throws: playerForm.throws,
@@ -807,17 +840,46 @@ export default function AdminDashboard() {
 
     const handleDeletePlayer = async (player: any) => {
         const name = `${player.firstName || player.first_name} ${player.lastName || player.last_name}`;
-        if (!confirm(`¿Eliminar a ${name} de este equipo? Se eliminará su registro del roster pero el jugador seguirá existiendo en el sistema.`)) return;
-        try {
-            if (player.rosterEntryId) {
-                await api.delete(`/roster/hard/${player.rosterEntryId}`);
+        
+        // Determinar el ID del roster entry si está disponible
+        const targetRosterEntryId = player.rosterEntryId || player.rosterEntries?.[0]?.id;
+        const fallbackTeamId = player.rosterEntries?.[0]?.team?.id || player.team_id || currentUser?.delegateTeamId;
+
+        if (!selectedTeam && userRole !== 'delegado') {
+            if (userRole === 'admin') {
+                if (!confirm(`ADMINISTRADOR:\n¿Eliminar permanentemente a ${name} de toda la base de datos?\nEsto destruirá sus registros globales.`)) return;
+                try {
+                    await api.delete(`/players/${player.id}`);
+                    setPlayers(prev => prev.filter((p: any) => p.id !== player.id));
+                    setDirectoryPlayers(prev => prev.filter((p: any) => p.id !== player.id));
+                    alert('Jugador eliminado del sistema.');
+                } catch (err: any) {
+                    alert(err?.response?.data?.message || 'Error al eliminar jugador maestro');
+                }
             } else {
-                // Fallback: si no tenemos rosterEntryId, eliminar el player (legacy)
-                await api.delete(`/players/${player.id}`);
+                alert('Por favor selecciona un equipo específico en los filtros superiores para dar de baja a un jugador del roster de ese equipo.');
             }
+            return;
+        }
+
+        if (!confirm(`¿Dar de baja a ${name} de este equipo?\nSe marcará como inactivo pero su historial estadístico se mantendrá.`)) return;
+        
+        try {
+            if (targetRosterEntryId) {
+                await api.delete(`/roster/${targetRosterEntryId}`); // Soft delete
+            } else if (selectedTeam || fallbackTeamId) {
+                const teamIdToUse = selectedTeam || fallbackTeamId;
+                await api.delete(`/roster/player/${player.id}/team/${teamIdToUse}`); // Contextual Soft Delete
+            } else {
+                alert('Error crítico: Falta contexto de equipo para dar de baja.');
+                return;
+            }
+            
+            // Actualizar estado local
             setPlayers(prev => prev.filter((p: any) => p.id !== player.id));
+            setDirectoryPlayers(prev => prev.filter((p: any) => p.id !== player.id));
         } catch (err: any) {
-            alert(err?.response?.data?.message || 'Error al eliminar jugador del equipo');
+            alert(err?.response?.data?.message || 'Error al dar de baja al jugador del equipo');
         }
     };
 
@@ -1155,10 +1217,10 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
         const menuItems = [
             { id: 'perfil', label: 'Mi Perfil', icon: '👤', roles: null },
             { id: 'ligas', label: 'Ligas', icon: '🏟️', roles: ['admin', 'organizer'] },
-            { id: 'torneos', label: 'Torneos', icon: '🏆', roles: null },
-            { id: 'equipos', label: 'Equipos', icon: '🛡️', roles: null },
-            { id: 'jugadores', label: 'Jugadores', icon: '⚾', roles: null },
-            { id: 'juegos', label: 'Juegos & Stats', icon: '📊', roles: null },
+            { id: 'torneos', label: 'Torneos', icon: '🏆', roles: ['admin', 'organizer', 'scorekeeper', 'presi'] },
+            { id: 'equipos', label: userRole === 'delegado' ? 'Mi Equipo' : 'Equipos', icon: '🛡️', roles: null },
+            { id: 'jugadores', label: userRole === 'delegado' ? 'Mi Plantilla' : 'Jugadores', icon: '⚾', roles: null },
+            { id: 'juegos', label: 'Juegos & Stats', icon: '📊', roles: ['admin', 'organizer', 'presi', 'scorekeeper'] },
             { id: 'usuarios', label: (userRole === 'organizer' || userRole === 'presi') ? 'Mi Personal' : 'Control de Accesos', icon: '🔑', roles: ['admin', 'organizer', 'presi'] },
             { id: 'delegados', label: 'Delegados', icon: '🪪', roles: ['admin', 'organizer', 'presi'] },
             { id: 'plan', label: 'Mi Plan', icon: '💎', roles: ['organizer'] },
@@ -1184,6 +1246,9 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
             </div>
         );
     };
+
+    // Derivado a nivel de componente para que esté disponible en todo el JSX
+    const isDelegateSuspended = userRole === 'delegado' && currentUser?.isDelegateActive === false;
 
     return (
         <div className="min-h-screen bg-background text-foreground font-sans transition-colors duration-300">
@@ -1212,6 +1277,18 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
 
                     {/* Content Area */}
                     <main className="flex-1 w-full min-w-0">
+                        {userRole === 'delegado' && currentUser?.isDelegateActive === false && (
+                            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3 animate-pulse">
+                                <span className="text-2xl">⚠️</span>
+                                <div>
+                                    <p className="text-red-500 font-black text-sm uppercase tracking-tight">Acceso Suspendido</p>
+                                    <p className="text-red-400/80 text-xs font-medium">
+                                        Tu permiso para gestionar la plantilla se desactiva cuando el torneo está activo. 
+                                        Contacta al organizador si necesitas realizar cambios extraordinarios.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
                         {/* TAB: PERFIL */}
                         {activeTab === 'perfil' && (
                             <section className="animate-fade-in-up">
@@ -1507,32 +1584,34 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                             <section className="animate-fade-in-up">
                                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                                     <h2 className="text-xl font-black text-foreground flex items-center gap-2">
-                                        <span className="w-2 h-4 bg-primary rounded-full"></span> Equipos Registrados
+                                        <span className="w-2 h-4 bg-primary rounded-full"></span> {userRole === 'delegado' ? 'Mi Equipo' : 'Equipos Registrados'}
                                     </h2>
-                                    <div className="flex items-center gap-3 w-full sm:w-auto">
-                                        <select
-                                            className="w-full sm:w-64 bg-surface border border-muted/30 text-foreground rounded-lg p-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm"
-                                            value={selectedTournament}
-                                            onChange={(e) => setSelectedTournament(e.target.value)}
-                                        >
-                                            <option value="">Filtrar por Torneo...</option>
-                                            {tournaments.map((t: TournamentData) => <option key={t.id} value={t.id}>{t.name} ({t.season})</option>)}
-                                        </select>
-                                        {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (() => {
-                                            const maxTeams = (userRole === 'admin' || userRole === 'presi') ? 999 : (currentUser?.maxTeamsPerTournament ?? 0);
-                                            const atTeamQuota = userRole !== 'admin' && !!selectedTournament && teams.length >= maxTeams;
-                                            return (
-                                                <button
-                                                    onClick={() => !atTeamQuota && setShowTeamModal(true)}
-                                                    disabled={atTeamQuota}
-                                                    title={atTeamQuota ? `Límite de tu plan: ${maxTeams} equipo(s) por torneo` : undefined}
-                                                    className={`px-5 py-2 whitespace-nowrap font-bold rounded-lg transition text-sm flex items-center gap-2 ${atTeamQuota ? 'bg-muted/30 text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-md hover:shadow-primary/40 cursor-pointer'}`}
-                                                >
-                                                    {atTeamQuota ? `Límite alcanzado (${maxTeams})` : '+ Añadir Equipo'}
-                                                </button>
-                                            );
-                                        })()}
-                                    </div>
+                                    {userRole !== 'delegado' && (
+                                        <div className="flex items-center gap-3 w-full sm:w-auto">
+                                            <select
+                                                className="w-full sm:w-64 bg-surface border border-muted/30 text-foreground rounded-lg p-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm"
+                                                value={selectedTournament}
+                                                onChange={(e) => setSelectedTournament(e.target.value)}
+                                            >
+                                                <option value="">Filtrar por Torneo...</option>
+                                                {tournaments.map((t: TournamentData) => <option key={t.id} value={t.id}>{t.name} ({t.season})</option>)}
+                                            </select>
+                                            {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (() => {
+                                                const maxTeams = (userRole === 'admin' || userRole === 'presi') ? 999 : (currentUser?.maxTeamsPerTournament ?? 0);
+                                                const atTeamQuota = userRole !== 'admin' && !!selectedTournament && teams.length >= maxTeams;
+                                                return (
+                                                    <button
+                                                        onClick={() => !atTeamQuota && setShowTeamModal(true)}
+                                                        disabled={atTeamQuota}
+                                                        title={atTeamQuota ? `Límite de tu plan: ${maxTeams} equipo(s) por torneo` : undefined}
+                                                        className={`px-5 py-2 whitespace-nowrap font-bold rounded-lg transition text-sm flex items-center gap-2 ${atTeamQuota ? 'bg-muted/30 text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-md hover:shadow-primary/40 cursor-pointer'}`}
+                                                    >
+                                                        {atTeamQuota ? `Límite alcanzado (${maxTeams})` : '+ Añadir Equipo'}
+                                                    </button>
+                                                );
+                                            })()}
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="bg-surface border border-muted/30 rounded-2xl overflow-x-auto overflow-y-hidden shadow-sm">
                                     <table className="w-full text-left text-sm text-muted-foreground">
@@ -1545,7 +1624,7 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-muted/10">
-                                            {!selectedTournament ? (
+                                            {(!selectedTournament && userRole !== 'delegado') ? (
                                                 <tr>
                                                     <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
                                                         Por favor, selecciona un torneo en el menú superior para ver sus equipos adscritos.
@@ -1554,7 +1633,7 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                             ) : teams.length === 0 ? (
                                                 <tr>
                                                     <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
-                                                        No hay equipos registrados en este torneo. Clic en &quot;Añadir Equipo&quot;.
+                                                        {userRole === 'delegado' ? 'Identificando la información de tu equipo...' : 'No hay equipos registrados en este torneo. Clic en "Añadir Equipo".'}
                                                     </td>
                                                 </tr>
                                             ) : teams.map((team: any) => (
@@ -1581,7 +1660,7 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
                                                         <button className="text-primary hover:underline font-bold text-xs mr-4" onClick={() => router.push(`/equipos/${team.id}`)}>Ver Perfil</button>
-                                                        {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (
+                                                        {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi' || userRole === 'delegado') && (
                                                             <button className="text-muted-foreground hover:text-foreground font-bold text-xs" onClick={() => openEditTeam(team)}>Editar</button>
                                                         )}
                                                     </td>
@@ -1598,7 +1677,7 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                             <section className="animate-fade-in-up">
                                 <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
                                     <h2 className="text-xl font-black text-foreground flex items-center gap-2 whitespace-nowrap">
-                                        <span className="w-2 h-4 bg-primary rounded-full"></span> Directorio de Jugadores
+                                        <span className="w-2 h-4 bg-primary rounded-full"></span> {userRole === 'delegado' ? 'Mi Plantilla' : 'Directorio de Jugadores'}
                                     </h2>
                                     <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto">
                                         <div className="relative flex-grow sm:flex-grow-0">
@@ -1611,47 +1690,56 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                                 onChange={(e) => { setDirectorySearch(e.target.value); setDirectoryPage(1); }}
                                             />
                                         </div>
-                                        <select
-                                            className="flex-grow sm:flex-grow-0 sm:w-40 bg-surface border border-muted/30 text-foreground rounded-lg p-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm"
-                                            value={selectedTournament}
-                                            onChange={(e) => { setSelectedTournament(e.target.value); setDirectoryPage(1); }}
-                                        >
-                                            <option value="">Todos los Torneos</option>
-                                            {tournaments.map((t: TournamentData) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                        </select>
-                                        <select
-                                            disabled={!selectedTournament}
-                                            className="flex-grow sm:flex-grow-0 sm:w-40 bg-surface border border-muted/30 text-foreground rounded-lg p-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm disabled:opacity-50"
-                                            value={selectedTeam}
-                                            onChange={(e) => { setSelectedTeam(e.target.value); setDirectoryPage(1); }}
-                                        >
-                                            <option value="">Todos los Equipos</option>
-                                            {teams.map((t: TeamData) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                        </select>
-                                        {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (() => {
-                                            const maxPlayers = (userRole === 'admin' || userRole === 'presi') ? 999 : (currentUser?.maxPlayersPerTeam ?? 25);
-                                            const atPlayerQuota = userRole !== 'admin' && !!selectedTeam && players.length >= maxPlayers;
+                                        {userRole !== 'delegado' && (
+                                            <>
+                                                <select
+                                                    className="flex-grow sm:flex-grow-0 sm:w-40 bg-surface border border-muted/30 text-foreground rounded-lg p-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm"
+                                                    value={selectedTournament}
+                                                    onChange={(e) => { setSelectedTournament(e.target.value); setDirectoryPage(1); }}
+                                                >
+                                                    <option value="">Todos los Torneos</option>
+                                                    {tournaments.map((t: TournamentData) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                                </select>
+                                                <select
+                                                    disabled={!selectedTournament}
+                                                    className="flex-grow sm:flex-grow-0 sm:w-40 bg-surface border border-muted/30 text-foreground rounded-lg p-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm disabled:opacity-50"
+                                                    value={selectedTeam}
+                                                    onChange={(e) => { setSelectedTeam(e.target.value); setDirectoryPage(1); }}
+                                                >
+                                                    <option value="">Todos los Equipos</option>
+                                                    {teams.map((t: TeamData) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                                </select>
+                                            </>
+                                        )}
+                                        {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi' || userRole === 'delegado') && (() => {
+                                            const maxPlayers = (userRole === 'admin' || userRole === 'presi' || userRole === 'delegado') ? 999 : (currentUser?.maxPlayersPerTeam ?? 25);
+                                            const atPlayerQuota = ((userRole !== 'admin' && userRole !== 'presi' && userRole !== 'delegado') && !!selectedTeam && players.length >= maxPlayers) || isDelegateSuspended;
+                                            
+                                            const isMissingTournament = !selectedTournament && userRole !== 'delegado';
+
                                             return (
                                                 <div className="flex gap-2 flex-grow sm:flex-grow-0">
-                                                    <button
-                                                        onClick={() => {
-                                                            setMergeMode(!mergeMode);
-                                                            if (mergeMode) {
-                                                                setMergePrimary(null);
-                                                                setMergeDuplicate(null);
-                                                            }
-                                                        }}
-                                                        className={`px-4 py-2 font-bold rounded-lg transition text-sm flex items-center justify-center gap-2 border ${mergeMode ? 'bg-orange-500/10 text-orange-500 border-orange-500/50' : 'bg-surface text-muted-foreground border-muted/30 hover:border-orange-500/30 hover:text-orange-500'}`}
-                                                    >
-                                                        {mergeMode ? 'Cancelar Fusión' : 'Modo Fusión'}
-                                                    </button>
+                                                    {userRole !== 'delegado' && (
+                                                        <button
+                                                            onClick={() => {
+                                                                setMergeMode(!mergeMode);
+                                                                if (mergeMode) {
+                                                                    setMergePrimary(null);
+                                                                    setMergeDuplicate(null);
+                                                                }
+                                                            }}
+                                                            className={`px-4 py-2 font-bold rounded-lg transition text-sm flex items-center justify-center gap-2 border ${mergeMode ? 'bg-orange-500/10 text-orange-500 border-orange-500/50' : 'bg-surface text-muted-foreground border-muted/30 hover:border-orange-500/30 hover:text-orange-500'}`}
+                                                        >
+                                                            {mergeMode ? 'Cancelar Fusión' : 'Modo Fusión'}
+                                                        </button>
+                                                    )}
                                                     <button
                                                         onClick={() => !atPlayerQuota && setShowPlayerModal(true)}
-                                                        disabled={atPlayerQuota || !selectedTournament}
-                                                        title={!selectedTournament ? "Filtra por un Torneo primero para dar alta" : atPlayerQuota ? `Límite de tu plan: ${maxPlayers} jugador(es) por equipo` : undefined}
-                                                        className={`px-5 py-2 min-w-max font-bold transition text-sm flex items-center justify-center gap-2 rounded-lg ${atPlayerQuota || !selectedTournament ? 'bg-muted/30 text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-md hover:shadow-primary/40 cursor-pointer'}`}
+                                                        disabled={atPlayerQuota || isMissingTournament}
+                                                        title={isDelegateSuspended ? "Tu acceso para dar de alta jugadores está suspendido por el organizador" : isMissingTournament ? "Filtra por un Torneo primero para dar alta" : atPlayerQuota ? `Límite de tu plan: ${maxPlayers} jugador(es) por equipo` : undefined}
+                                                        className={`px-5 py-2 min-w-max font-bold transition text-sm flex items-center justify-center gap-2 rounded-lg ${(atPlayerQuota || isMissingTournament) ? 'bg-muted/30 text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-md hover:shadow-primary/40 cursor-pointer'}`}
                                                     >
-                                                        {atPlayerQuota ? `Límite alcanzado (${maxPlayers})` : '+ Alta Jugador'}
+                                                        {isDelegateSuspended ? 'Acceso Suspendido' : atPlayerQuota ? `Límite alcanzado (${maxPlayers})` : '+ Alta Jugador'}
                                                     </button>
                                                 </div>
                                             );
@@ -1792,13 +1880,21 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                                                 <Link href={`/jugadores/${player.id}`} className="text-muted-foreground hover:text-foreground font-bold text-xs mr-4 transition-colors">
                                                                     Ficha
                                                                 </Link>
-                                                                {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (
-                                                                    <button
-                                                                        onClick={() => handleEditPlayer(player)}
-                                                                        className="text-blue-500/70 hover:text-blue-500 font-bold text-xs transition-colors"
-                                                                    >
-                                                                        Editar
-                                                                    </button>
+                                                                {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi' || (userRole === 'delegado' && !isDelegateSuspended)) && (
+                                                                    <>
+                                                                        <button
+                                                                            onClick={() => handleEditPlayer(player)}
+                                                                            className="text-blue-500/70 hover:text-blue-500 font-bold text-xs transition-colors mr-3"
+                                                                        >
+                                                                            Editar
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleDeletePlayer(player)}
+                                                                            className="text-red-500/70 hover:text-red-500 font-bold text-xs transition-colors"
+                                                                        >
+                                                                            Baja
+                                                                        </button>
+                                                                    </>
                                                                 )}
                                                             </>
                                                         )}
@@ -2497,8 +2593,8 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                                             </div>
                                                             <div className="text-xs text-muted-foreground">{d.user.email}</div>
                                                             <div className="mt-1.5 flex flex-wrap gap-1">
-                                                                <span className="text-[10px] border border-muted/30 px-1.5 py-0.5 rounded-md bg-muted/10 text-muted-foreground">🛡️ {d.team.name}</span>
-                                                                <span className="text-[10px] border border-muted/30 px-1.5 py-0.5 rounded-md bg-muted/10 text-muted-foreground">Creado por {d.createdBy.firstName} {d.createdBy.lastName}</span>
+                                                                <span className="text-[10px] border border-muted/30 px-1.5 py-0.5 rounded-md bg-muted/10 text-muted-foreground">🛡️ {d.team?.name || 'N/A'}</span>
+                                                                <span className="text-[10px] border border-muted/30 px-1.5 py-0.5 rounded-md bg-muted/10 text-muted-foreground">Creado por {d.createdBy?.firstName || '—'} {d.createdBy?.lastName || ''}</span>
                                                             </div>
                                                         </div>
                                                         <div className="flex items-center gap-3 shrink-0">

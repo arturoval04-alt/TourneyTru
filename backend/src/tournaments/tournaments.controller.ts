@@ -3,6 +3,21 @@ import { TournamentsService } from './tournaments.service';
 import { CreateTournamentDto, UpdateTournamentDto } from './dto/tournament.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
+import { Requestor } from '../common/types';
+
+const buildRequestor = (user?: any): Requestor | undefined => {
+    if (!user) return undefined;
+    return {
+        id: user.id,
+        userId: user.id,
+        role: user.role,
+        scorekeeperLeagueId: user.scorekeeperLeagueId ?? null,
+        scorekeeperTournamentIds: user.scorekeeperTournamentIds ?? [],
+        delegateTeamId: user.delegateTeamId ?? null,
+        delegateTournamentId: user.delegateTournamentId ?? null,
+        isDelegateActive: user.isDelegateActive ?? false,
+    };
+};
 
 @Controller('api/torneos')
 export class TournamentsController {
@@ -21,48 +36,43 @@ export class TournamentsController {
         @Query('leagueId') leagueId?: string,
         @Req() req?: any,
     ) {
-        const requestor = req?.user ? { userId: req.user.id, role: req.user.role, scorekeeperLeagueId: req.user.scorekeeperLeagueId ?? null } : undefined;
-        return this.tournamentsService.findAll(adminId, leagueId, requestor);
+        return this.tournamentsService.findAll(adminId, leagueId, buildRequestor(req?.user));
     }
 
     @Get(':id')
     @UseGuards(OptionalJwtAuthGuard)
     findOne(@Param('id') id: string, @Req() req?: any) {
-        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
-        return this.tournamentsService.findOne(id, requestor);
+        return this.tournamentsService.findOne(id, buildRequestor(req?.user));
     }
 
     @Patch(':id')
     @UseGuards(JwtAuthGuard)
     update(@Param('id') id: string, @Body() updateTournamentDto: UpdateTournamentDto, @Req() req: any) {
-        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
-        return this.tournamentsService.update(id, updateTournamentDto, requestor);
+        return this.tournamentsService.update(id, updateTournamentDto, buildRequestor(req?.user));
     }
 
     @Delete(':id')
     @UseGuards(JwtAuthGuard)
     remove(@Param('id') id: string, @Req() req: any) {
-        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
-        return this.tournamentsService.remove(id, requestor);
+        return this.tournamentsService.remove(id, buildRequestor(req?.user));
     }
 
     @Get(':id/teams')
     @UseGuards(OptionalJwtAuthGuard)
     getTeams(@Param('id') id: string, @Req() req?: any) {
-        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
-        return this.tournamentsService.getTeams(id, requestor);
+        return this.tournamentsService.getTeams(id, buildRequestor(req?.user));
     }
 
     @Post(':id/organizers')
     @UseGuards(JwtAuthGuard)
-    addOrganizer(@Param('id') id: string, @Body('email') email: string) {
-        return this.tournamentsService.addOrganizer(id, email);
+    addOrganizer(@Param('id') id: string, @Body('email') email: string, @Req() req: any) {
+        return this.tournamentsService.addOrganizer(id, email, buildRequestor(req?.user));
     }
 
     @Delete(':id/organizers/:organizerId')
     @UseGuards(JwtAuthGuard)
-    removeOrganizer(@Param('id') id: string, @Param('organizerId') organizerId: string) {
-        return this.tournamentsService.removeOrganizer(id, organizerId);
+    removeOrganizer(@Param('id') id: string, @Param('organizerId') organizerId: string, @Req() req: any) {
+        return this.tournamentsService.removeOrganizer(id, organizerId, buildRequestor(req?.user));
     }
 
     @Post(':id/fields')
@@ -70,16 +80,17 @@ export class TournamentsController {
     addField(
         @Param('id') id: string,
         @Body('name') name: string,
-        @Body('location') location?: string,
-        @Body('mapsUrl') mapsUrl?: string,
+        @Body('location') location: string | undefined,
+        @Body('mapsUrl') mapsUrl: string | undefined,
+        @Req() req: any,
     ) {
-        return this.tournamentsService.addField(id, name, location, mapsUrl);
+        return this.tournamentsService.addField(id, name, location, mapsUrl, buildRequestor(req?.user));
     }
 
     @Delete(':id/fields/:fieldId')
     @UseGuards(JwtAuthGuard)
-    removeField(@Param('id') id: string, @Param('fieldId') fieldId: string) {
-        return this.tournamentsService.removeField(id, fieldId);
+    removeField(@Param('id') id: string, @Param('fieldId') fieldId: string, @Req() req: any) {
+        return this.tournamentsService.removeField(id, fieldId, buildRequestor(req?.user));
     }
 
     @Post(':id/news')
@@ -92,20 +103,22 @@ export class TournamentsController {
         type?: string;
         hasVideo?: boolean;
         authorId?: string;
-    }) {
-        return this.tournamentsService.createNews(id, body);
+    }, @Req() req: any) {
+        return this.tournamentsService.createNews(id, {
+            ...body,
+            authorId: body.authorId ?? req.user.id,
+        }, buildRequestor(req?.user));
     }
 
     @Patch(':id/finalize')
     @UseGuards(JwtAuthGuard)
-    finalize(@Param('id') id: string) {
-        return this.tournamentsService.finalize(id);
+    finalize(@Param('id') id: string, @Req() req: any) {
+        return this.tournamentsService.finalize(id, buildRequestor(req?.user));
     }
 
     @Get(':id/standings')
     @UseGuards(OptionalJwtAuthGuard)
     getStandings(@Param('id') id: string, @Req() req?: any) {
-        const requestor = req?.user ? { userId: req.user.id, role: req.user.role } : undefined;
-        return this.tournamentsService.getStandings(id, requestor);
+        return this.tournamentsService.getStandings(id, buildRequestor(req?.user));
     }
 }

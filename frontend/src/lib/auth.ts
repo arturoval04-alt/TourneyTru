@@ -14,37 +14,32 @@ export interface AuthUser {
     maxTeamsPerTournament?: number | null;
     maxPlayersPerTeam?: number | null;
     planLabel?: string | null;
+    delegateTeamId?: string | null;
+    delegateTournamentId?: string | null;
+    isDelegateActive?: boolean | null;
     forcePasswordChange?: boolean;
 }
 
 export interface AuthTokens {
-    accessToken: string;
-    refreshToken?: string; // opcional: el servidor lo setea como cookie httpOnly, pero se acepta si el cliente lo envía
+    accessToken?: string;
+    refreshToken?: string;
 }
 
-export function saveSession(user: AuthUser, tokens: AuthTokens) {
-    localStorage.setItem('accessToken', tokens.accessToken);
+export function saveSession(user: AuthUser) {
     localStorage.setItem('user', JSON.stringify(user));
-    // Cookie ligera para el middleware de Next.js (sin datos sensibles)
-    document.cookie = `accessToken=true; path=/; SameSite=Lax; max-age=86400`;
 }
 
 export async function clearSession() {
-    localStorage.removeItem('accessToken');
     localStorage.removeItem('user');
-    // Limpiar cookie del middleware
-    document.cookie = 'accessToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-    // Pedir al servidor que elimine la cookie httpOnly del refreshToken
     try {
         await fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
     } catch {
-        // Silencioso: si falla el logout remoto, la sesión local ya fue limpiada
+        // La sesi?n local ya qued? limpia; ignoramos errores remotos.
     }
 }
 
 export function getAccessToken(): string | null {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem('accessToken');
+    return null;
 }
 
 export function getUser(): AuthUser | null {
@@ -59,56 +54,50 @@ export function getUser(): AuthUser | null {
 }
 
 export function isLoggedIn(): boolean {
-    return !!getAccessToken();
+    return !!getUser();
 }
 
 export async function apiFetch(path: string, options: RequestInit = {}) {
-    // Deprecated: This project now uses Supabase SDK directly.
-    // If NEXT_PUBLIC_API_URL is not set, this will fail gracefully.
     if (!API_URL.startsWith('http')) {
         console.warn('apiFetch called but NEXT_PUBLIC_API_URL is not configured.');
         return new Response(JSON.stringify({ error: 'Legacy API not configured' }), { status: 503 });
     }
-    const token = getAccessToken();
+
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         ...(options.headers as Record<string, string>),
     };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+    const doFetch = () => fetch(`${API_URL}${path}`, {
+        ...options,
+        headers,
+        credentials: 'include',
+    });
+
+    let res = await doFetch();
 
     if (res.status === 401) {
-        // Intentar refrescar el token
         const refreshed = await tryRefresh();
         if (refreshed) {
-            headers['Authorization'] = `Bearer ${getAccessToken()}`;
-            return fetch(`${API_URL}${path}`, { ...options, headers });
+            res = await doFetch();
+        } else {
+            await clearSession();
+            if (typeof window !== 'undefined') {
+                window.location.href = '/login';
+            }
         }
-        clearSession();
-        window.location.href = '/login';
     }
 
     return res;
 }
 
 async function tryRefresh(): Promise<boolean> {
-    const refreshToken = localStorage.getItem('refreshToken');
-    if (!refreshToken) return false;
-
     try {
         const res = await fetch(`${API_URL}/auth/refresh`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ refreshToken }),
+            credentials: 'include',
         });
-
-        if (!res.ok) return false;
-
-        const data = await res.json();
-        localStorage.setItem('accessToken', data.accessToken);
-        localStorage.setItem('refreshToken', data.refreshToken);
-        return true;
+        return res.ok;
     } catch {
         return false;
     }

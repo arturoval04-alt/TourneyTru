@@ -81,7 +81,7 @@ export default function Navbar() {
                                         <p className="text-sm font-black text-foreground">{user.role}</p>
                                     </div>
                                     <div className="p-1">
-                                        {(user.role === 'admin' || user.role === 'organizer' || user.role === 'scorekeeper' || user.role === 'presi') && (
+                                        {(user.role === 'admin' || user.role === 'organizer' || user.role === 'scorekeeper' || user.role === 'presi' || user.role === 'delegado') && (
                                             <Link href="/admin/dashboard" onClick={() => setIsMenuOpen(false)} className="block px-4 py-2 text-sm text-foreground hover:bg-muted/10 font-medium transition-colors rounded-lg">
                                                 Dashboard
                                             </Link>

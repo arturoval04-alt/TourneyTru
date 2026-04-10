@@ -1,17 +1,11 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-// Rutas que requieren autenticación
 const PROTECTED_ROUTES = ['/admin', '/game'];
-
-// Rutas de autenticación (no accesibles si ya hay sesión)
 const AUTH_ROUTES = ['/login', '/register'];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl;
-
-    // Leer el token desde las cookies (se setea en el cliente)
-    // Como usamos localStorage, usamos una cookie de sesión ligera
     const token = request.cookies.get('accessToken')?.value;
 
     const isProtected = PROTECTED_ROUTES.some(route => pathname.startsWith(route));

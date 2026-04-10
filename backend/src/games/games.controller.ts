@@ -4,6 +4,21 @@ import { AssignUmpireDto, CreateGameDto, UpdateGameDto, SetGameLineupDto, Change
 import { SubmitManualStatsDto } from './dto/manual-stats.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
+import { Requestor } from '../common/types';
+
+const buildRequestor = (user?: any): Requestor | undefined => {
+    if (!user) return undefined;
+    return {
+        id: user.id,
+        userId: user.id,
+        role: user.role,
+        scorekeeperLeagueId: user.scorekeeperLeagueId ?? null,
+        scorekeeperTournamentIds: user.scorekeeperTournamentIds ?? [],
+        delegateTeamId: user.delegateTeamId ?? null,
+        delegateTournamentId: user.delegateTournamentId ?? null,
+        isDelegateActive: user.isDelegateActive ?? false,
+    };
+};
 
 @Controller('api/games')
 export class GamesController {
@@ -26,37 +41,39 @@ export class GamesController {
         @Query('leagueId') leagueId?: string,
     ) {
         const user = req.user;
-        // Scorekeepers solo pueden ver juegos de su liga asignada — sin excepción
         if (user?.role === 'scorekeeper') {
             return this.gamesService.findAll({
-                status, tournamentId, limit: limit ? parseInt(limit) : undefined,
-                leagueId: user.scorekeeperLeagueId ?? '__none__',
+                status,
+                tournamentId,
+                limit: limit ? parseInt(limit) : undefined,
+                scorekeeperTournamentIds: user.scorekeeperTournamentIds ?? [],
             });
         }
         return this.gamesService.findAll({ status, tournamentId, limit: limit ? parseInt(limit) : undefined, adminId, leagueId });
     }
 
     @Get(':id')
-    findOne(@Param('id') id: string) {
-        return this.gamesService.findOne(id);
+    @UseGuards(OptionalJwtAuthGuard)
+    findOne(@Param('id') id: string, @Request() req: any) {
+        return this.gamesService.findOne(id, buildRequestor(req?.user));
     }
 
     @Patch(':id')
     @UseGuards(JwtAuthGuard)
-    update(@Param('id') id: string, @Body() updateGameDto: UpdateGameDto) {
-        return this.gamesService.update(id, updateGameDto);
+    update(@Param('id') id: string, @Body() updateGameDto: UpdateGameDto, @Request() req: any) {
+        return this.gamesService.update(id, updateGameDto, buildRequestor(req?.user));
     }
 
     @Delete(':id')
     @UseGuards(JwtAuthGuard)
-    remove(@Param('id') id: string) {
-        return this.gamesService.remove(id);
+    remove(@Param('id') id: string, @Request() req: any) {
+        return this.gamesService.remove(id, buildRequestor(req?.user));
     }
 
     @Delete(':id/plays')
     @UseGuards(JwtAuthGuard)
-    deletePlays(@Param('id') id: string, @Body() body: { playIds: string[] }) {
-        return this.gamesService.deletePlays(id, body.playIds);
+    deletePlays(@Param('id') id: string, @Body() body: { playIds: string[] }, @Request() req: any) {
+        return this.gamesService.deletePlays(id, body.playIds, buildRequestor(req?.user));
     }
 
     @Post(':id/team/:teamId/lineup')
@@ -64,102 +81,103 @@ export class GamesController {
     setLineup(
         @Param('id') id: string,
         @Param('teamId') teamId: string,
-        @Body() lineupData: SetGameLineupDto
+        @Body() lineupData: SetGameLineupDto,
+        @Request() req: any,
     ) {
-        console.log(`[GamesController] Entering setLineup for game ${id}, team ${teamId}`);
-        return this.gamesService.setLineup(id, teamId, lineupData);
+        return this.gamesService.setLineup(id, teamId, lineupData, buildRequestor(req?.user));
     }
 
     @Post(':id/lineup-change')
     @UseGuards(JwtAuthGuard)
     changeLineup(
         @Param('id') id: string,
-        @Body() change: ChangeLineupDto
+        @Body() change: ChangeLineupDto,
+        @Request() req: any,
     ) {
-        return this.gamesService.changeLineup(id, change);
+        return this.gamesService.changeLineup(id, change, buildRequestor(req?.user));
     }
 
     @Get(':id/boxscore')
-    getBoxscore(@Param('id') id: string) {
-        return this.gamesService.getGameBoxscore(id);
+    @UseGuards(OptionalJwtAuthGuard)
+    getBoxscore(@Param('id') id: string, @Request() req: any) {
+        return this.gamesService.getGameBoxscore(id, buildRequestor(req?.user));
     }
 
     @Get(':id/state')
-    getState(@Param('id') id: string) {
-        return this.gamesService.getGameState(id);
+    @UseGuards(OptionalJwtAuthGuard)
+    getState(@Param('id') id: string, @Request() req: any) {
+        return this.gamesService.getGameState(id, buildRequestor(req?.user));
     }
 
     @Get(':id/pitcher-matchup')
-    getPitcherMatchup(@Param('id') id: string) {
-        return this.gamesService.getPitcherMatchup(id);
+    @UseGuards(OptionalJwtAuthGuard)
+    getPitcherMatchup(@Param('id') id: string, @Request() req: any) {
+        return this.gamesService.getPitcherMatchup(id, buildRequestor(req?.user));
     }
 
-    // ─── Cambios v2 ─────────────────────────────────────────────────────────────
-
     @Get(':id/cambios/elegibles/:teamId')
-    getCambiosEligibles(@Param('id') id: string, @Param('teamId') teamId: string) {
-        return this.gamesService.getCambiosEligibles(id, teamId);
+    @UseGuards(OptionalJwtAuthGuard)
+    getCambiosEligibles(@Param('id') id: string, @Param('teamId') teamId: string, @Request() req: any) {
+        return this.gamesService.getCambiosEligibles(id, teamId, buildRequestor(req?.user));
     }
 
     @Post(':id/cambios/sustitucion')
     @UseGuards(JwtAuthGuard)
-    cambioSustitucion(@Param('id') id: string, @Body() dto: CambioSustitucionDto) {
-        return this.gamesService.cambioSustitucion(id, dto);
+    cambioSustitucion(@Param('id') id: string, @Body() dto: CambioSustitucionDto, @Request() req: any) {
+        return this.gamesService.cambioSustitucion(id, dto, buildRequestor(req?.user));
     }
 
     @Post(':id/cambios/posicion')
     @UseGuards(JwtAuthGuard)
-    cambioPosicion(@Param('id') id: string, @Body() dto: CambioPosicionDto) {
-        return this.gamesService.cambioPosicion(id, dto);
+    cambioPosicion(@Param('id') id: string, @Body() dto: CambioPosicionDto, @Request() req: any) {
+        return this.gamesService.cambioPosicion(id, dto, buildRequestor(req?.user));
     }
 
     @Post(':id/cambios/reingreso')
     @UseGuards(JwtAuthGuard)
-    cambioReingreso(@Param('id') id: string, @Body() dto: CambioReingresoDto) {
-        return this.gamesService.cambioReingreso(id, dto);
+    cambioReingreso(@Param('id') id: string, @Body() dto: CambioReingresoDto, @Request() req: any) {
+        return this.gamesService.cambioReingreso(id, dto, buildRequestor(req?.user));
     }
 
     @Get(':id/umpires')
-    getGameUmpires(@Param('id') id: string) {
-        return this.gamesService.getGameUmpires(id);
+    @UseGuards(OptionalJwtAuthGuard)
+    getGameUmpires(@Param('id') id: string, @Request() req: any) {
+        return this.gamesService.getGameUmpires(id, buildRequestor(req?.user));
     }
 
     @Post(':id/umpires')
     @UseGuards(JwtAuthGuard)
-    assignUmpire(@Param('id') id: string, @Body() dto: AssignUmpireDto) {
-        return this.gamesService.assignUmpire(id, dto);
+    assignUmpire(@Param('id') id: string, @Body() dto: AssignUmpireDto, @Request() req: any) {
+        return this.gamesService.assignUmpire(id, dto, buildRequestor(req?.user));
     }
 
     @Delete(':id/umpires/:umpireId')
     @UseGuards(JwtAuthGuard)
-    removeUmpire(@Param('id') id: string, @Param('umpireId') umpireId: string) {
-        return this.gamesService.removeUmpire(id, umpireId);
+    removeUmpire(@Param('id') id: string, @Param('umpireId') umpireId: string, @Request() req: any) {
+        return this.gamesService.removeUmpire(id, umpireId, buildRequestor(req?.user));
     }
 
-    // ─── Stream (Facebook Live) ──────────────────────────────────────────────────
-
     @Get(':id/stream-info')
-    getStreamInfo(@Param('id') id: string) {
-        return this.gamesService.getStreamInfo(id);
+    @UseGuards(OptionalJwtAuthGuard)
+    getStreamInfo(@Param('id') id: string, @Request() req: any) {
+        return this.gamesService.getStreamInfo(id, buildRequestor(req?.user));
     }
 
     @Post(':id/stream')
     @UseGuards(JwtAuthGuard)
-    startStream(@Param('id') id: string, @Body() body: { facebookStreamUrl: string }) {
-        return this.gamesService.startStream(id, body.facebookStreamUrl);
+    startStream(@Param('id') id: string, @Body() body: { facebookStreamUrl: string }, @Request() req: any) {
+        return this.gamesService.startStream(id, body.facebookStreamUrl, buildRequestor(req?.user));
     }
 
     @Delete(':id/stream')
     @UseGuards(JwtAuthGuard)
-    endStream(@Param('id') id: string) {
-        return this.gamesService.endStream(id);
+    endStream(@Param('id') id: string, @Request() req: any) {
+        return this.gamesService.endStream(id, buildRequestor(req?.user));
     }
-
-    // ─── Manual Stats ─────────────────────────────────────────────────────────────
 
     @Post(':id/manual-stats')
     @UseGuards(JwtAuthGuard)
-    submitManualStats(@Param('id') id: string, @Body() dto: SubmitManualStatsDto) {
-        return this.gamesService.submitManualStats(id, dto);
+    submitManualStats(@Param('id') id: string, @Body() dto: SubmitManualStatsDto, @Request() req: any) {
+        return this.gamesService.submitManualStats(id, dto, buildRequestor(req?.user));
     }
 }

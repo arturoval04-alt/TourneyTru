@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import api from "@/lib/api";
-import { getUser, saveSession, getAccessToken } from "@/lib/auth";
+import { getUser, saveSession } from "@/lib/auth";
 
 export default function ChangePasswordPage() {
     const [password, setPassword] = useState("");
@@ -45,7 +45,7 @@ export default function ChangePasswordPage() {
             // Actualizar la sesión para remover el flag
             if (user) {
                 const updatedUser = { ...user, forcePasswordChange: false };
-                saveSession(updatedUser, { accessToken: getAccessToken() || "" });
+                saveSession(updatedUser);
                 
                 // Redirigir según el rol
                 const dashboardRoles = ['admin', 'organizer', 'scorekeeper', 'presi'];

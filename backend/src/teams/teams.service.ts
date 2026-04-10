@@ -1,10 +1,15 @@
 import { Injectable, NotFoundException, ForbiddenException, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTeamDto, UpdateTeamDto, CreateTeamBulkDto } from './dto/team.dto';
+import { Requestor } from '../common/types';
+import { DelegatesService } from '../delegates/delegates.service';
 
 @Injectable()
 export class TeamsService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+        private delegatesService: DelegatesService,
+    ) { }
 
     async create(data: CreateTeamDto) {
         // Quota check: maxTeamsPerTournament
@@ -115,11 +120,12 @@ export class TeamsService {
         });
     }
 
-    async findOne(id: string) {
+    async findOne(id: string, requestor?: Requestor) {
         const team = await (this.prisma.team.findUnique as any)({
             where: { id },
             include: {
-                tournament: true,
+                tournament: { include: { league: { select: { id: true, adminId: true, isPrivate: true } }, organizers: { select: { userId: true } } } },
+                _count: { select: { rosterEntries: { where: { isActive: true } } } },
                 rosterEntries: {
                     where: { isActive: true },
                     include: {
@@ -146,6 +152,27 @@ export class TeamsService {
 
         if (!team) {
             throw new NotFoundException(`Team with id ${id} not found`);
+        }
+
+        // Privacy: respetar privacidad de liga y torneo padre
+        if (requestor?.role !== 'admin') {
+            const league = team.tournament?.league;
+            const tournament = team.tournament;
+            if (league?.isPrivate) {
+                const isLeagueAdmin = requestor?.id === league.adminId;
+                const isAssignedSK = requestor?.role === 'scorekeeper' && requestor.scorekeeperTournamentIds?.includes(tournament.id);
+                if (!isLeagueAdmin && !isAssignedSK) {
+                    throw new ForbiddenException({ code: 'PRIVATE', message: 'Esta liga es privada.' });
+                }
+            }
+            if (tournament?.isPrivate) {
+                const isLeagueAdmin = requestor?.id === league?.adminId;
+                const isOrganizer = tournament?.organizers?.some((o: any) => o.userId === requestor?.id);
+                const isAssignedSK = requestor?.role === 'scorekeeper' && requestor.scorekeeperTournamentIds?.includes(tournament.id);
+                if (!isLeagueAdmin && !isOrganizer && !isAssignedSK) {
+                    throw new ForbiddenException({ code: 'PRIVATE', message: 'Este torneo es privado.' });
+                }
+            }
         }
 
         // Compute W/L record and stats
@@ -278,7 +305,31 @@ export class TeamsService {
         return { ...stats, ...extStats };
     }
 
-    async update(id: string, updateData: UpdateTeamDto) {
+    private async assertTeamOwnership(teamId: string, requestingUser?: { id: string; role: string }) {
+        if (!requestingUser) throw new ForbiddenException('Se requiere autenticación.');
+        if (requestingUser.role === 'admin') return;
+        if (requestingUser.role === 'delegado') {
+            const activeDelegate = await this.delegatesService.getActiveDelegateForUser(requestingUser.id);
+            if (!activeDelegate || activeDelegate.teamId !== teamId) {
+                throw new ForbiddenException('No tienes permisos para editar la información de este equipo.');
+            }
+            return;
+        }
+        // organizer / presi: verificar que el equipo pertenece a un torneo de su liga
+        const team = await (this.prisma as any).team.findUnique({
+            where: { id: teamId },
+            include: { tournament: { include: { league: true, organizers: { select: { userId: true } } } } },
+        });
+        if (!team) throw new NotFoundException(`Team ${teamId} not found`);
+        const leagueAdminId = team.tournament?.league?.adminId;
+        const isOrganizer = team.tournament?.organizers?.some((o: any) => o.userId === requestingUser.id);
+        if (requestingUser.id !== leagueAdminId && !isOrganizer) {
+            throw new ForbiddenException('No tienes permisos para modificar este equipo.');
+        }
+    }
+
+    async update(id: string, updateData: UpdateTeamDto, requestingUser?: { id: string; role: string }) {
+        await this.assertTeamOwnership(id, requestingUser);
         await this.findOne(id);
         return this.prisma.team.update({
             where: { id },
@@ -286,7 +337,8 @@ export class TeamsService {
         });
     }
 
-    async remove(id: string) {
+    async remove(id: string, requestingUser?: { id: string; role: string }) {
+        await this.assertTeamOwnership(id, requestingUser);
         const team = await this.prisma.team.findUnique({ where: { id } });
         if (!team) throw new NotFoundException(`Team ${id} not found`);
         return this.prisma.$transaction(async (tx: any) => {

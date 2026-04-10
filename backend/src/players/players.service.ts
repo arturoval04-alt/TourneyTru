@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePlayerDto, UpdatePlayerDto, BulkCreatePlayersDto, ConfirmImportDto } from './dto/player.dto';
+import { Requestor } from '../common/types';
 
 // ─── Tipos internos ───────────────────────────────────────────────────────────
 
@@ -41,11 +42,41 @@ export interface ImportRowResult {
     };
 }
 
+import { DelegatesService } from '../delegates/delegates.service';
+import { LeaguesService } from '../leagues/leagues.service';
+
 // ─── Servicio ─────────────────────────────────────────────────────────────────
 
 @Injectable()
 export class PlayersService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+        private delegatesService: DelegatesService,
+        private leaguesService: LeaguesService,
+    ) { }
+
+
+    private canAccessTournament(tournament: any, requestor?: Requestor): boolean {
+        if (!tournament) return false;
+        if (requestor?.role === 'admin') return true;
+
+        const requestorId = requestor?.id ?? requestor?.userId;
+        const isLeagueAdmin = requestorId === tournament.league?.adminId;
+        const isTournamentAdmin = requestorId === tournament.adminId;
+        const isOrganizer = tournament.organizers?.some((o: any) => o.userId === requestorId);
+        const isAssignedScorekeeper = requestor?.role === 'scorekeeper' && requestor.scorekeeperTournamentIds?.includes(tournament.id);
+        const isAssignedDelegate = requestor?.role === 'delegado' && requestor.delegateTournamentId === tournament.id && requestor.isDelegateActive;
+
+        if (tournament.league?.isPrivate && !isLeagueAdmin && !isTournamentAdmin && !isAssignedScorekeeper) {
+            return false;
+        }
+
+        if (tournament.isPrivate && !isLeagueAdmin && !isTournamentAdmin && !isOrganizer && !isAssignedScorekeeper && !isAssignedDelegate) {
+            return false;
+        }
+
+        return true;
+    }
 
     // ── DUPLICATE DETECTION ──────────────────────────────────────────────────
 
@@ -84,7 +115,17 @@ export class PlayersService {
                                 id: true,
                                 name: true,
                                 shortName: true,
-                                tournament: { select: { id: true, name: true, season: true } },
+                                tournament: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        season: true,
+                                        isPrivate: true,
+                                        adminId: true,
+                                        league: { select: { id: true, adminId: true, isPrivate: true } },
+                                        organizers: { select: { userId: true } },
+                                    },
+                                },
                             },
                         },
                     },
@@ -145,23 +186,22 @@ export class PlayersService {
     private async checkQuota(teamId: string, tournamentId: string, adding = 1) {
         const tournament = await (this.prisma.tournament as any).findUnique({
             where: { id: tournamentId },
-            include: { league: true },
+            include: { league: { select: { id: true } } },
         });
-        const adminId = tournament?.league?.adminId ?? tournament?.adminId;
-        if (!adminId) return;
+        if (!tournament?.leagueId) return;
 
-        const admin = await this.prisma.user.findUnique({ where: { id: adminId } }) as any;
-        if (!admin || admin.maxPlayersPerTeam <= 0) return;
+        const plan = await this.leaguesService.getPlanForLeague(tournament.leagueId);
+        if (!plan || plan.maxPlayersPerTeam <= 0) return;
 
         const count = await (this.prisma.rosterEntry as any).count({
             where: { teamId, tournamentId, isActive: true },
         });
-        if (count + adding > admin.maxPlayersPerTeam) {
+        if (count + adding > plan.maxPlayersPerTeam) {
             throw new ForbiddenException({
                 code: 'QUOTA_EXCEEDED',
                 resource: 'players',
-                message: `El límite de tu plan es ${admin.maxPlayersPerTeam} jugadores por equipo. Ya tienes ${count} y estás intentando agregar ${adding}.`,
-                limit: admin.maxPlayersPerTeam,
+                message: `El límite de tu plan es ${plan.maxPlayersPerTeam} jugadores por equipo. Ya tienes ${count} y estás intentando agregar ${adding}.`,
+                limit: plan.maxPlayersPerTeam,
                 current: count,
             });
         }
@@ -197,6 +237,14 @@ export class PlayersService {
                 });
                 return player;
             });
+        }
+
+        // Delegado: solo permite si está asignado a ese equipo y torneo
+        if (requestingUser.role === 'delegado') {
+            const activeDelegate = await this.delegatesService.getActiveDelegateForUser((requestingUser as any).id);
+            if (!activeDelegate || activeDelegate.teamId !== data.teamId || activeDelegate.tournamentId !== data.tournamentId) {
+                throw new ForbiddenException('No tienes permisos para agregar jugadores a este equipo o torneo.');
+            }
         }
 
         // Quota check
@@ -337,8 +385,36 @@ export class PlayersService {
         } else if (params.leagueId) {
             where.rosterEntries = { some: { team: { tournament: { leagueId: params.leagueId } }, isActive: true } };
         }
-        // Si no hay filtro de equipo, torneo o liga, mostramos TODO el directorio global 
-        // (incluyendo jugadores "libres" sin equipo activo).
+
+        // Restricción de Permisos por Rol
+        if (params.requestingUser && params.requestingUser.role !== 'admin') {
+            const reqUser = params.requestingUser as any;
+            let scopeCondition: any = null;
+
+            if (reqUser.role === 'delegado' && reqUser.delegateTeamId) {
+                scopeCondition = { some: { teamId: reqUser.delegateTeamId, isActive: true } };
+            } else if (reqUser.role === 'scorekeeper' && reqUser.scorekeeperTournamentIds?.length) {
+                scopeCondition = { some: { tournamentId: { in: reqUser.scorekeeperTournamentIds }, isActive: true } };
+            } else if (reqUser.role === 'presi') {
+                scopeCondition = { some: { team: { tournament: { organizers: { some: { userId: reqUser.id } } } }, isActive: true } };
+            } else if (reqUser.role === 'organizer') {
+                scopeCondition = { some: { team: { tournament: { league: { adminId: reqUser.id } } }, isActive: true } };
+            } else {
+                where.id = 'NO_ACCESS';
+            }
+
+            if (scopeCondition) {
+                if (where.rosterEntries) {
+                    where.AND = [
+                        { rosterEntries: where.rosterEntries },
+                        { rosterEntries: scopeCondition }
+                    ];
+                    delete where.rosterEntries;
+                } else {
+                    where.rosterEntries = scopeCondition;
+                }
+            }
+        }
 
         const [total, data] = await Promise.all([
             (this.prisma.player as any).count({ where }),
@@ -365,7 +441,17 @@ export class PlayersService {
                                     id: true,
                                     name: true,
                                     shortName: true,
-                                    tournament: { select: { id: true, name: true, season: true } },
+                                    tournament: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        season: true,
+                                        isPrivate: true,
+                                        adminId: true,
+                                        league: { select: { id: true, adminId: true, isPrivate: true } },
+                                        organizers: { select: { userId: true } },
+                                    },
+                                },
                                 },
                             },
                         },
@@ -431,7 +517,17 @@ export class PlayersService {
                                 id: true,
                                 name: true,
                                 shortName: true,
-                                tournament: { select: { id: true, name: true, season: true } },
+                                tournament: {
+                            select: {
+                                id: true,
+                                name: true,
+                                season: true,
+                                isPrivate: true,
+                                adminId: true,
+                                league: { select: { id: true, adminId: true, isPrivate: true } },
+                                organizers: { select: { userId: true } },
+                            },
+                        },
                             },
                         },
                     },
@@ -496,7 +592,7 @@ export class PlayersService {
 
     // ── FIND ONE ─────────────────────────────────────────────────────────────
 
-    async findOne(id: string) {
+    async findOne(id: string, requestor?: Requestor) {
         const player = await (this.prisma.player as any).findUnique({
             where: { id },
             include: {
@@ -531,7 +627,16 @@ export class PlayersService {
                                 awayTeamId: true,
                                 homeTeam: { select: { id: true, name: true, shortName: true } },
                                 awayTeam: { select: { id: true, name: true, shortName: true } },
-                                tournament: { select: { id: true, name: true } },
+                                tournament: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        isPrivate: true,
+                                        adminId: true,
+                                        league: { select: { id: true, adminId: true, isPrivate: true } },
+                                        organizers: { select: { userId: true } },
+                                    },
+                                },
                             },
                         },
                     },
@@ -542,6 +647,16 @@ export class PlayersService {
                         id: true, scheduledDate: true, homeScore: true, awayScore: true,
                         homeTeam: { select: { name: true } },
                         awayTeam: { select: { name: true } },
+                        tournamentId: true,
+                        tournament: {
+                            select: {
+                                id: true,
+                                isPrivate: true,
+                                adminId: true,
+                                league: { select: { id: true, adminId: true, isPrivate: true } },
+                                organizers: { select: { userId: true } },
+                            },
+                        },
                     },
                 },
                 gamesMvp2: {
@@ -549,6 +664,16 @@ export class PlayersService {
                         id: true, scheduledDate: true, homeScore: true, awayScore: true,
                         homeTeam: { select: { name: true } },
                         awayTeam: { select: { name: true } },
+                        tournamentId: true,
+                        tournament: {
+                            select: {
+                                id: true,
+                                isPrivate: true,
+                                adminId: true,
+                                league: { select: { id: true, adminId: true, isPrivate: true } },
+                                organizers: { select: { userId: true } },
+                            },
+                        },
                     },
                 },
                 gamesWonAsPitcher: {
@@ -556,19 +681,65 @@ export class PlayersService {
                         id: true, scheduledDate: true, homeScore: true, awayScore: true,
                         homeTeam: { select: { name: true } },
                         awayTeam: { select: { name: true } },
+                        tournamentId: true,
+                        tournament: {
+                            select: {
+                                id: true,
+                                isPrivate: true,
+                                adminId: true,
+                                league: { select: { id: true, adminId: true, isPrivate: true } },
+                                organizers: { select: { userId: true } },
+                            },
+                        },
                     },
                 },
             },
         });
 
         if (!player) throw new NotFoundException(`Player with id ${id} not found`);
+        const accessibleTournamentIds = new Set<string>();
+        const collectTournament = (tournament: any) => {
+            if (tournament?.id && this.canAccessTournament(tournament, requestor)) {
+                accessibleTournamentIds.add(tournament.id);
+            }
+        };
+
+        player.rosterEntries?.forEach((entry: any) => collectTournament(entry.tournament ?? entry.team?.tournament));
+        player.playerStats?.forEach((stat: any) => collectTournament(stat.tournament));
+        player.lineupEntries?.forEach((entry: any) => collectTournament(entry.game?.tournament));
+        player.gamesMvp1?.forEach((game: any) => collectTournament(game.tournament));
+        player.gamesMvp2?.forEach((game: any) => collectTournament(game.tournament));
+        player.gamesWonAsPitcher?.forEach((game: any) => collectTournament(game.tournament));
+
+        if (accessibleTournamentIds.size === 0) {
+            throw new ForbiddenException({ code: 'PRIVATE', message: 'Este jugador pertenece a un torneo privado.' });
+        }
+
+        player.rosterEntries = (player.rosterEntries ?? []).filter((entry: any) => {
+            const tournamentId = entry.tournament?.id ?? entry.team?.tournament?.id;
+            return tournamentId ? accessibleTournamentIds.has(tournamentId) : false;
+        });
+        player.playerStats = (player.playerStats ?? []).filter((stat: any) => stat.tournament?.id && accessibleTournamentIds.has(stat.tournament.id));
+        player.lineupEntries = (player.lineupEntries ?? []).filter((entry: any) => entry.game?.tournament?.id && accessibleTournamentIds.has(entry.game.tournament.id));
+        player.gamesMvp1 = (player.gamesMvp1 ?? []).filter((game: any) => game.tournamentId && accessibleTournamentIds.has(game.tournamentId));
+        player.gamesMvp2 = (player.gamesMvp2 ?? []).filter((game: any) => game.tournamentId && accessibleTournamentIds.has(game.tournamentId));
+        player.gamesWonAsPitcher = (player.gamesWonAsPitcher ?? []).filter((game: any) => game.tournamentId && accessibleTournamentIds.has(game.tournamentId));
+
         return player;
     }
 
     // ── IMPORT (preview por fila) ────────────────────────────────────────────
 
-    async importPlayers(data: BulkCreatePlayersDto, requestingUser: { role: string }) {
+    async importPlayers(data: BulkCreatePlayersDto, requestingUser: { id: string; role: string }) {
         const { teamId, tournamentId, players } = data;
+
+        // Delegado check
+        if (requestingUser.role === 'delegado') {
+            const activeDelegate = await this.delegatesService.getActiveDelegateForUser(requestingUser.id);
+            if (!activeDelegate || activeDelegate.teamId !== teamId || activeDelegate.tournamentId !== tournamentId) {
+                throw new ForbiddenException('No tienes permisos para importar jugadores a este equipo o torneo.');
+            }
+        }
 
         if (requestingUser.role === 'streamer') {
             const created = await this.prisma.$transaction(async (tx) => {
@@ -621,8 +792,16 @@ export class PlayersService {
 
     // ── CONFIRM IMPORT ───────────────────────────────────────────────────────
 
-    async confirmImport(data: ConfirmImportDto, _requestingUser: { role: string }) {
+    async confirmImport(data: ConfirmImportDto, requestingUser: { id: string; role: string }) {
         const { teamId, tournamentId, toCreate, toRoster } = data;
+
+        // Delegado check
+        if (requestingUser.role === 'delegado') {
+            const activeDelegate = await this.delegatesService.getActiveDelegateForUser(requestingUser.id);
+            if (!activeDelegate || activeDelegate.teamId !== teamId || activeDelegate.tournamentId !== tournamentId) {
+                throw new ForbiddenException('No tienes permisos para confirmar importaciones en este equipo o torneo.');
+            }
+        }
         await this.checkQuota(teamId, tournamentId, toCreate.length);
 
         return this.prisma.$transaction(async (tx) => {
@@ -675,29 +854,32 @@ export class PlayersService {
 
     async createBulk(data: BulkCreatePlayersDto) {
         // Redirigir a importPlayers con rol dummy para no romper integraciones antiguas
-        return this.importPlayers(data, { role: 'organizer' });
+        return this.importPlayers(data, { id: 'legacy-system', role: 'organizer' });
     }
 
     // ── UPDATE ───────────────────────────────────────────────────────────────
 
-    async update(id: string, updateData: UpdatePlayerDto) {
-        await this.findOne(id);
+    async update(id: string, updateData: UpdatePlayerDto, requestingUser?: { id: string; role: string }) {
+        const player = await this.findOne(id, requestingUser as Requestor | undefined);
         
         const { teamId, tournamentId, number, ...playerData } = updateData;
 
-        // Si se nos envía teamId y tournamentId, actualizamos también su RosterEntry correspondiente.
-        if (teamId && tournamentId) {
-            const entry = await (this.prisma.rosterEntry as any).findUnique({
-                where: { playerId_teamId_tournamentId: { playerId: id, teamId, tournamentId } },
-            });
-            if (entry) {
-                await (this.prisma.rosterEntry as any).update({
-                    where: { id: entry.id },
-                    data: {
-                        ...(number !== undefined ? { number } : {}),
-                        ...(playerData.position ? { position: playerData.position } : {}),
-                    },
-                });
+        // VALIDACIÓN DE SEGURIDAD PARA DELEGADO
+        if (requestingUser?.role === 'delegado') {
+            const activeDelegate = await this.delegatesService.getActiveDelegateForUser(requestingUser.id);
+            if (!activeDelegate) throw new ForbiddenException('Tu cuenta de delegado no está activa.');
+
+            // Si se está actualizando un RosterEntry específico (teamId + tournamentId), debe ser el suyo
+            if (teamId && tournamentId) {
+                if (teamId !== activeDelegate.teamId || tournamentId !== activeDelegate.tournamentId) {
+                    throw new ForbiddenException('No tienes permisos para editar jugadores de otros equipos.');
+                }
+            } else {
+                // Si no se pasó contexto, verificar que el jugador pertenezca a su equipo en algún lado
+                const belongsToMe = player.rosterEntries.some((e: any) => e.teamId === activeDelegate.teamId && e.tournamentId === activeDelegate.tournamentId && e.isActive);
+                if (!belongsToMe) {
+                    throw new ForbiddenException('Este jugador no pertenece a tu plantilla activa.');
+                }
             }
         }
 
@@ -713,6 +895,9 @@ export class PlayersService {
     // ── MERGE ────────────────────────────────────────────────────────────────
     
     async merge(primaryId: string, duplicateId: string, reqUser: any) {
+        if (reqUser && reqUser.role === 'delegado') {
+            throw new ForbiddenException('Los delegados no tienen permisos para fusionar jugadores.');
+        }
         if (primaryId === duplicateId) {
             throw new HttpException('No puedes fusionar a un jugador consigo mismo.', HttpStatus.BAD_REQUEST);
         }
@@ -874,17 +1059,31 @@ export class PlayersService {
 
         // Validación de Permisos si no es el Super Admin "admin"
         if (reqUser && reqUser.role !== 'admin') {
-            // Regla 1: Jugador verificado (múltiples equipos) no puede ser eliminado por organizadores/presis
+            const activeDelegate = reqUser.role === 'delegado' ? await this.delegatesService.getActiveDelegateForUser(reqUser.id) : null;
+
+            if (reqUser.role === 'delegado' && !activeDelegate) {
+                throw new ForbiddenException('Tu cuenta de delegado no está activa.');
+            }
+
+            // Regla 1: Jugador verificado (múltiples equipos) no puede ser eliminado por organizadores/presis/delegados
             if (player.rosterEntries.length > 1) {
                 throw new ForbiddenException('No puedes eliminar definitivamente a este jugador porque ya está participando en más de un equipo en el sistema. Por favor, si lo quieres fuera, solo dalo de baja de tu equipo desde el perfil del equipo.');
             }
 
-            // Regla 2: Si tiene 1 registro, debe ser estrictamente en una liga del usuario
+            // Regla 2: Si tiene 1 registro, debe ser estrictamente en una liga del usuario o equipo del delegado
             if (player.rosterEntries.length === 1) {
-                const trn = player.rosterEntries[0].team?.tournament;
-                const isAdmin = trn?.adminId === reqUser.id || trn?.league?.adminId === reqUser.id;
-                if (!isAdmin) {
-                    throw new ForbiddenException('No puedes eliminar a este jugador porque pertenece a una liga o torneo que no administras.');
+                const entry = player.rosterEntries[0];
+                const trn = entry.team?.tournament;
+                
+                if (reqUser.role === 'delegado') {
+                    if (entry.teamId !== activeDelegate?.teamId || entry.tournamentId !== activeDelegate?.tournamentId) {
+                        throw new ForbiddenException('No puedes eliminar a este jugador porque no pertenece a tu plantilla.');
+                    }
+                } else {
+                    const isAdmin = trn?.adminId === reqUser.id || trn?.league?.adminId === reqUser.id;
+                    if (!isAdmin) {
+                        throw new ForbiddenException('No puedes eliminar a este jugador porque pertenece a una liga o torneo que no administras.');
+                    }
                 }
             }
         }

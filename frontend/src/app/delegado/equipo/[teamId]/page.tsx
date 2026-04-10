@@ -5,8 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import api from '@/lib/api';
 import { getUser } from '@/lib/auth';
-import { uploadToCloudinary } from '@/lib/cloudinary';
-import { Users, Settings, Upload, Download, AlertTriangle, CheckCircle, XCircle, Search, Plus, Lock } from 'lucide-react';
+import { Users, Settings, Upload, Download, AlertTriangle, CheckCircle, XCircle, Search, Plus, Lock, UserMinus } from 'lucide-react';
 import ImageUploader from '@/components/ui/ImageUploader';
 
 type TabType = 'perfil' | 'jugadores' | 'importar';
@@ -20,20 +19,19 @@ interface TeamData {
     tournament: { id: string; name: string; status: string; season: string };
 }
 
-interface PlayerItem {
-    id: string;
-    firstName: string;
-    lastName: string;
-    secondLastName?: string;
-    curp?: string;
-    birthDate?: string;
-    birthPlace?: string;
+interface RosterEntry {
+    id: string;        // RosterEntry ID — usado para dar de baja
     number?: number;
     position?: string;
-    bats?: string;
-    throws?: string;
-    photoUrl?: string;
-    isVerified?: boolean;
+    player: {
+        id: string;
+        firstName: string;
+        lastName: string;
+        photoUrl?: string;
+        bats?: string;
+        throws?: string;
+        isVerified?: boolean;
+    };
 }
 
 type ImportRowStatus = 'pending_confirm' | 'duplicate_global' | 'duplicate_tournament' | 'duplicate_team';
@@ -43,9 +41,6 @@ interface ImportRow {
     firstName: string;
     lastName: string;
     secondLastName?: string;
-    curp?: string;
-    birthDate?: string;
-    birthPlace?: string;
     existing?: { id: string; firstName: string; lastName: string; secondLastName?: string; isVerified: boolean; team: { name: string; tournament: { name: string } } };
 }
 
@@ -55,20 +50,21 @@ export default function DelegatePage() {
 
     const [activeTab, setActiveTab] = useState<TabType>('perfil');
     const [team, setTeam] = useState<TeamData | null>(null);
-    const [players, setPlayers] = useState<PlayerItem[]>([]);
+    const [rosterEntries, setRosterEntries] = useState<RosterEntry[]>([]);
+    const [rosterLimit, setRosterLimit] = useState<number>(25);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [isBlocked, setIsBlocked] = useState(false); // torneo no está en "upcoming"
+    const [isBlocked, setIsBlocked] = useState(false);
 
     // Perfil form
     const [profileForm, setProfileForm] = useState({ name: '', managerName: '', logoUrl: '' });
 
-    // Add player manual form
+    // Add player modal
     const [showAddModal, setShowAddModal] = useState(false);
     const [addTab, setAddTab] = useState<'manual' | 'buscar'>('manual');
     const [newPlayerForm, setNewPlayerForm] = useState({ firstName: '', lastName: '', secondLastName: '', number: '', position: 'INF', bats: 'R', throws: 'R', photoUrl: '' });
     const [searchQuery, setSearchQuery] = useState('');
-    const [searchResults, setSearchResults] = useState<PlayerItem[]>([]);
+    const [searchResults, setSearchResults] = useState<any[]>([]);
     const [liveValidation, setLiveValidation] = useState<any>(null);
     const [checkingLive, setCheckingLive] = useState(false);
 
@@ -96,17 +92,42 @@ export default function DelegatePage() {
         finally { setLoading(false); }
     }, [teamId, router]);
 
-    const fetchPlayers = useCallback(async () => {
+    // ─── Fetch roster (RosterEntries activos) ──────────────────────
+    // FIX: usar GET /api/roster/team/:teamId en vez de GET /api/players?teamId
+    const fetchRoster = useCallback(async () => {
+        if (!team?.tournament?.id) return;
         try {
-            const { data } = await api.get('/players', { params: { teamId } });
-            setPlayers(data || []);
+            const { data } = await api.get(`/roster/team/${teamId}`, {
+                params: { tournamentId: team.tournament.id },
+            });
+            setRosterEntries(data || []);
         } catch { /* silencioso */ }
-    }, [teamId]);
+    }, [teamId, team?.tournament?.id]);
+
+    // ─── Fetch plan limit ──────────────────────────────────────────
+    const fetchRosterLimit = useCallback(async () => {
+        if (!team?.tournament?.id) return;
+        try {
+            // El organizador de la liga tiene maxPlayersPerTeam en su perfil
+            // Lo obtenemos del torneo → liga → admin
+            const { data: tournamentData } = await api.get(`/torneos/${team.tournament.id}`);
+            const leagueAdminMaxPlayers = tournamentData?.league?.admin?.maxPlayersPerTeam;
+            if (leagueAdminMaxPlayers && leagueAdminMaxPlayers > 0) {
+                setRosterLimit(leagueAdminMaxPlayers);
+            }
+        } catch { /* usa default 25 */ }
+    }, [team?.tournament?.id]);
 
     useEffect(() => {
         fetchTeam();
-        fetchPlayers();
-    }, [fetchTeam, fetchPlayers]);
+    }, [fetchTeam]);
+
+    useEffect(() => {
+        if (team) {
+            fetchRoster();
+            fetchRosterLimit();
+        }
+    }, [team, fetchRoster, fetchRosterLimit]);
 
     // ─── Live validation while typing new player ────────────────────
     useEffect(() => {
@@ -160,7 +181,7 @@ export default function DelegatePage() {
             setShowAddModal(false);
             setNewPlayerForm({ firstName: '', lastName: '', secondLastName: '', number: '', position: 'INF', bats: 'R', throws: 'R', photoUrl: '' });
             setLiveValidation(null);
-            await fetchPlayers();
+            await fetchRoster();
         } catch (err: any) {
             alert(err?.response?.data?.message || 'Error al agregar jugador');
         } finally { setSaving(false); }
@@ -174,18 +195,31 @@ export default function DelegatePage() {
         } catch { setSearchResults([]); }
     };
 
-    const handleAddVerified = async (player: PlayerItem) => {
+    // FIX: usar POST /api/roster en vez de /roster-entries
+    const handleAddVerified = async (player: any) => {
         setSaving(true);
         try {
-            await api.post('/roster-entries', {
+            await api.post('/roster', {
                 playerId: player.id,
                 teamId,
                 tournamentId: team?.tournament.id,
             });
             setSearchResults(prev => prev.filter(p => p.id !== player.id));
-            await fetchPlayers();
+            await fetchRoster();
         } catch (err: any) {
             alert(err?.response?.data?.message || 'Error al agregar jugador al roster');
+        } finally { setSaving(false); }
+    };
+
+    // FIX: dar de baja usando el RosterEntry ID
+    const handleRemoveFromRoster = async (entryId: string, playerName: string) => {
+        if (!confirm(`¿Dar de baja a ${playerName} del roster? El jugador seguirá existiendo en la plataforma.`)) return;
+        setSaving(true);
+        try {
+            await api.delete(`/roster/${entryId}`);
+            await fetchRoster();
+        } catch (err: any) {
+            alert(err?.response?.data?.message || 'Error al dar de baja al jugador');
         } finally { setSaving(false); }
     };
 
@@ -221,7 +255,7 @@ export default function DelegatePage() {
                 teamId, tournamentId: team?.tournament.id,
             });
             setCsvRows(prev => prev.filter(r => r.row !== row.row));
-            await fetchPlayers();
+            await fetchRoster();
         } catch (err: any) {
             alert(err?.response?.data?.message || 'Error al confirmar jugador');
         }
@@ -247,6 +281,7 @@ export default function DelegatePage() {
 
     const inputCls = 'w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm';
     const labelCls = 'block text-xs font-bold text-muted-foreground mb-1 uppercase';
+    const atLimit = rosterEntries.length >= rosterLimit;
 
     return (
         <div className="min-h-screen bg-background text-foreground">
@@ -290,7 +325,7 @@ export default function DelegatePage() {
                 <div className="flex gap-2 mb-6 border-b border-muted/20 pb-0 overflow-x-auto scrollbar-hide">
                     {([
                         { id: 'perfil', label: 'Perfil del Equipo', icon: <Settings className="w-4 h-4" /> },
-                        { id: 'jugadores', label: `Jugadores (${players.length})`, icon: <Users className="w-4 h-4" /> },
+                        { id: 'jugadores', label: `Mi Plantilla (${rosterEntries.length}/${rosterLimit})`, icon: <Users className="w-4 h-4" /> },
                         { id: 'importar', label: 'Importar CSV', icon: <Upload className="w-4 h-4" /> },
                     ] as const).map(tab => (
                         <button
@@ -350,17 +385,36 @@ export default function DelegatePage() {
                     </div>
                 )}
 
-                {/* TAB: JUGADORES */}
+                {/* TAB: JUGADORES (MI PLANTILLA) */}
                 {activeTab === 'jugadores' && (
                     <div className="animate-fade-in-up space-y-4">
-                        {!isBlocked && (
-                            <div className="flex justify-end">
+                        {/* Indicador de cupo */}
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="text-sm text-muted-foreground">
+                                    Cupo: <span className={`font-black ${atLimit ? 'text-red-400' : 'text-foreground'}`}>{rosterEntries.length}</span>
+                                    <span className="text-muted-foreground"> / {rosterLimit}</span>
+                                </div>
+                                <div className="w-32 h-2 bg-muted/30 rounded-full overflow-hidden">
+                                    <div
+                                        className={`h-full rounded-full transition-all ${atLimit ? 'bg-red-500' : rosterEntries.length / rosterLimit > 0.8 ? 'bg-amber-500' : 'bg-primary'}`}
+                                        style={{ width: `${Math.min((rosterEntries.length / rosterLimit) * 100, 100)}%` }}
+                                    />
+                                </div>
+                            </div>
+                            {!isBlocked && !atLimit && (
                                 <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-5 py-2 bg-primary hover:bg-primary-light text-white font-bold rounded-lg transition shadow-md hover:shadow-primary/40 text-sm">
                                     <Plus className="w-4 h-4" /> Agregar Jugador
                                 </button>
-                            </div>
-                        )}
-                        {players.length === 0 ? (
+                            )}
+                            {!isBlocked && atLimit && (
+                                <span className="text-xs font-bold text-red-400 bg-red-500/10 px-3 py-1.5 rounded-lg border border-red-500/20">
+                                    Cupo lleno — da de baja a un jugador primero
+                                </span>
+                            )}
+                        </div>
+
+                        {rosterEntries.length === 0 ? (
                             <div className="bg-surface border border-muted/30 rounded-2xl p-12 text-center">
                                 <Users className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-40" />
                                 <p className="text-muted-foreground font-bold">No hay jugadores en el roster.</p>
@@ -368,16 +422,38 @@ export default function DelegatePage() {
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                {players.map(p => (
-                                    <div key={p.id} className="bg-surface border border-muted/30 rounded-2xl p-4 flex items-center gap-3">
+                                {rosterEntries.map(entry => (
+                                    <div key={entry.id} className="bg-surface border border-muted/30 rounded-2xl p-4 flex items-center gap-3">
                                         <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-black text-primary shrink-0 overflow-hidden">
-                                            {p.photoUrl ? <img src={p.photoUrl} alt="" className="w-full h-full object-cover" /> : (p.firstName[0] || '?')}
+                                            {entry.player.photoUrl
+                                                ? <img src={entry.player.photoUrl} alt="" className="w-full h-full object-cover" />
+                                                : (entry.player.firstName[0] || '?')}
                                         </div>
                                         <div className="min-w-0 flex-1">
-                                            <p className="font-bold text-foreground text-sm truncate">{p.firstName} {p.lastName} {p.number ? `#${p.number}` : ''}</p>
-                                            <p className="text-xs text-muted-foreground">{p.position || 'Sin posición'} · {p.bats}B / {p.throws}T</p>
+                                            <p className="font-bold text-foreground text-sm truncate">
+                                                {entry.player.firstName} {entry.player.lastName}
+                                                {entry.number != null ? ` #${entry.number}` : ''}
+                                            </p>
+                                            <p className="text-xs text-muted-foreground">
+                                                {entry.position || 'Sin posición'}
+                                                {entry.player.bats ? ` · ${entry.player.bats}B / ${entry.player.throws}T` : ''}
+                                            </p>
                                         </div>
-                                        {p.isVerified && <span className="text-[10px] font-bold text-green-400 bg-green-500/10 px-2 py-0.5 rounded shrink-0">✓ Verificado</span>}
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            {entry.player.isVerified && (
+                                                <span className="text-[10px] font-bold text-green-400 bg-green-500/10 px-2 py-0.5 rounded">✓</span>
+                                            )}
+                                            {!isBlocked && (
+                                                <button
+                                                    onClick={() => handleRemoveFromRoster(entry.id, `${entry.player.firstName} ${entry.player.lastName}`)}
+                                                    disabled={saving}
+                                                    title="Dar de baja del roster"
+                                                    className="p-1.5 text-red-400/50 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition"
+                                                >
+                                                    <UserMinus className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -473,7 +549,6 @@ export default function DelegatePage() {
                                     <label className={labelCls}>Segundo Apellido</label>
                                     <input value={newPlayerForm.secondLastName} onChange={e => setNewPlayerForm(f => ({ ...f, secondLastName: e.target.value }))} className={inputCls} placeholder="García (opcional)" />
                                 </div>
-                                {/* Live validation badge */}
                                 {checkingLive && <p className="text-xs text-muted-foreground">Verificando duplicados...</p>}
                                 {liveValidation && !checkingLive && (
                                     <div className={`p-3 rounded-xl border text-xs font-bold ${liveValidation.status === 'duplicate_team' ? 'border-red-500/30 bg-red-500/5 text-red-400' : liveValidation.status === 'duplicate_tournament' ? 'border-amber-500/30 bg-amber-500/5 text-amber-400' : liveValidation.status === 'duplicate_global' ? 'border-blue-500/30 bg-blue-500/5 text-blue-400' : 'border-green-500/30 bg-green-500/5 text-green-400'}`}>

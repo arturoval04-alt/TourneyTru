@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+
+import { Requestor } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDocumentDto } from './dto/document.dto';
 
@@ -24,11 +26,33 @@ export class DocumentsService {
         });
     }
 
-    async findByTournament(tournamentId: string) {
-        const tournament = await this.prisma.tournament.findUnique({
+    async findByTournament(tournamentId: string, requestor?: Requestor) {
+        const tournament = await (this.prisma.tournament.findUnique as any)({
             where: { id: tournamentId },
+            include: {
+                league: { select: { id: true, adminId: true, isPrivate: true } },
+                organizers: { select: { userId: true } },
+            },
         });
         if (!tournament) throw new NotFoundException('Torneo no encontrado.');
+
+        if (requestor?.role !== 'admin') {
+            if (tournament.league?.isPrivate) {
+                const isLeagueAdmin = requestor?.id === tournament.league.adminId;
+                const isAssignedSK = requestor?.role === 'scorekeeper' && requestor.scorekeeperTournamentIds?.includes(tournamentId);
+                if (!isLeagueAdmin && !isAssignedSK) {
+                    throw new ForbiddenException({ code: 'PRIVATE', message: 'Esta liga es privada.' });
+                }
+            }
+            if (tournament.isPrivate) {
+                const isLeagueAdmin = requestor?.id === tournament.league?.adminId;
+                const isOrganizer = tournament.organizers?.some((o: any) => o.userId === requestor?.id);
+                const isAssignedSK = requestor?.role === 'scorekeeper' && requestor.scorekeeperTournamentIds?.includes(tournamentId);
+                if (!isLeagueAdmin && !isOrganizer && !isAssignedSK) {
+                    throw new ForbiddenException({ code: 'PRIVATE', message: 'Este torneo es privado.' });
+                }
+            }
+        }
 
         return (this.prisma.tournamentDocument as any).findMany({
             where: { tournamentId },

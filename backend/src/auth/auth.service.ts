@@ -95,7 +95,16 @@ export class AuthService {
     async login(dto: LoginDto) {
         const user = await this.prisma.user.findUnique({
             where: { email: dto.email.toLowerCase() },
-            include: { role: true },
+            include: { 
+                role: true,
+                teamDelegates: {
+                    where: { isActive: true },
+                    include: { tournament: true }
+                },
+                scorekeeperTournaments: {
+                    select: { tournamentId: true }
+                }
+            },
         });
 
         if (!user) {
@@ -111,7 +120,8 @@ export class AuthService {
             throw new UnauthorizedException('EMAIL_NOT_VERIFIED');
         }
 
-        const tokens = this.generateTokens(user.id, user.email, user.role.name);
+        const activeDelegate = (user as any).teamDelegates?.[0];
+        const tokens = this.generateTokens(user.id, user.email, (user as any).role.name);
 
         return {
             user: {
@@ -121,14 +131,18 @@ export class AuthService {
                 lastName: user.lastName,
                 phone: user.phone,
                 profilePicture: user.profilePicture,
-                role: user.role.name,
+                role: (user as any).role.name,
                 scorekeeperLeagueId: (user as any).scorekeeperLeagueId ?? null,
+                scorekeeperTournamentIds: (user as any).scorekeeperTournaments?.map((s: any) => s.tournamentId) || [],
                 forcePasswordChange: (user as any).forcePasswordChange ?? false,
                 maxLeagues: (user as any).maxLeagues ?? 0,
                 maxTournamentsPerLeague: (user as any).maxTournamentsPerLeague ?? 0,
                 maxTeamsPerTournament: (user as any).maxTeamsPerTournament ?? 0,
                 maxPlayersPerTeam: (user as any).maxPlayersPerTeam ?? 25,
                 planLabel: (user as any).planLabel ?? 'public',
+                delegateTeamId: activeDelegate?.teamId ?? null,
+                delegateTournamentId: activeDelegate?.tournamentId ?? null,
+                isDelegateActive: !!activeDelegate,
             },
             ...tokens,
         };

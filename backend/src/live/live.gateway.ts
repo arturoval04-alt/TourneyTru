@@ -25,6 +25,7 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
   server: Server;
 
   private readonly logger = new Logger(LiveGateway.name);
+  private activeGames: Record<string, any> = {};
 
   constructor(private prisma: PrismaService, private jwtService: JwtService) { }
 
@@ -46,6 +47,16 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     throw new Error('withRetry: unreachable');
   }
 
+  private parseCookieHeader(cookieHeader?: string): Record<string, string> {
+    if (!cookieHeader) return {};
+    return cookieHeader.split(';').reduce<Record<string, string>>((acc, chunk) => {
+      const [rawKey, ...rawValue] = chunk.split('=');
+      const key = rawKey?.trim();
+      if (!key) return acc;
+      acc[key] = decodeURIComponent(rawValue.join('=').trim());
+      return acc;
+    }, {});
+  }
 
   private getAuthToken(client: Socket, payloadToken?: string): string | null {
     if (payloadToken) return payloadToken;
@@ -55,7 +66,8 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (typeof header === 'string' && header.startsWith('Bearer ')) {
       return header.slice(7);
     }
-    return null;
+    const cookies = this.parseCookieHeader(client.handshake.headers?.cookie as string | undefined);
+    return cookies.accessToken ?? null;
   }
 
   private verifySocketAuth(client: Socket, payloadToken?: string) {
@@ -68,59 +80,71 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-
-  // Mapa temporal en memoria para mantener el último estado de cada juego activo
-  private activeGames: Record<string, any> = {};
+  private buildFallbackState(game: {
+    currentInning: number | null;
+    half: string | null;
+    homeScore: number;
+    awayScore: number;
+  }) {
+    return {
+      inning: game.currentInning ?? 1,
+      half: game.half ?? 'top',
+      outs: 0,
+      balls: 0,
+      strikes: 0,
+      homeScore: game.homeScore ?? 0,
+      awayScore: game.awayScore ?? 0,
+      bases: { first: null, second: null, third: null },
+      currentBatter: 'Esperando Bateador...',
+      currentBatterId: null,
+      playLogs: [],
+      playbackId: null,
+    };
+  }
 
   handleConnection(client: Socket) {
-    // Si el cliente envía un token al conectarse, verificarlo de inmediato.
-    // Clientes sin token (espectadores del gamecast) se aceptan.
     const token = this.getAuthToken(client);
     if (token) {
       const payload = this.verifySocketAuth(client);
       if (!payload) {
-        this.logger.warn(`Cliente ${client.id} desconectado: token inválido`);
+        this.logger.warn(`Cliente ${client.id} desconectado: token inv?lido`);
         client.disconnect(true);
         return;
       }
-      // Guardar el payload en los datos del socket para usarlo después
       (client.data as any).user = payload;
     }
-    console.log(`Client connected: ${client.id}`);
+    this.logger.log(`Client connected: ${client.id}`);
   }
 
   handleDisconnect(client: Socket) {
-    console.log(`Client disconnected: ${client.id}`);
+    this.logger.log(`Client disconnected: ${client.id}`);
   }
 
-  // Permite al Frontend Público o al Scorekeeper unirse al 'room' del juego actual
   @SubscribeMessage('joinGame')
   handleJoinGame(
     @MessageBody() gameId: string,
     @ConnectedSocket() client: Socket,
   ) {
     client.join(`game:${gameId}`);
-    console.log(`Client ${client.id} joined game: ${gameId}`);
+    this.logger.log(`Client ${client.id} joined game: ${gameId}`);
 
-    // Si ya existe un estado activo para ese juego en memoria, envíalo al recién conectado
     if (this.activeGames[gameId]) {
       client.emit('gameStateUpdate', {
         lastPlay: null,
-        fullState: this.activeGames[gameId]
+        fullState: this.activeGames[gameId],
       });
     }
 
     return { status: 'joined', gameId };
   }
 
-  // Permite a cualquier cliente solicitar el estado completo del juego (resync completo)
   @SubscribeMessage('requestFullSync')
   async handleRequestFullSync(
     @MessageBody() payload: any,
     @ConnectedSocket() client: Socket,
   ) {
     const gameId: string = typeof payload === 'string' ? payload : payload?.gameId;
-    // 1. Try in-memory state first
+
     if (this.activeGames[gameId]) {
       client.emit('fullStateSync', {
         gameId,
@@ -130,16 +154,17 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return { status: 'ok', source: 'memory' };
     }
 
-    // 2. Fall back to DB
     try {
       const game = await this.withRetry(() =>
         this.prisma.game.findUnique({
           where: { id: gameId },
-          include: {
-            homeTeam: { include: { rosterEntries: { where: { isActive: true }, include: { player: true } } } },
-            awayTeam: { include: { rosterEntries: { where: { isActive: true }, include: { player: true } } } },
-            lineups: { include: { player: true } },
-            plays: true,
+          select: {
+            id: true,
+            currentInning: true,
+            half: true,
+            homeScore: true,
+            awayScore: true,
+            liveStateJson: true,
           },
         }),
       );
@@ -149,8 +174,20 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return { status: 'not_found' };
       }
 
-      client.emit('fullStateSync', { gameId, fullState: game, source: 'db' });
-      return { status: 'ok', source: 'db' };
+      if (game.liveStateJson) {
+        try {
+          const parsedState = JSON.parse(game.liveStateJson);
+          this.activeGames[gameId] = parsedState;
+          client.emit('fullStateSync', { gameId, fullState: parsedState, source: 'db_live_state' });
+          return { status: 'ok', source: 'db_live_state' };
+        } catch (error) {
+          this.logger.warn(`liveStateJson inv?lido para juego ${gameId}: ${error}`);
+        }
+      }
+
+      const fallbackState = this.buildFallbackState(game);
+      client.emit('fullStateSync', { gameId, fullState: fallbackState, source: 'db_fallback' });
+      return { status: 'ok', source: 'db_fallback' };
     } catch (e) {
       this.logger.error('Error fetching full game state from DB:', e);
       client.emit('fullStateSync', { gameId, fullState: null, source: 'db', error: 'DB error' });
@@ -158,9 +195,8 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // Permite al scorekeeper inyectar el estado inicial directamente (si refresca o recién crea el juego)
   @SubscribeMessage('syncState')
-  handleSyncState(
+  async handleSyncState(
     @MessageBody() payload: { gameId: string; fullState: any; token?: string },
     @ConnectedSocket() client: Socket,
   ) {
@@ -168,17 +204,33 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!auth || !['admin', 'organizer', 'scorekeeper', 'streamer'].includes(auth.role)) {
       throw new WsException('Unauthorized');
     }
+
     const { gameId, fullState } = payload;
     this.activeGames[gameId] = fullState;
 
+    try {
+      await this.withRetry(() => this.prisma.game.update({
+        where: { id: gameId },
+        data: {
+          homeScore: fullState?.homeScore ?? 0,
+          awayScore: fullState?.awayScore ?? 0,
+          currentInning: fullState?.inning ?? 1,
+          half: fullState?.half ?? 'top',
+          status: 'in_progress',
+          liveStateJson: JSON.stringify(fullState ?? {}),
+        },
+      }));
+    } catch (error) {
+      this.logger.error('Error syncing full state to DB:', error);
+    }
+
     this.server.to(`game:${gameId}`).emit('gameStateUpdate', {
       lastPlay: null,
-      fullState: fullState,
+      fullState,
     });
     return { status: 'synced' };
   }
 
-  // Recibe jugadas del Scorekeeper, guarda en db y difunde a los fans
   @SubscribeMessage('registerPlay')
   async handleRegisterPlay(
     @MessageBody() payload: { gameId: string; playInfo: any; fullState?: any; token?: string },
@@ -190,13 +242,8 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     const { gameId, playInfo, fullState } = payload;
 
-    // Aquí (en fase 3 completa) se validaría la jugada y se actualizarían bases y Score.
-    // Por ahora, simulamos el motor de juego guardando el log básico y difundiéndolo.
-
-    // 2. Guardar en DB
     let play: any = null;
     try {
-      // Support both snake_case (frontend sends) and camelCase field names
       const batterId = playInfo.batter_id || playInfo.batterId;
       const pitcherId = playInfo.pitcher_id || playInfo.pitcherId;
       const outsBeforePlay = playInfo.outs_before_play ?? playInfo.outsBeforePlay ?? 0;
@@ -204,30 +251,17 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const outsRecorded = playInfo.outs_recorded ?? playInfo.outsRecorded ?? 0;
       const rbi = playInfo.rbi ?? 0;
 
-      if (!batterId) {
-        console.warn("⚠️ Advertencia: batter_id no fue proporcionado. Asignando jugada a bateador por defecto.");
+      if (!batterId || !pitcherId) {
+        const missing = !batterId && !pitcherId ? 'batter_id y pitcher_id' : !batterId ? 'batter_id' : 'pitcher_id';
+        this.logger.error(`Jugada rechazada: falta ${missing}`);
+        client.emit('play_error', { code: 'MISSING_PLAYER', message: `No se puede registrar la jugada: falta ${missing}.` });
+        return { status: 'error', code: 'MISSING_PLAYER' };
       }
 
-      // Buscar un fallback real en base de datos si falta el batter o pitcher
-      let validBatterId = batterId;
-      let validPitcherId = pitcherId;
-
-      if (!validBatterId) {
-        const fallbackPlayer = await this.prisma.player.findFirst();
-        validBatterId = fallbackPlayer ? fallbackPlayer.id : undefined;
-      }
-
-      if (!validPitcherId) {
-        const fallbackPlayer = await this.prisma.player.findFirst();
-        validPitcherId = fallbackPlayer ? fallbackPlayer.id : undefined;
-      }
-
-      // Extract just the play code from "CODE|Description" format
       const rawResult = playInfo.result || '';
       const resultCode = rawResult.includes('|') ? rawResult.split('|')[0] : rawResult;
       const resultDescription = rawResult.includes('|') ? rawResult.split('|')[1] : null;
 
-      // Resolver RosterEntry IDs usando el torneo y equipo del juego
       let batterRosterEntryId: string | undefined;
       let pitcherRosterEntryId: string | undefined;
       try {
@@ -240,14 +274,14 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
           const batterTeamId = half === 'top' ? gameRecord.awayTeamId : gameRecord.homeTeamId;
           const pitcherTeamId = half === 'top' ? gameRecord.homeTeamId : gameRecord.awayTeamId;
           const [batterEntry, pitcherEntry] = await Promise.all([
-            validBatterId ? this.prisma.rosterEntry.findFirst({
-              where: { playerId: validBatterId, teamId: batterTeamId, tournamentId: gameRecord.tournamentId },
+            this.prisma.rosterEntry.findFirst({
+              where: { playerId: batterId, teamId: batterTeamId, tournamentId: gameRecord.tournamentId },
               select: { id: true },
-            }) : null,
-            validPitcherId ? this.prisma.rosterEntry.findFirst({
-              where: { playerId: validPitcherId, teamId: pitcherTeamId, tournamentId: gameRecord.tournamentId },
+            }),
+            this.prisma.rosterEntry.findFirst({
+              where: { playerId: pitcherId, teamId: pitcherTeamId, tournamentId: gameRecord.tournamentId },
               select: { id: true },
-            }) : null,
+            }),
           ]);
           batterRosterEntryId = batterEntry?.id;
           pitcherRosterEntryId = pitcherEntry?.id;
@@ -261,15 +295,15 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
           gameId,
           inning: playInfo.inning,
           half: playInfo.half,
-          outsBeforePlay: outsBeforePlay,
+          outsBeforePlay,
           result: resultCode,
           description: resultDescription,
-          rbi: rbi,
-          runsScored: runsScored,
-          outsRecorded: outsRecorded,
+          rbi,
+          runsScored,
+          outsRecorded,
           scored: playInfo.scored || false,
-          batterId: validBatterId,
-          pitcherId: validPitcherId,
+          batterId,
+          pitcherId,
           batterRosterEntryId: batterRosterEntryId ?? null,
           pitcherRosterEntryId: pitcherRosterEntryId ?? null,
           runnersOnBase: playInfo.runners_on_base ?? '000',
@@ -281,18 +315,15 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
         }
       }));
       this.logger.log(`Jugada guardada (Play ID: ${play?.id}, Result: ${resultCode})`);
-      // Notificar al scorekeeper el ID del play guardado (para soporte de undo)
       if (play?.id) client.emit('play_registered', { playId: play.id });
     } catch (e) {
       this.logger.error('Error guardando play en DB (sin reintentos disponibles):', e);
-      // Notificar al scorekeeper para que reintente vía HTTP
       client.emit('play_db_error', {
         playInfo,
-        message: 'No se pudo guardar la jugada en la base de datos. Reintentando vía HTTP...',
+        message: 'No se pudo guardar la jugada en la base de datos. Reintentando v?a HTTP...',
       });
     }
 
-    // Sync game state to DB so it persists across page refreshes
     if (fullState) {
       try {
         await this.withRetry(() => this.prisma.game.update({
@@ -303,22 +334,21 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
             currentInning: fullState.inning ?? 1,
             half: fullState.half ?? 'top',
             status: 'in_progress',
+            liveStateJson: JSON.stringify(fullState),
           },
         }));
       } catch (e) {
         this.logger.error('Error syncing game state to DB:', e);
       }
 
-      // Actualizar el estado en memoria para futuros conectados
       this.activeGames[gameId] = fullState;
     }
 
-    // 2. Difundir a todo el los clientes viendo este juego (Gamecast y Panel local)
     this.server.to(`game:${gameId}`).emit('gameStateUpdate', {
       lastPlay: playInfo,
-      fullState: fullState,
+      fullState,
     });
 
-    return { status: 'play_registered', playId: null };
+    return { status: 'play_registered', playId: play?.id ?? null };
   }
 }

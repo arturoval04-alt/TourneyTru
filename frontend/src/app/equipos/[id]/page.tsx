@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { getUser } from '@/lib/auth';
 import api from "@/lib/api";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
     Settings, Share2, ArrowLeft, Users, Trophy, Flag, MapPin, ExternalLink, Clock, Star, Activity, X, CheckCircle, UserPlus, Search, Plus, Upload, Download, FileText, AlertTriangle, XCircle
 } from "lucide-react";
@@ -125,9 +125,21 @@ export default function TeamProfilePage() {
     const [statsType, setStatsType] = useState<"bateo" | "pitcheo">("bateo");
 
     const router = useRouter();
+    const searchParams = useSearchParams();
 
     const [canEdit, setCanEdit] = useState(false);
     const [showCopiedToast, setShowCopiedToast] = useState(false);
+
+    // Auto-trigger import modal if query param is present
+    useEffect(() => {
+        if (searchParams?.get('import') === 'true') {
+            setShowAddPlayerModal(true);
+            setAddPlayerTab('csv');
+            // Remove the param from URL without refreshing
+            const newUrl = window.location.pathname;
+            window.history.replaceState({ ...window.history.state, as: newUrl, url: newUrl }, '', newUrl);
+        }
+    }, [searchParams]);
 
     // Add Verified Player modal state
     const [showAddVerifiedModal, setShowAddVerifiedModal] = useState(false);

@@ -29,11 +29,18 @@ export class DocumentsController {
         return this.documentsService.create(dto, req.user.id);
     }
 
-    /** Listar documentos de un torneo — público */
+    /** Listar documentos de un torneo — respeta privacidad */
     @Get('tournament/:tournamentId')
     @UseGuards(OptionalJwtAuthGuard)
-    findByTournament(@Param('tournamentId') tournamentId: string) {
-        return this.documentsService.findByTournament(tournamentId);
+    findByTournament(@Param('tournamentId') tournamentId: string, @Req() req: any) {
+        const requestor = req?.user ? { 
+            id: req.user.id, 
+            userId: req.user.id,
+            role: req.user.role, 
+            scorekeeperLeagueId: req.user.scorekeeperLeagueId ?? null,
+            scorekeeperTournamentIds: req.user.scorekeeperTournamentIds ?? []
+        } : undefined;
+        return this.documentsService.findByTournament(tournamentId, requestor);
     }
 
     /** Descargar plantilla CSV de jugadores */

@@ -178,6 +178,19 @@ export class UsersService {
         });
 
         const sc = user as any;
+
+        // Auto-assign existing tournaments in the league (F3.2)
+        const tournaments = await this.prisma.tournament.findMany({
+            where: { leagueId: dto.leagueId },
+            select: { id: true }
+        });
+        
+        for (const t of tournaments) {
+            await this.prisma.scorekeeperTournament.create({
+                data: { userId: sc.id, tournamentId: t.id }
+            }).catch(() => {});
+        }
+
         return {
             id: sc.id,
             email: sc.email,
@@ -332,7 +345,8 @@ export class UsersService {
                 await this.prisma.tournamentOrganizer.create({
                     data: {
                         userId: user.id,
-                        tournamentId: tourneyId
+                        tournamentId: tourneyId,
+                        role: 'presi'
                     }
                 }).catch(() => {});
             }

@@ -122,12 +122,16 @@ export default function CreateGameWizard({
     if (context === 'scorekeeper') {
       if (propLeagueId) {
         // leagueId llegó correctamente desde el padre
+        setSelectedLeagueId(propLeagueId);
         loadTournaments(propLeagueId);
       } else {
         // Fallback: obtener leagueId fresco desde el servidor
         api.get('/auth/me').then(({ data }) => {
           const lid = data.scorekeeperLeagueId;
-          if (lid) loadTournaments(lid);
+          if (lid) {
+            setSelectedLeagueId(lid);
+            loadTournaments(lid);
+          }
         }).catch(() => {});
       }
     }

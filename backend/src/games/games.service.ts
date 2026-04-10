@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Requestor } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { AssignUmpireDto, ChangeLineupDto, CreateGameDto, UpdateGameDto, SetGameLineupDto, CambioSustitucionDto, CambioPosicionDto, CambioReingresoDto } from './dto/game.dto';
 import { SubmitManualStatsDto } from './dto/manual-stats.dto';
@@ -75,12 +76,20 @@ export class GamesService {
         return this.prisma.game.create({ data });
     }
 
-    async findAll(filters?: { status?: string; tournamentId?: string; limit?: number; adminId?: string; leagueId?: string }) {
+    async findAll(filters?: { status?: string; tournamentId?: string; limit?: number; adminId?: string; leagueId?: string; scorekeeperTournamentIds?: string[] }) {
         const where: any = {};
         if (filters?.status) where.status = filters.status;
         if (filters?.tournamentId) where.tournamentId = filters.tournamentId;
         if (filters?.adminId) where.tournament = { league: { adminId: filters.adminId } };
         if (filters?.leagueId) where.tournament = { leagueId: filters.leagueId };
+        
+        if (filters?.scorekeeperTournamentIds && filters.scorekeeperTournamentIds.length > 0) {
+            where.tournamentId = { in: filters.scorekeeperTournamentIds };
+            // If both tournamentId and scorekeeperTournamentIds are present, tournamentId filter takes precedence but we should ensure it's in the allowed list
+            if (filters.tournamentId && !filters.scorekeeperTournamentIds.includes(filters.tournamentId)) {
+                where.tournamentId = "__none__";
+            }
+        }
 
         return this.prisma.game.findMany({
             where,
@@ -94,7 +103,7 @@ export class GamesService {
         });
     }
 
-    async findOne(id: string) {
+    async findOne(id: string, requestor?: Requestor) {
         const game = await this.prisma.game.findUnique({
             where: { id },
             include: {
@@ -102,7 +111,8 @@ export class GamesService {
                 awayTeam: { include: { rosterEntries: { where: { isActive: true }, include: { player: true } } } },
                 tournament: {
                     include: {
-                        league: { select: { id: true, adminId: true } },
+                        league: { select: { id: true, adminId: true, isPrivate: true } },
+                        organizers: { select: { userId: true } },
                     },
                 },
                 winningPitcher: true,
@@ -119,11 +129,56 @@ export class GamesService {
             throw new NotFoundException(`Game with id ${id} not found`);
         }
 
+        // Privacy: si la liga o el torneo son privados, solo pueden ver el juego
+        // quienes tengan acceso a ese torneo.
+        const tournament = (game as any).tournament;
+        const league = tournament?.league;
+        const isSystemAdmin = requestor?.role === 'admin';
+
+        if (!isSystemAdmin) {
+            if (league?.isPrivate) {
+                const isLeagueAdmin = requestor?.id === league.adminId;
+                const isAssignedSK = requestor?.role === 'scorekeeper' && requestor.scorekeeperTournamentIds?.includes(game.tournamentId);
+                if (!isLeagueAdmin && !isAssignedSK) {
+                    throw new ForbiddenException({ code: 'PRIVATE', message: 'Esta liga es privada.' });
+                }
+            }
+            if ((tournament as any)?.isPrivate) {
+                const isLeagueAdmin = requestor?.id === league?.adminId;
+                const isOrganizer = tournament?.organizers?.some((o: any) => o.userId === requestor?.id);
+                const isAssignedSK = requestor?.role === 'scorekeeper' && requestor.scorekeeperTournamentIds?.includes(game.tournamentId);
+                if (!isLeagueAdmin && !isOrganizer && !isAssignedSK) {
+                    throw new ForbiddenException({ code: 'PRIVATE', message: 'Este torneo es privado.' });
+                }
+            }
+        }
+
         return game;
     }
 
-    async update(id: string, updateData: UpdateGameDto) {
-        const game = await this.findOne(id);
+    private assertGameOwnership(game: any, requestor?: Requestor) {
+        if (!requestor) throw new ForbiddenException('Se requiere autenticaci?n.');
+        if (requestor.role === 'admin') return;
+        const leagueOwnerId = game.tournament?.league?.adminId;
+        const tournamentOwnerId = game.tournament?.adminId;
+        const isLeagueOwner = requestor.id === leagueOwnerId;
+        const isTournamentOwner = requestor.id === tournamentOwnerId;
+        const isOrganizer = game.tournament?.organizers?.some((o: any) => o.userId === requestor.id);
+        const isAssignedScorekeeper = requestor.role === 'scorekeeper' && requestor.scorekeeperTournamentIds?.includes(game.tournamentId);
+
+        if (!isLeagueOwner && !isTournamentOwner && !isOrganizer && !isAssignedScorekeeper) {
+            throw new ForbiddenException('No tienes permiso para modificar este juego.');
+        }
+    }
+
+    private async getOwnedGame(gameId: string, requestor?: Requestor) {
+        const game = await this.findOne(gameId, requestor);
+        this.assertGameOwnership(game, requestor);
+        return game;
+    }
+
+    async update(id: string, updateData: UpdateGameDto, requestor?: Requestor) {
+        const game = await this.getOwnedGame(id, requestor);
         
         // Ensure empty strings are casted to undefined so Prisma ignores them correctly instead of throwing 400 Bad Request
         if (updateData.winningPitcherId === "") updateData.winningPitcherId = undefined;
@@ -144,8 +199,9 @@ export class GamesService {
         if (updateData.status === 'finished' && game.status !== 'finished') {
             try {
                 await this.recalculateStandings(game.tournamentId);
+                await this.cleanupStreamerPlayers(id);
             } catch (err) {
-                console.error('[Standings] Error recalculating standings:', err);
+                console.error('[Standings/Cleanup] Error:', err);
             }
         }
 
@@ -197,17 +253,66 @@ export class GamesService {
         console.log(`[Standings] Recalculated for tournament ${tournamentId}`);
     }
 
-    async remove(id: string) {
-        await this.findOne(id);
+    async remove(id: string, requestor?: Requestor) {
+        const game = await this.getOwnedGame(id, requestor);
         return this.prisma.game.delete({
             where: { id },
         });
     }
 
-    async setLineup(gameId: string, teamId: string, lineupData: SetGameLineupDto) {
+    /**
+     * Elimina jugadores temporales creados por streamers que no tienen jugadas/stats vinculadas
+     * o que ya cumplieron su propósito en este juego finalizado.
+     */
+    private async cleanupStreamerPlayers(gameId: string) {
+        // Encontrar jugadores creados por streamer que estuvieron en este juego
+        const streamerPlayers = await (this.prisma.player as any).findMany({
+            where: {
+                isStreamerCreated: true,
+                rosterEntries: { some: { gameId: gameId } } // Assuming rosterEntry might have gameId for temp players, or just linked via team/tournament
+            }
+        });
+
+        // Alternativa: buscar en RosterEntries del torneo/equipo del juego
+        const game = await this.prisma.game.findUnique({ where: { id: gameId } });
+        if (!game) return;
+
+        const playersInGame = await (this.prisma.player as any).findMany({
+            where: {
+                isStreamerCreated: true,
+                rosterEntries: {
+                    some: {
+                        tournamentId: game.tournamentId,
+                        teamId: { in: [game.homeTeamId, game.awayTeamId] }
+                    }
+                }
+            },
+            include: {
+                _count: {
+                    select: {
+                        playsAsBatter: true,
+                        playsAsPitcher: true,
+                        playerStats: true,
+                        rosterEntries: true
+                    }
+                }
+            }
+        });
+
+        for (const player of playersInGame) {
+            // Si el jugador solo tiene el roster entry de este torneo y ninguna jugada real vinculada (o solo en este juego)
+            // los borramos si así lo desea el sistema para mantener limpieza.
+            // NOTA: Por ahora solo borramos los que NO tienen jugadas para evitar romper el historial.
+            if (player._count.playsAsBatter === 0 && player._count.playsAsPitcher === 0) {
+                await (this.prisma.player as any).delete({ where: { id: player.id } }).catch(() => {});
+            }
+        }
+    }
+
+    async setLineup(gameId: string, teamId: string, lineupData: SetGameLineupDto, requestor?: Requestor) {
         console.log(`[GamesService] Starting setLineup for game ${gameId}, team ${teamId}`);
         try {
-            const game = await this.findOne(gameId);
+            const game = await this.getOwnedGame(gameId, requestor);
 
             if (teamId !== game.homeTeamId && teamId !== game.awayTeamId) {
                 console.error(`[Lineup Error] Team ${teamId} is not part of game ${gameId}`);
@@ -250,8 +355,8 @@ export class GamesService {
         }
     }
 
-    async changeLineup(gameId: string, change: ChangeLineupDto) {
-        const game = await this.findOne(gameId);
+    async changeLineup(gameId: string, change: ChangeLineupDto, requestor?: Requestor) {
+        const game = await this.getOwnedGame(gameId, requestor);
 
         if (change.teamId !== game.homeTeamId && change.teamId !== game.awayTeamId) {
             throw new BadRequestException('El equipo no pertenece a este juego.');
@@ -311,27 +416,11 @@ export class GamesService {
             },
         });
 
-        return {
-            status: 'success',
-            message: 'Lineup actualizado correctamente.',
-            lineupId: updated.id,
-        };
+        return updated;
     }
 
-    // ─── Cambios v2 ─────────────────────────────────────────────────────────────
-
-    /**
-     * Devuelve quiénes pueden salir, entrar y reingresar para un equipo en un juego.
-     * Reglas WBSC:
-     *  - puedenSalir: jugadores isActive=true en el lineup
-     *  - puedenEntrar: roster del equipo que NO están en el lineup activo actual
-     *    y que no han sido removidos permanentemente (isActive=false y hasUsedReentry=true
-     *    → ya están fuera para siempre; isActive=false y hasUsedReentry=false → elegibles para reingreso, no para sustitución)
-     *  - puedenReingresar: starters (isStarter=true) con isActive=false y hasUsedReentry=false,
-     *    junto con el jugador que actualmente ocupa su batting order
-     */
-    async getCambiosEligibles(gameId: string, teamId: string) {
-        const game = await this.findOne(gameId);
+    async getCambiosEligibles(gameId: string, teamId: string, requestor?: Requestor) {
+        const game = await this.findOne(gameId, requestor);
         if (teamId !== game.homeTeamId && teamId !== game.awayTeamId) {
             throw new BadRequestException('El equipo no pertenece a este juego.');
         }
@@ -410,8 +499,8 @@ export class GamesService {
     /**
      * Sustitución (bateo y fildeo): sale un jugador activo, entra uno del roster no usado.
      */
-    async cambioSustitucion(gameId: string, dto: CambioSustitucionDto) {
-        const game = await this.findOne(gameId);
+    async cambioSustitucion(gameId: string, dto: CambioSustitucionDto, requestor?: Requestor) {
+        const game = await this.getOwnedGame(gameId, requestor);
         if (dto.teamId !== game.homeTeamId && dto.teamId !== game.awayTeamId) {
             throw new BadRequestException('El equipo no pertenece a este juego.');
         }
@@ -507,8 +596,8 @@ export class GamesService {
      * Cambio de posición (solo defensivo): intercambio entre jugadores ya en el lineup activo.
      * Recibe un array de swaps [{fromPosition, toPosition}] que puede ser circular.
      */
-    async cambioPosicion(gameId: string, dto: CambioPosicionDto) {
-        const game = await this.findOne(gameId);
+    async cambioPosicion(gameId: string, dto: CambioPosicionDto, requestor?: Requestor) {
+        const game = await this.getOwnedGame(gameId, requestor);
         if (dto.teamId !== game.homeTeamId && dto.teamId !== game.awayTeamId) {
             throw new BadRequestException('El equipo no pertenece a este juego.');
         }
@@ -587,8 +676,8 @@ export class GamesService {
      * El sustituto que lo había reemplazado sale permanentemente.
      * El titular recupera su batting order y posición original.
      */
-    async cambioReingreso(gameId: string, dto: CambioReingresoDto) {
-        const game = await this.findOne(gameId);
+    async cambioReingreso(gameId: string, dto: CambioReingresoDto, requestor?: Requestor) {
+        const game = await this.getOwnedGame(gameId, requestor);
         if (dto.teamId !== game.homeTeamId && dto.teamId !== game.awayTeamId) {
             throw new BadRequestException('El equipo no pertenece a este juego.');
         }
@@ -643,7 +732,8 @@ export class GamesService {
         return { status: 'success', message: 'Reingreso registrado.' };
     }
 
-    async getGameBoxscore(id: string) {
+    async getGameBoxscore(id: string, requestor?: Requestor) {
+        await this.findOne(id, requestor);
         const game = await this.prisma.game.findUnique({
             where: { id },
             include: {
@@ -1004,7 +1094,8 @@ export class GamesService {
      * Reconstruct the full game state from DB so the frontend can resume after a page refresh.
      * Returns everything the Zustand store needs to restore a game in progress.
      */
-    async getGameState(id: string) {
+    async getGameState(id: string, requestor?: Requestor) {
+        await this.findOne(id, requestor);
         const game = await this.prisma.game.findUnique({
             where: { id },
             include: {
@@ -1026,6 +1117,15 @@ export class GamesService {
         });
 
         if (!game) throw new NotFoundException(`Game with id ${id} not found`);
+
+        let persistedLiveState: any = null;
+        if ((game as any).liveStateJson) {
+            try {
+                persistedLiveState = JSON.parse((game as any).liveStateJson);
+            } catch (error) {
+                console.warn(`[GameState] liveStateJson inv?lido para juego ${id}:`, error);
+            }
+        }
 
         // Rebuild playLogs from DB plays
         const playLogs = game.plays.map((p) => {
@@ -1148,30 +1248,30 @@ export class GamesService {
             away_team_short: game.awayTeam?.shortName || (game.awayTeam?.name || 'AWA').slice(0, 3).toUpperCase(),
             tournament_name: game.tournament?.name || '',
             tournament_id: game.tournamentId,
-            current_inning: game.currentInning,
-            inning: game.currentInning,
-            half: game.half,
-            outs: currentOuts,
-            home_score: game.homeScore,
-            away_score: game.awayScore,
-            homeScore: game.homeScore,
-            awayScore: game.awayScore,
-            playLogs,
+            current_inning: persistedLiveState?.inning ?? activeInning,
+            inning: persistedLiveState?.inning ?? activeInning,
+            half: persistedLiveState?.half ?? activeHalf,
+            outs: persistedLiveState?.outs ?? currentOuts,
+            home_score: persistedLiveState?.homeScore ?? game.homeScore,
+            away_score: persistedLiveState?.awayScore ?? game.awayScore,
+            homeScore: persistedLiveState?.homeScore ?? game.homeScore,
+            awayScore: persistedLiveState?.awayScore ?? game.awayScore,
+            playLogs: persistedLiveState?.playLogs ?? playLogs,
             awayBatterIndex,
             homeBatterIndex,
-            currentBatter,
-            currentBatterId,
-            playback_id: null,
+            currentBatter: persistedLiveState?.currentBatter ?? currentBatter,
+            currentBatterId: persistedLiveState?.currentBatterId ?? currentBatterId,
+            playback_id: persistedLiveState?.playbackId ?? null,
             lineups,
             plays: game.plays,
-            // bases are not stored in DB — safe to reset to empty on refresh
-            bases: { first: null, second: null, third: null },
-            balls: 0,
-            strikes: 0,
+            bases: persistedLiveState?.bases ?? { first: null, second: null, third: null },
+            balls: persistedLiveState?.balls ?? 0,
+            strikes: persistedLiveState?.strikes ?? 0,
         };
     }
 
-    async getPitcherMatchup(gameId: string) {
+    async getPitcherMatchup(gameId: string, requestor?: Requestor) {
+        await this.findOne(gameId, requestor);
         const game = await this.prisma.game.findUnique({
             where: { id: gameId },
             include: {
@@ -1230,16 +1330,16 @@ export class GamesService {
         };
     }
 
-    async getGameUmpires(gameId: string) {
-        await this.findOne(gameId);
+    async getGameUmpires(gameId: string, requestor?: Requestor) {
+        await this.findOne(gameId, requestor);
         return this.prisma.gameUmpire.findMany({
             where: { gameId },
             include: { umpire: true },
         });
     }
 
-    async assignUmpire(gameId: string, dto: AssignUmpireDto) {
-        await this.findOne(gameId);
+    async assignUmpire(gameId: string, dto: AssignUmpireDto, requestor?: Requestor) {
+        await this.getOwnedGame(gameId, requestor);
         return this.prisma.gameUmpire.upsert({
             where: { gameId_umpireId: { gameId, umpireId: dto.umpireId } },
             create: { gameId, umpireId: dto.umpireId, role: dto.role ?? 'plate' },
@@ -1248,13 +1348,14 @@ export class GamesService {
         });
     }
 
-    async removeUmpire(gameId: string, umpireId: string) {
-        await this.findOne(gameId);
+    async removeUmpire(gameId: string, umpireId: string, requestor?: Requestor) {
+        await this.getOwnedGame(gameId, requestor);
         return this.prisma.gameUmpire.deleteMany({ where: { gameId, umpireId } });
     }
 
     // ─── Delete specific plays by ID (undo support) ──────────────────────────────
-    async deletePlays(gameId: string, playIds: string[]) {
+    async deletePlays(gameId: string, playIds: string[], requestor?: Requestor) {
+        await this.getOwnedGame(gameId, requestor);
         if (!playIds?.length) return { deleted: 0 };
         const result = await this.prisma.play.deleteMany({
             where: { id: { in: playIds }, gameId },
@@ -1277,7 +1378,8 @@ export class GamesService {
 
     // ─── Stream (Facebook Live) ──────────────────────────────────────────────────
 
-    async getStreamInfo(gameId: string) {
+    async getStreamInfo(gameId: string, requestor?: Requestor) {
+        await this.findOne(gameId, requestor);
         const game = await (this.prisma.game.findUnique as any)({
             where: { id: gameId },
             select: { id: true, facebookStreamUrl: true, streamStatus: true },
@@ -1289,7 +1391,8 @@ export class GamesService {
         };
     }
 
-    async startStream(gameId: string, facebookStreamUrl: string) {
+    async startStream(gameId: string, facebookStreamUrl: string, requestor?: Requestor) {
+        await this.getOwnedGame(gameId, requestor);
         const game = await (this.prisma.game.update as any)({
             where: { id: gameId },
             data: { facebookStreamUrl, streamStatus: 'live' },
@@ -1301,7 +1404,8 @@ export class GamesService {
         return { facebookStreamUrl: game.facebookStreamUrl, streamStatus: 'live' };
     }
 
-    async endStream(gameId: string) {
+    async endStream(gameId: string, requestor?: Requestor) {
+        await this.getOwnedGame(gameId, requestor);
         const game = await (this.prisma.game.update as any)({
             where: { id: gameId },
             data: { streamStatus: 'ended' },
@@ -1405,7 +1509,8 @@ export class GamesService {
         return { result: upper, isAB: true, isHit: false, isOut: true, outsRecorded: 1 };
     }
 
-    async submitManualStats(gameId: string, dto: SubmitManualStatsDto) {
+    async submitManualStats(gameId: string, dto: SubmitManualStatsDto, requestor?: Requestor) {
+        await this.getOwnedGame(gameId, requestor);
         // 1. Validate game exists
         const game = await this.prisma.game.findUnique({
             where: { id: gameId },

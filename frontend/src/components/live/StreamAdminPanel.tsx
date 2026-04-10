@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Radio, Copy, Check, ExternalLink, Monitor, Eye, ChevronDown, ChevronUp } from 'lucide-react';
 import { useGameStore } from '@/store/gameStore';
-import { isLoggedIn, getAccessToken } from '@/lib/auth';
+import { isLoggedIn } from '@/lib/auth';
 import api from '@/lib/api';
 
 interface Props {
@@ -73,9 +73,7 @@ export default function StreamAdminPanel({ gameId, forceView }: Props) {
         setError(null);
         setLoading(true);
         try {
-            await api.post(`/games/${gameId}/stream`, { facebookStreamUrl: urlInput.trim() }, {
-                headers: { Authorization: `Bearer ${getAccessToken()}` },
-            });
+            await api.post(`/games/${gameId}/stream`, { facebookStreamUrl: urlInput.trim() });
         } catch {
             setError('Error al iniciar el stream. Verifica tu sesión.');
         } finally {
@@ -87,9 +85,7 @@ export default function StreamAdminPanel({ gameId, forceView }: Props) {
         setError(null);
         setLoading(true);
         try {
-            await api.delete(`/games/${gameId}/stream`, {
-                headers: { Authorization: `Bearer ${getAccessToken()}` },
-            });
+            await api.delete(`/games/${gameId}/stream`);
         } catch {
             setError('Error al detener el stream.');
         } finally {

@@ -8,17 +8,35 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
+const ACCESS_COOKIE_OPTIONS = {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 24 * 60 * 60 * 1000,
+    path: '/',
+};
+
 const REFRESH_COOKIE_OPTIONS = {
     httpOnly: true,
     sameSite: 'lax' as const,
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
+    maxAge: 7 * 24 * 60 * 60 * 1000,
     path: '/',
 };
 
 @Controller('api/auth')
 export class AuthController {
     constructor(private readonly authService: AuthService) {}
+
+    private applyAuthCookies(res: Response, tokens: { accessToken: string; refreshToken: string }) {
+        res.cookie('accessToken', tokens.accessToken, ACCESS_COOKIE_OPTIONS);
+        res.cookie('refreshToken', tokens.refreshToken, REFRESH_COOKIE_OPTIONS);
+    }
+
+    private clearAuthCookies(res: Response) {
+        res.clearCookie('accessToken', { path: '/' });
+        res.clearCookie('refreshToken', { path: '/' });
+    }
 
     @Post('register')
     @Throttle({ default: { limit: 5, ttl: 60000 } })
@@ -44,7 +62,7 @@ export class AuthController {
     @Throttle({ default: { limit: 10, ttl: 60000 } })
     async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
         const result = await this.authService.login(dto);
-        res.cookie('refreshToken', result.refreshToken, REFRESH_COOKIE_OPTIONS);
+        this.applyAuthCookies(res, result);
         const { refreshToken: _, ...safeResult } = result;
         return safeResult;
     }
@@ -53,9 +71,9 @@ export class AuthController {
     @HttpCode(HttpStatus.OK)
     async refresh(@Req() req: ExpressRequest, @Res({ passthrough: true }) res: Response) {
         const token = (req as any).cookies?.refreshToken as string | undefined;
-        if (!token) throw new UnauthorizedException('Sesión expirada. Inicia sesión de nuevo.');
+        if (!token) throw new UnauthorizedException('Sesi?n expirada. Inicia sesi?n de nuevo.');
         const result = await this.authService.refreshToken(token);
-        res.cookie('refreshToken', result.refreshToken, REFRESH_COOKIE_OPTIONS);
+        this.applyAuthCookies(res, result);
         const { refreshToken: _, ...safeResult } = result;
         return safeResult;
     }
@@ -63,8 +81,8 @@ export class AuthController {
     @Post('logout')
     @HttpCode(HttpStatus.OK)
     logout(@Res({ passthrough: true }) res: Response) {
-        res.clearCookie('refreshToken', { path: '/' });
-        return { message: 'Sesión cerrada correctamente.' };
+        this.clearAuthCookies(res);
+        return { message: 'Sesi?n cerrada correctamente.' };
     }
 
     @Post('forgot-password')

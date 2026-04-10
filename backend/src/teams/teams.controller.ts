@@ -1,7 +1,8 @@
-import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query, Request } from '@nestjs/common';
 import { TeamsService } from './teams.service';
 import { CreateTeamDto, UpdateTeamDto, CreateTeamBulkDto } from './dto/team.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 
 @Controller('api/teams')
 export class TeamsController {
@@ -28,19 +29,27 @@ export class TeamsController {
     }
 
     @Get(':id')
-    findOne(@Param('id') id: string) {
-        return this.teamsService.findOne(id);
+    @UseGuards(OptionalJwtAuthGuard)
+    findOne(@Param('id') id: string, @Request() req: any) {
+        const requestor = req?.user ? { 
+            id: req.user.id, 
+            userId: req.user.id,
+            role: req.user.role, 
+            scorekeeperLeagueId: req.user.scorekeeperLeagueId ?? null,
+            scorekeeperTournamentIds: req.user.scorekeeperTournamentIds ?? []
+        } : undefined;
+        return this.teamsService.findOne(id, requestor);
     }
 
     @Patch(':id')
     @UseGuards(JwtAuthGuard)
-    update(@Param('id') id: string, @Body() updateTeamDto: UpdateTeamDto) {
-        return this.teamsService.update(id, updateTeamDto);
+    update(@Param('id') id: string, @Body() updateTeamDto: UpdateTeamDto, @Request() req: any) {
+        return this.teamsService.update(id, updateTeamDto, req.user);
     }
 
     @Delete(':id')
     @UseGuards(JwtAuthGuard)
-    remove(@Param('id') id: string) {
-        return this.teamsService.remove(id);
+    remove(@Param('id') id: string, @Request() req: any) {
+        return this.teamsService.remove(id, req.user);
     }
 }

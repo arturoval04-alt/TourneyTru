@@ -80,9 +80,6 @@ export default function LoginPage() {
                 maxPlayersPerTeam: data.user.maxPlayersPerTeam ?? 25,
                 planLabel: data.user.planLabel ?? 'public',
                 forcePasswordChange: data.user.forcePasswordChange ?? false,
-            }, {
-                accessToken: data.accessToken,
-                refreshToken: data.refreshToken,
             });
             const dashboardRoles = ['admin', 'organizer', 'scorekeeper', 'presi'];
             if (data.user.forcePasswordChange) {

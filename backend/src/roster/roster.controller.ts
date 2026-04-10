@@ -1,4 +1,4 @@
-import { Controller, Post, Delete, Get, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Post, Delete, Get, Param, Body, Query, UseGuards, Request } from '@nestjs/common';
 import { RosterService } from './roster.service';
 import { AddRosterEntryDto } from './dto/roster.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -9,20 +9,30 @@ export class RosterController {
 
     @Post()
     @UseGuards(JwtAuthGuard)
-    addToRoster(@Body() dto: AddRosterEntryDto) {
-        return this.rosterService.addToRoster(dto);
+    addToRoster(@Body() dto: AddRosterEntryDto, @Request() req: any) {
+        return this.rosterService.addToRoster(dto, { id: req.user.id, role: req.user.role });
     }
 
     @Delete(':id')
     @UseGuards(JwtAuthGuard)
-    removeFromRoster(@Param('id') id: string) {
-        return this.rosterService.removeFromRoster(id);
+    removeFromRoster(@Param('id') id: string, @Request() req: any) {
+        return this.rosterService.removeFromRoster(id, { id: req.user.id, role: req.user.role });
+    }
+
+    @Delete('player/:playerId/team/:teamId')
+    @UseGuards(JwtAuthGuard)
+    removeFromRosterByContext(
+        @Param('playerId') playerId: string, 
+        @Param('teamId') teamId: string, 
+        @Request() req: any
+    ) {
+        return this.rosterService.removeFromRosterByPlayerAndTeam(playerId, teamId, { id: req.user.id, role: req.user.role });
     }
 
     @Delete('hard/:id')
     @UseGuards(JwtAuthGuard)
-    hardDeleteFromRoster(@Param('id') id: string) {
-        return this.rosterService.hardDeleteFromRoster(id);
+    hardDeleteFromRoster(@Param('id') id: string, @Request() req: any) {
+        return this.rosterService.hardDeleteFromRoster(id, { id: req.user.id, role: req.user.role });
     }
 
     @Get('player/:playerId/history')

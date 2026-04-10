@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { io, Socket } from 'socket.io-client';
-import { getAccessToken } from '@/lib/auth';
 import api from '@/lib/api';
 
 export interface PlayLog {
@@ -178,7 +177,6 @@ async function flushPlayQueue(gameId: string, onProgress: (n: number) => void) {
                 const timestamp = Date.now().toString();
                 gameSocket.emit('registerPlay', {
                     gameId,
-                    token: getAccessToken(),
                     playInfo: { ...play.playInfo, playbackId: timestamp },
                     fullState: null,
                 });
@@ -240,7 +238,6 @@ const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsSc
     if (gameSocket?.connected) {
         gameSocket.emit('registerPlay', {
             gameId: stateSnapshot.gameId,
-            token: getAccessToken(),
             playInfo: {
                 inning: payloadInning,
                 half: payloadHalf,
@@ -323,7 +320,6 @@ const syncStateToBackend = (get: () => GameState) => {
     if (gameSocket?.connected) {
         gameSocket.emit('syncState', {
             gameId: state.gameId,
-            token: getAccessToken(),
             fullState: {
                 inning: state.inning,
                 half: state.half,
@@ -636,8 +632,8 @@ export const useGameStore = create<GameState>()(
 
                 const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
                 gameSocket = io(`${backendUrl}/live_games`, {
-                    auth: { token: getAccessToken() },
                     transports: ['websocket'],
+                    withCredentials: true,
                     reconnectionAttempts: 8,
                     reconnectionDelay: 2000,
                     reconnectionDelayMax: 15000,
@@ -674,14 +670,16 @@ export const useGameStore = create<GameState>()(
 
                 // Si el backend rechaza por token expirado, reconectar con token fresco (una sola vez)
                 let authRetried = false;
-                gameSocket.on('exception', (err: any) => {
+                gameSocket.on('exception', async (err: any) => {
                     const msg = typeof err === 'string' ? err : err?.message || '';
                     if ((msg.toLowerCase().includes('unauthorized') || msg.toLowerCase().includes('auth')) && !authRetried) {
                         authRetried = true;
-                        console.warn('[Socket] Token expirado — reconectando con token fresco...');
-                        if (gameSocket) {
-                            gameSocket.auth = { token: getAccessToken() };
-                            gameSocket.disconnect().connect();
+                        console.warn('[Socket] Sesi?n expirada ? intentando refresh y reconexi?n...');
+                        try {
+                            await api.post('/auth/refresh', {});
+                            gameSocket?.disconnect().connect();
+                        } catch (refreshError) {
+                            console.warn('[Socket] No se pudo refrescar la sesi?n del socket:', refreshError);
                         }
                     }
                 });

@@ -36,15 +36,17 @@ model User {
   forcePasswordChange     Boolean @default(false) @map("force_password_change")
   createdAt                   DateTime              @default(now()) @map("created_at")
   updatedAt                   DateTime              @default(now()) @updatedAt @map("updated_at")
-  leaguesAdmin         League[]              @relation("LeagueAdmin")
-  scorekeeperLeague    League?               @relation("LeagueScorekeepers", fields: [scorekeeperLeagueId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  tournamentNews       TournamentNews[]
-  tournamentOrganizers TournamentOrganizer[]
-  tournamentsAdmin     Tournament[]          @relation("TournamentAdmin")
-  role                 Role                  @relation(fields: [roleId], references: [id])
-  delegateProfile      TeamDelegate[]        @relation("DelegateUser")
-  delegatesCreated     TeamDelegate[]        @relation("DelegateCreatedBy")
-  tournamentDocuments  TournamentDocument[]
+  leaguesAdmin              League[]                  @relation("LeagueAdmin")
+  scorekeeperLeague         League?                   @relation("LeagueScorekeepers", fields: [scorekeeperLeagueId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tournamentNews            TournamentNews[]
+  tournamentOrganizers      TournamentOrganizer[]
+  tournamentsAdmin          Tournament[]              @relation("TournamentAdmin")
+  role                      Role                      @relation(fields: [roleId], references: [id])
+  teamDelegates             TeamDelegate[]            @relation("DelegateUser")
+  delegatesCreated          TeamDelegate[]            @relation("DelegateCreatedBy")
+  tournamentDocuments       TournamentDocument[]
+  scorekeeperTournaments    ScorekeeperTournament[]
+  gamesCreated              Game[]                    @relation("GameCreatedBy")
 
   @@map("users")
 }
@@ -114,6 +116,7 @@ model Tournament {
   rosterEntries RosterEntry[]
   delegates     TeamDelegate[]
   documents     TournamentDocument[]
+  scorekeeperTournaments ScorekeeperTournament[]
   admin         User                  @relation("TournamentAdmin", fields: [adminId], references: [id], onUpdate: NoAction)
   league        League                @relation(fields: [leagueId], references: [id], onDelete: Cascade)
 
@@ -124,6 +127,7 @@ model TournamentOrganizer {
   id           String     @id @default(uuid())
   tournamentId String     @map("tournament_id")
   userId       String     @map("user_id")
+  role         String     @default("presi") @map("role") @db.NVarChar(20)
   createdAt    DateTime   @default(now(), map: "to_created_at_df") @map("created_at")
   tournament   Tournament @relation(fields: [tournamentId], references: [id], onUpdate: NoAction, map: "to_tournament_id_fkey")
   user         User       @relation(fields: [userId], references: [id], onUpdate: NoAction, map: "to_user_id_fkey")
@@ -250,6 +254,8 @@ model Game {
   savePitcherId    String?        @map("save_pitcher_id")
   mvpBatter1Id     String?        @map("mvp_batter1_id")
   mvpBatter2Id     String?        @map("mvp_batter2_id")
+  createdById      String?        @map("created_by_id")
+  liveStateJson    String?        @map("live_state_json") @db.NVarChar(Max)
   createdAt        DateTime       @default(now()) @map("created_at")
   umpireBase1        String?        @map("umpire_base1")
   umpireBase2        String?        @map("umpire_base2")
@@ -267,6 +273,7 @@ model Game {
   winningPitcher   Player?        @relation("GameWinningPitcher", fields: [winningPitcherId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   losingPitcher    Player?        @relation("GameLosingPitcher", fields: [losingPitcherId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   savePitcher      Player?        @relation("GameSavePitcher", fields: [savePitcherId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdBy        User?          @relation("GameCreatedBy", fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   lineupChanges    LineupChange[]
   lineups          Lineup[]
   plays            Play[]
@@ -481,6 +488,11 @@ model Plan {
   bracketEnabled            Boolean  @default(false) @map("bracket_enabled")
   advancedStatsEnabled      Boolean  @default(false) @map("advanced_stats_enabled")
   customLogoEnabled         Boolean  @default(false) @map("custom_logo_enabled")
+  // Feature flags para roles
+  organizerCanMergePlayers  Boolean  @default(false) @map("organizer_can_merge_players")
+  delegateCanAddPlayers     Boolean  @default(true)  @map("delegate_can_add_players")
+  delegateCanRemovePlayers  Boolean  @default(true)  @map("delegate_can_remove_players")
+  maxDelegatesPerTeam       Int      @default(1)     @map("max_delegates_per_team")
   isActive                  Boolean  @default(true) @map("is_active")
   createdAt                 DateTime @default(now()) @map("created_at")
   subscriptions             Subscription[]
@@ -579,4 +591,22 @@ model TournamentDocument {
 
   @@index([tournamentId], map: "tournament_documents_tournament_idx")
   @@map("tournament_documents")
+}
+
+// ─────────────────────────────────────────────
+// SCOREKEEPER TOURNAMENT — Scorekeepers asignados a torneos específicos
+// Reemplaza el campo scorekeeperLeagueId para el rol scorekeeper
+// ─────────────────────────────────────────────
+model ScorekeeperTournament {
+  id           String     @id @default(uuid())
+  userId       String     @map("user_id")
+  tournamentId String     @map("tournament_id")
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  user         User       @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "skt_user_id_fkey")
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "skt_tournament_id_fkey")
+
+  @@unique([userId, tournamentId], map: "scorekeeper_tournaments_unique")
+  @@index([tournamentId], map: "scorekeeper_tournaments_tournament_idx")
+  @@map("scorekeeper_tournaments")
 }
