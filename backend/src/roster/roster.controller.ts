@@ -1,6 +1,6 @@
-import { Controller, Post, Delete, Get, Param, Body, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Delete, Get, Param, Body, Query, UseGuards, Request, Patch } from '@nestjs/common';
 import { RosterService } from './roster.service';
-import { AddRosterEntryDto } from './dto/roster.dto';
+import { AddRosterEntryDto, UpdateRosterEntryDto } from './dto/roster.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('api/roster')
@@ -33,6 +33,12 @@ export class RosterController {
     @UseGuards(JwtAuthGuard)
     hardDeleteFromRoster(@Param('id') id: string, @Request() req: any) {
         return this.rosterService.hardDeleteFromRoster(id, { id: req.user.id, role: req.user.role });
+    }
+
+    @Patch(':id')
+    @UseGuards(JwtAuthGuard)
+    updateRosterEntry(@Param('id') id: string, @Body() dto: UpdateRosterEntryDto, @Request() req: any) {
+        return this.rosterService.updateRosterEntry(id, dto, { id: req.user.id, role: req.user.role });
     }
 
     @Get('player/:playerId/history')

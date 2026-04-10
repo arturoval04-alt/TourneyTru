@@ -116,6 +116,7 @@ interface TeamData {
 export default function TeamProfilePage() {
     const params = useParams();
     const teamId = params.id as string;
+    const validTabs = ["juegos", "jugadores", "estadisticas"] as const;
 
     const [team, setTeam] = useState<TeamData | null>(null);
     const [loading, setLoading] = useState(true);
@@ -130,16 +131,23 @@ export default function TeamProfilePage() {
     const [canEdit, setCanEdit] = useState(false);
     const [showCopiedToast, setShowCopiedToast] = useState(false);
 
-    // Auto-trigger import modal if query param is present
+    // Restore the current tab from the URL and auto-open CSV import if requested.
     useEffect(() => {
+        const requestedTab = searchParams?.get('tab');
+        if (requestedTab && validTabs.includes(requestedTab as typeof validTabs[number])) {
+            setActiveTab(requestedTab as typeof validTabs[number]);
+        }
         if (searchParams?.get('import') === 'true') {
             setShowAddPlayerModal(true);
             setAddPlayerTab('csv');
-            // Remove the param from URL without refreshing
-            const newUrl = window.location.pathname;
-            window.history.replaceState({ ...window.history.state, as: newUrl, url: newUrl }, '', newUrl);
+            setActiveTab('jugadores');
+            writeTeamUrlState('jugadores');
         }
     }, [searchParams]);
+
+    useEffect(() => {
+        writeTeamUrlState(activeTab);
+    }, [activeTab]);
 
     // Add Verified Player modal state
     const [showAddVerifiedModal, setShowAddVerifiedModal] = useState(false);
@@ -187,6 +195,74 @@ export default function TeamProfilePage() {
         throws: 'R',
         photoUrl: ''
     });
+    const [editingJerseyEntryId, setEditingJerseyEntryId] = useState<string | null>(null);
+    const [jerseyDraft, setJerseyDraft] = useState('');
+    const [savingJerseyEntryId, setSavingJerseyEntryId] = useState<string | null>(null);
+
+    const writeTeamUrlState = (tab: typeof validTabs[number], includeImport = false) => {
+        if (typeof window === "undefined") return;
+        const params = new URLSearchParams(window.location.search);
+        params.set("tab", tab);
+        if (includeImport) params.set("import", "true");
+        else params.delete("import");
+        const query = params.toString();
+        const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+        window.history.replaceState({ ...window.history.state, as: nextUrl, url: nextUrl }, "", nextUrl);
+    };
+
+    const refreshTeamData = async (tabToKeep: typeof validTabs[number] = activeTab) => {
+        try {
+            const { data } = await api.get(`/teams/${teamId}`);
+            setTeam(data);
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setLoading(false);
+            setActiveTab(tabToKeep);
+            writeTeamUrlState(tabToKeep);
+        }
+    };
+
+    const beginJerseyEdit = (entryId: string, currentNumber?: number | null) => {
+        if (!canEdit) return;
+        setEditingJerseyEntryId(entryId);
+        setJerseyDraft(currentNumber == null ? '' : String(currentNumber));
+    };
+
+    const saveJerseyNumber = async (entryId: string) => {
+        if (!canEdit) return;
+
+        const trimmed = jerseyDraft.trim();
+        if (trimmed !== '') {
+            const parsed = Number(trimmed);
+            if (!Number.isInteger(parsed) || parsed < 0 || parsed > 99) {
+                alert('El número de jersey debe estar entre 0 y 99.');
+                return;
+            }
+        }
+
+        setSavingJerseyEntryId(entryId);
+        try {
+            const payload = { number: trimmed === '' ? null : Number(trimmed) };
+            const { data } = await api.patch(`/roster/${entryId}`, payload);
+            setTeam(prev => prev ? {
+                ...prev,
+                rosterEntries: prev.rosterEntries.map((entry) =>
+                    entry.id === entryId
+                        ? { ...entry, number: data?.number ?? payload.number ?? undefined }
+                        : entry,
+                ),
+            } : prev);
+        } catch (error) {
+            console.error(error);
+            alert('No se pudo actualizar el número de jersey.');
+            return;
+        } finally {
+            setSavingJerseyEntryId(null);
+            setEditingJerseyEntryId(null);
+            setJerseyDraft('');
+        }
+    };
 
 
     useEffect(() => {
@@ -278,7 +354,7 @@ export default function TeamProfilePage() {
             alert('Información del Jugador Actualizada');
             setIsEditingPlayer(false);
             setSelectedPlayer(null);
-            window.location.reload();
+            await refreshTeamData(activeTab);
         } catch (error) {
             console.error(error);
             alert('Error al actualizar jugador');
@@ -308,7 +384,7 @@ export default function TeamProfilePage() {
             setShowAddVerifiedModal(false);
             setVerifiedSearch('');
             setVerifiedResults([]);
-            window.location.reload();
+            await refreshTeamData(activeTab);
         } catch (err: any) {
             const msg = err?.response?.data?.message || 'Error al agregar jugador';
             alert(msg);
@@ -347,7 +423,7 @@ export default function TeamProfilePage() {
             await api.post('/players', payload);
             setNewPlayerForm({ firstName: '', lastName: '', secondLastName: '', number: '', position: 'INF', bats: 'R', throws: 'R', curp: '', birthDate: '', birthPlace: '' });
             setShowAddPlayerModal(false);
-            window.location.reload();
+            await refreshTeamData(activeTab);
         } catch (err: any) {
             const data = err?.response?.data;
             alert(data?.message || 'Error al agregar jugador');
@@ -473,7 +549,7 @@ export default function TeamProfilePage() {
             setCsvRows([]);
             setImportPreview(null);
             setImportStep('upload');
-            window.location.reload();
+            await refreshTeamData(activeTab);
         } catch (err: any) {
             setCsvError(err?.response?.data?.message || 'Error al confirmar importación');
         } finally { setConfirmingImport(false); }
@@ -501,7 +577,7 @@ export default function TeamProfilePage() {
 
             alert('Perfil del Equipo Actualizado');
             setIsEditingProfile(false);
-            window.location.reload();
+            await refreshTeamData(activeTab);
         } catch (error) {
             console.error(error);
             alert('Error al actualizar perfil');
@@ -510,17 +586,11 @@ export default function TeamProfilePage() {
 
 
     useEffect(() => {
-        const fetchTeamData = async () => {
-            try {
-                const { data } = await api.get(`/teams/${teamId}`);
-                setTeam(data);
-                setLoading(false);
-            } catch (err) {
-                console.error(err);
-                setLoading(false);
-            }
-        };
-        fetchTeamData();
+        const requestedTab = searchParams?.get('tab');
+        const initialTab = requestedTab && validTabs.includes(requestedTab as typeof validTabs[number])
+            ? (requestedTab as typeof validTabs[number])
+            : 'juegos';
+        refreshTeamData(initialTab);
     }, [teamId]);
 
     const tabs = [
@@ -1032,7 +1102,46 @@ export default function TeamProfilePage() {
                                                         </div>
                                                         <h3 className="font-bold text-center group-hover:text-primary transition-colors text-sm leading-tight line-clamp-2 min-h-[2.5rem] flex items-center justify-center w-full">{p.firstName} {p.lastName}</h3>
                                                         <div className="flex gap-2 items-center mt-2">
-                                                            {entry.number != null && <span className="text-sm text-muted-foreground font-black text-center w-6">#{entry.number}</span>}
+                                                            {editingJerseyEntryId === entry.id ? (
+                                                                <input
+                                                                    type="number"
+                                                                    min={0}
+                                                                    max={99}
+                                                                    autoFocus
+                                                                    value={jerseyDraft}
+                                                                    onChange={(e) => setJerseyDraft(e.target.value)}
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    onBlur={() => void saveJerseyNumber(entry.id)}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') {
+                                                                            void saveJerseyNumber(entry.id);
+                                                                        }
+                                                                        if (e.key === 'Escape') {
+                                                                            setEditingJerseyEntryId(null);
+                                                                            setJerseyDraft('');
+                                                                        }
+                                                                    }}
+                                                                    disabled={savingJerseyEntryId === entry.id}
+                                                                    className="w-16 rounded-md border border-primary/30 bg-background px-2 py-1 text-xs font-black text-foreground outline-none focus:border-primary"
+                                                                />
+                                                            ) : (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        beginJerseyEdit(entry.id, entry.number);
+                                                                    }}
+                                                                    disabled={!canEdit || savingJerseyEntryId === entry.id}
+                                                                    className={`rounded-md px-2 py-1 text-xs font-black transition ${
+                                                                        canEdit
+                                                                            ? 'bg-primary/10 text-primary hover:bg-primary/20'
+                                                                            : 'bg-muted/10 text-muted-foreground'
+                                                                    }`}
+                                                                    title={canEdit ? 'Editar jersey' : 'Número de jersey'}
+                                                                >
+                                                                    {savingJerseyEntryId === entry.id ? '...' : entry.number != null ? `#${entry.number}` : canEdit ? 'Asignar #' : '#-'}
+                                                                </button>
+                                                            )}
                                                             <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs font-bold rounded">
                                                                 {entry.position || p.position || 'INF'}
                                                             </span>
@@ -1448,7 +1557,7 @@ export default function TeamProfilePage() {
                                                                     tournamentId: team.tournament.id,
                                                                 });
                                                                 setShowAddPlayerModal(false);
-                                                                window.location.reload();
+                                                                await refreshTeamData(activeTab);
                                                             } catch (err: any) {
                                                                 alert(err?.response?.data?.message || 'Error al vincular jugador');
                                                             } finally { setAddingPlayer(false); }

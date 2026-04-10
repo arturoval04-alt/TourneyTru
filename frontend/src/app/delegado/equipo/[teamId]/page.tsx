@@ -55,6 +55,9 @@ export default function DelegatePage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [isBlocked, setIsBlocked] = useState(false);
+    const [editingJerseyEntryId, setEditingJerseyEntryId] = useState<string | null>(null);
+    const [jerseyDraft, setJerseyDraft] = useState('');
+    const [savingJerseyEntryId, setSavingJerseyEntryId] = useState<string | null>(null);
 
     // Perfil form
     const [profileForm, setProfileForm] = useState({ name: '', managerName: '', logoUrl: '' });
@@ -117,6 +120,44 @@ export default function DelegatePage() {
             }
         } catch { /* usa default 25 */ }
     }, [team?.tournament?.id]);
+
+    const beginJerseyEdit = (entryId: string, currentNumber?: number | null) => {
+        if (isBlocked) return;
+        setEditingJerseyEntryId(entryId);
+        setJerseyDraft(currentNumber == null ? '' : String(currentNumber));
+    };
+
+    const saveJerseyNumber = async (entryId: string) => {
+        if (isBlocked) return;
+
+        const trimmed = jerseyDraft.trim();
+        if (trimmed !== '') {
+            const parsed = Number(trimmed);
+            if (!Number.isInteger(parsed) || parsed < 0 || parsed > 99) {
+                alert('El número de jersey debe estar entre 0 y 99.');
+                return;
+            }
+        }
+
+        setSavingJerseyEntryId(entryId);
+        try {
+            const payload = { number: trimmed === '' ? null : Number(trimmed) };
+            const { data } = await api.patch(`/roster/${entryId}`, payload);
+            setRosterEntries(prev => prev.map((entry) =>
+                entry.id === entryId
+                    ? { ...entry, number: data?.number ?? payload.number ?? undefined }
+                    : entry,
+            ));
+        } catch (error) {
+            console.error(error);
+            alert('No se pudo actualizar el número de jersey.');
+            return;
+        } finally {
+            setSavingJerseyEntryId(null);
+            setEditingJerseyEntryId(null);
+            setJerseyDraft('');
+        }
+    };
 
     useEffect(() => {
         fetchTeam();
@@ -432,7 +473,6 @@ export default function DelegatePage() {
                                         <div className="min-w-0 flex-1">
                                             <p className="font-bold text-foreground text-sm truncate">
                                                 {entry.player.firstName} {entry.player.lastName}
-                                                {entry.number != null ? ` #${entry.number}` : ''}
                                             </p>
                                             <p className="text-xs text-muted-foreground">
                                                 {entry.position || 'Sin posición'}
@@ -440,6 +480,42 @@ export default function DelegatePage() {
                                             </p>
                                         </div>
                                         <div className="flex items-center gap-2 shrink-0">
+                                            {editingJerseyEntryId === entry.id ? (
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    max={99}
+                                                    autoFocus
+                                                    value={jerseyDraft}
+                                                    onChange={(e) => setJerseyDraft(e.target.value)}
+                                                    onBlur={() => void saveJerseyNumber(entry.id)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            void saveJerseyNumber(entry.id);
+                                                        }
+                                                        if (e.key === 'Escape') {
+                                                            setEditingJerseyEntryId(null);
+                                                            setJerseyDraft('');
+                                                        }
+                                                    }}
+                                                    disabled={savingJerseyEntryId === entry.id}
+                                                    className="w-16 rounded-lg border border-primary/30 bg-background px-2 py-1 text-xs font-black text-foreground outline-none focus:border-primary"
+                                                />
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => beginJerseyEdit(entry.id, entry.number)}
+                                                    disabled={isBlocked || savingJerseyEntryId === entry.id}
+                                                    className={`rounded-lg px-2.5 py-1 text-xs font-black transition ${
+                                                        isBlocked
+                                                            ? 'bg-muted/10 text-muted-foreground'
+                                                            : 'bg-primary/10 text-primary hover:bg-primary/20'
+                                                    }`}
+                                                    title={isBlocked ? 'Edición bloqueada mientras el torneo está activo' : 'Editar jersey'}
+                                                >
+                                                    {savingJerseyEntryId === entry.id ? '...' : entry.number != null ? `#${entry.number}` : 'Asignar #'}
+                                                </button>
+                                            )}
                                             {entry.player.isVerified && (
                                                 <span className="text-[10px] font-bold text-green-400 bg-green-500/10 px-2 py-0.5 rounded">✓</span>
                                             )}

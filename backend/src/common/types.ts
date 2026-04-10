@@ -6,5 +6,12 @@ export interface Requestor {
   scorekeeperTournamentIds?: string[];
   delegateTeamId?: string | null;
   delegateTournamentId?: string | null;
+  delegateTeamIds?: string[];
+  delegateTournamentIds?: string[];
+  delegateAssignments?: Array<{
+    id?: string;
+    teamId: string;
+    tournamentId: string;
+  }>;
   isDelegateActive?: boolean | null;
 }

@@ -6,13 +6,14 @@ interface PlayerAvatarProps {
   photoUrl: string | null;
   firstName: string;
   number?: number | null;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
 const SIZE_MAP = {
   sm: { container: 'w-10 h-10', text: 'text-base', badge: 'w-4 h-4 text-[9px] -bottom-0.5 -right-0.5' },
   md: { container: 'w-16 h-16', text: 'text-2xl', badge: 'w-6 h-6 text-[10px] -bottom-1 -right-1' },
   lg: { container: 'w-32 h-32 sm:w-40 sm:h-40', text: 'text-5xl', badge: 'w-10 h-10 text-sm -bottom-3 -right-3' },
+  xl: { container: 'w-48 h-48 sm:w-64 sm:h-64', text: 'text-7xl', badge: 'w-14 h-14 text-lg -bottom-4 -right-2' },
 };
 
 // Deterministic color from first name
@@ -44,7 +45,7 @@ export default function PlayerAvatar({ photoUrl, firstName, number, size = 'md' 
             alt={firstName}
             fill
             className="object-cover"
-            sizes="(max-width: 640px) 128px, 160px"
+            sizes="(max-width: 640px) 192px, 256px"
           />
         ) : (
           <div className={`w-full h-full rounded-full ${color} flex items-center justify-center`}>

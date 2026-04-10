@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Requestor } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
-import { AssignUmpireDto, ChangeLineupDto, CreateGameDto, UpdateGameDto, SetGameLineupDto, CambioSustitucionDto, CambioPosicionDto, CambioReingresoDto } from './dto/game.dto';
+import { AssignUmpireDto, ChangeLineupDto, CreateGameDto, UpdateGameDto, SetGameLineupDto, CambioSustitucionDto, CambioPosicionDto, CambioReingresoDto, ScheduleGameDto } from './dto/game.dto';
 import { SubmitManualStatsDto } from './dto/manual-stats.dto';
 import { LiveGateway } from '../live/live.gateway';
 
@@ -73,7 +73,19 @@ export class GamesService {
     }
 
     async create(data: CreateGameDto) {
-        return this.prisma.game.create({ data });
+        const { fieldId, scheduledDate, status, ...rest } = data as any;
+
+        // Si no tiene fecha ni campo asignado, el juego empieza como draft
+        const resolvedStatus = status ?? (scheduledDate ? 'scheduled' : 'draft');
+
+        return this.prisma.game.create({
+            data: {
+                ...rest,
+                status: resolvedStatus,
+                ...(scheduledDate ? { scheduledDate: new Date(scheduledDate) } : {}),
+                ...(fieldId ? { fieldId } : {}),
+            },
+        });
     }
 
     async findAll(filters?: { status?: string; tournamentId?: string; limit?: number; adminId?: string; leagueId?: string; scorekeeperTournamentIds?: string[] }) {
@@ -98,7 +110,7 @@ export class GamesService {
                 awayTeam: true,
                 tournament: { select: { name: true, id: true, logoUrl: true, league: { select: { id: true, name: true } } } },
             },
-            orderBy: { scheduledDate: 'desc' },
+            orderBy: [{ scheduledDate: 'desc' }, { createdAt: 'desc' }],
             ...(filters?.limit ? { take: filters.limit } : {}),
         });
     }
@@ -115,6 +127,7 @@ export class GamesService {
                         organizers: { select: { userId: true } },
                     },
                 },
+                fieldRef: { select: { id: true, name: true, location: true, sportsUnit: { select: { id: true, name: true } } } },
                 winningPitcher: true,
                 mvpBatter1: true,
                 mvpBatter2: true,
@@ -175,6 +188,123 @@ export class GamesService {
         const game = await this.findOne(gameId, requestor);
         this.assertGameOwnership(game, requestor);
         return game;
+    }
+
+    /**
+     * Verifica si un campo ya está ocupado en la misma fecha/hora dentro de la liga.
+     * Respeta minGapMinutes y allowOverlap del scheduleConfig de la unidad deportiva del campo.
+     * Lanza ConflictException si hay colisión.
+     */
+    private async assertNoFieldConflict(
+        fieldId: string,
+        date: Date,
+        startTime?: Date | null,
+        endTime?: Date | null,
+        excludeGameId?: string,
+    ) {
+        // Leer config del campo → unidad → scheduleConfig
+        const field = await this.prisma.field.findUnique({
+            where: { id: fieldId },
+            include: { sportsUnit: true },
+        }) as any;
+
+        let avgDurationMinutes = 120;
+        let minGapMinutes = 30;
+        let allowOverlap = false;
+
+        if (field?.sportsUnit?.scheduleConfig) {
+            try {
+                const cfg = JSON.parse(field.sportsUnit.scheduleConfig);
+                avgDurationMinutes = cfg.avgDurationMinutes ?? avgDurationMinutes;
+                minGapMinutes = cfg.minGapMinutes ?? minGapMinutes;
+                allowOverlap = cfg.allowOverlap ?? allowOverlap;
+            } catch { /* usar defaults */ }
+        }
+
+        if (allowOverlap) return; // la unidad permite solapamiento
+
+        const dateOnly = new Date(date);
+        dateOnly.setHours(0, 0, 0, 0);
+        const nextDay = new Date(dateOnly);
+        nextDay.setDate(nextDay.getDate() + 1);
+
+        const activeStatuses = ['scheduled', 'live'];
+        const existingGames = await this.prisma.game.findMany({
+            where: {
+                fieldId,
+                status: { in: activeStatuses },
+                scheduledDate: { gte: dateOnly, lt: nextDay },
+                ...(excludeGameId ? { id: { not: excludeGameId } } : {}),
+            },
+            select: { id: true, scheduledDate: true, startTime: true, endTime: true },
+        });
+
+        if (existingGames.length === 0) return;
+
+        // Hora efectiva de inicio del nuevo juego
+        const newStart = startTime ?? date;
+        // Hora efectiva de fin: endTime si existe, sino start + avgDuration
+        const newEnd = endTime ?? new Date(newStart.getTime() + avgDurationMinutes * 60_000);
+        // Ventana con brecha mínima: el nuevo juego no puede empezar hasta minGap después de que termina otro
+        const newStartWithGap = new Date(newStart.getTime() - minGapMinutes * 60_000);
+        const newEndWithGap = new Date(newEnd.getTime() + minGapMinutes * 60_000);
+
+        for (const g of existingGames) {
+            const gStart = g.startTime ?? g.scheduledDate;
+            if (!gStart) continue;
+            const gEnd = g.endTime ?? new Date((gStart as Date).getTime() + avgDurationMinutes * 60_000);
+
+            // Solapamiento incluyendo brecha mínima
+            const overlaps = newStartWithGap < gEnd && newEndWithGap > gStart;
+            if (overlaps) {
+                const gStartStr = (gStart as Date).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+                throw new (await import('@nestjs/common')).ConflictException(
+                    `El campo ya tiene un juego a las ${gStartStr}. Se requiere una brecha de al menos ${minGapMinutes} min entre juegos.`,
+                );
+            }
+        }
+    }
+
+    /**
+     * Asigna campo, fecha y/o hora a un juego (idealmente en estado draft).
+     * Valida conflictos de horario a nivel liga.
+     */
+    async scheduleGame(id: string, dto: ScheduleGameDto, requestor?: Requestor) {
+        const game = await this.getOwnedGame(id, requestor) as any;
+
+        const fieldId = dto.fieldId ?? game.fieldId ?? null;
+        const scheduledDate = dto.scheduledDate ? new Date(dto.scheduledDate) : game.scheduledDate;
+
+        if (fieldId && scheduledDate) {
+            const startTime = dto.startTime
+                ? new Date(`${dto.scheduledDate ?? scheduledDate.toISOString().slice(0, 10)}T${dto.startTime}:00`)
+                : game.startTime ?? null;
+            const endTime = dto.endTime
+                ? new Date(`${dto.scheduledDate ?? scheduledDate.toISOString().slice(0, 10)}T${dto.endTime}:00`)
+                : game.endTime ?? null;
+
+            await this.assertNoFieldConflict(fieldId, scheduledDate, startTime, endTime, id);
+        }
+
+        const updateData: any = {};
+        if (dto.fieldId !== undefined) updateData.fieldId = dto.fieldId;
+        if (dto.scheduledDate !== undefined) updateData.scheduledDate = new Date(dto.scheduledDate);
+        if (dto.startTime !== undefined) {
+            const baseDate = dto.scheduledDate ?? (scheduledDate ? scheduledDate.toISOString().slice(0, 10) : null);
+            updateData.startTime = baseDate ? new Date(`${baseDate}T${dto.startTime}:00`) : null;
+        }
+        if (dto.endTime !== undefined) {
+            const baseDate = dto.scheduledDate ?? (scheduledDate ? scheduledDate.toISOString().slice(0, 10) : null);
+            updateData.endTime = baseDate ? new Date(`${baseDate}T${dto.endTime}:00`) : null;
+        }
+        if (dto.round !== undefined) updateData.round = dto.round;
+
+        // Si el juego era draft y ahora tiene campo + fecha, lo promueve a 'scheduled'
+        if (game.status === 'draft' && updateData.fieldId && updateData.scheduledDate) {
+            updateData.status = 'scheduled';
+        }
+
+        return this.prisma.game.update({ where: { id }, data: updateData });
     }
 
     async update(id: string, updateData: UpdateGameDto, requestor?: Requestor) {
@@ -1586,7 +1716,7 @@ export class GamesService {
 
         // 5. Build Play records from batter entries
         const playsToCreate: any[] = [];
-        let playTimestamp = new Date(game.scheduledDate);
+        let playTimestamp = new Date(game.scheduledDate ?? game.createdAt);
 
         const processBatters = (
             batters: typeof dto.awayBatters,

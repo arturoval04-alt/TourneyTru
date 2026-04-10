@@ -15,6 +15,12 @@ import LineupBuilder, { LineupEntry, Player } from './LineupBuilder';
 
 export type WizardContext = 'torneo' | 'admin' | 'scorekeeper';
 
+export interface CalendarPrefill {
+  fieldId?: string;
+  scheduledDate?: string;  // 'YYYY-MM-DD'
+  startTime?: string;      // 'HH:mm'
+}
+
 export interface CreateGameWizardProps {
   context: WizardContext;
   /** Pre-llenado en context='torneo' */
@@ -25,6 +31,8 @@ export interface CreateGameWizardProps {
   initialTournaments?: { id: string; name: string; rulesType?: string }[];
   /** Si se pasa un gameId existente (scheduled), salta directo al lineup */
   existingGameId?: string;
+  /** Datos pre-llenados desde el calendario (clic en celda vacía) */
+  calendarPrefill?: CalendarPrefill;
   onClose: () => void;
   onGameCreated?: (gameId: string) => void;
 }
@@ -70,6 +78,7 @@ export default function CreateGameWizard({
   leagueId: propLeagueId,
   initialTournaments,
   existingGameId,
+  calendarPrefill,
   onClose,
   onGameCreated,
 }: CreateGameWizardProps) {
@@ -93,9 +102,9 @@ export default function CreateGameWizard({
 
   const [homeTeamId, setHomeTeamId] = useState('');
   const [awayTeamId, setAwayTeamId] = useState('');
-  const [scheduledDate, setScheduledDate] = useState('');
-  const [scheduledTime, setScheduledTime] = useState('');
-  const [fieldId, setFieldId] = useState('');
+  const [scheduledDate, setScheduledDate] = useState(calendarPrefill?.scheduledDate ?? '');
+  const [scheduledTime, setScheduledTime] = useState(calendarPrefill?.startTime ?? '');
+  const [fieldId, setFieldId] = useState(calendarPrefill?.fieldId ?? '');
   const [gameRound, setGameRound] = useState('');
   const [selectedUmpires, setSelectedUmpires] = useState<
     { umpireId: string; role: 'plate' | 'base1' | 'base2' | 'base3'; name: string }[]
@@ -176,9 +185,20 @@ export default function CreateGameWizard({
       const { data } = await api.get(`/torneos/${tId}`);
       setSelectedTournament(data);
       setTeams(data.teams ?? []);
-      setFields(data.fields ?? []);
+      // Intentar cargar campos de la liga (nivel liga) si está disponible
+      const lId = data.leagueId ?? propLeagueId ?? selectedLeagueId;
+      if (lId) {
+        try {
+          const { data: leagueFields } = await api.get(`/leagues/${lId}/fields`);
+          setFields(leagueFields.length > 0 ? leagueFields : (data.fields ?? []));
+        } catch {
+          setFields(data.fields ?? []);
+        }
+      } else {
+        setFields(data.fields ?? []);
+      }
     } catch {}
-  }, []);
+  }, [propLeagueId, selectedLeagueId]);
 
   const loadUmpires = useCallback(async (leagueId: string) => {
     try {
@@ -264,7 +284,7 @@ export default function CreateGameWizard({
         homeTeamId,
         awayTeamId,
         scheduledDate: dateTime,
-        field: fieldId || null,
+        fieldId: fieldId || null,
         round: gameRound || null,
         maxInnings,
         status: 'scheduled',
@@ -430,6 +450,18 @@ export default function CreateGameWizard({
           {/* ── STEP 0: Configuración del juego ── */}
           {step === 0 && (
             <div className="flex flex-col gap-5">
+
+              {/* Banner de prefill desde calendario */}
+              {calendarPrefill && (calendarPrefill.scheduledDate || calendarPrefill.startTime) && (
+                <div className="flex items-center gap-2 px-3 py-2.5 bg-blue-900/30 border border-blue-700/50 rounded-xl text-xs text-blue-300">
+                  <Calendar size={13} className="shrink-0 text-blue-400" />
+                  <span>
+                    Desde calendario: <span className="font-black text-white">{calendarPrefill.scheduledDate}</span>
+                    {calendarPrefill.startTime && <> a las <span className="font-black text-white">{calendarPrefill.startTime}</span></>}
+                    {calendarPrefill.fieldId && <> · campo asignado</>}
+                  </span>
+                </div>
+              )}
 
               {/* Liga (solo admin sin torneo fijo) */}
               {context === 'admin' && !propTournamentId && (

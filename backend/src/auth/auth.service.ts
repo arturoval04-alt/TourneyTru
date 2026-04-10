@@ -99,7 +99,10 @@ export class AuthService {
                 role: true,
                 teamDelegates: {
                     where: { isActive: true },
-                    include: { tournament: true }
+                    include: {
+                        team: { select: { id: true, name: true } },
+                        tournament: { select: { id: true, name: true, season: true, status: true } },
+                    }
                 },
                 scorekeeperTournaments: {
                     select: { tournamentId: true }
@@ -120,7 +123,20 @@ export class AuthService {
             throw new UnauthorizedException('EMAIL_NOT_VERIFIED');
         }
 
-        const activeDelegate = (user as any).teamDelegates?.[0];
+        const delegateAssignments = ((user as any).teamDelegates ?? [])
+            .filter((assignment: any) => ['upcoming', 'active'].includes(assignment.tournament?.status))
+            .map((assignment: any) => ({
+                id: assignment.id,
+                teamId: assignment.teamId,
+                tournamentId: assignment.tournamentId,
+                teamName: assignment.team?.name ?? null,
+                tournamentName: assignment.tournament?.name ?? null,
+                tournamentSeason: assignment.tournament?.season ?? null,
+                tournamentStatus: assignment.tournament?.status ?? null,
+            }));
+        const activeDelegate = delegateAssignments[0];
+        const delegateTeamIds = delegateAssignments.map((assignment: any) => assignment.teamId);
+        const delegateTournamentIds = Array.from(new Set(delegateAssignments.map((assignment: any) => assignment.tournamentId)));
         const tokens = this.generateTokens(user.id, user.email, (user as any).role.name);
 
         return {
@@ -142,7 +158,10 @@ export class AuthService {
                 planLabel: (user as any).planLabel ?? 'public',
                 delegateTeamId: activeDelegate?.teamId ?? null,
                 delegateTournamentId: activeDelegate?.tournamentId ?? null,
-                isDelegateActive: !!activeDelegate,
+                delegateTeamIds,
+                delegateTournamentIds,
+                delegateAssignments,
+                isDelegateActive: delegateAssignments.length > 0,
             },
             ...tokens,
         };

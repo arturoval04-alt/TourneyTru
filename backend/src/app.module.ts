@@ -19,6 +19,8 @@ import { RosterModule } from './roster/roster.module';
 import { StreamerModule } from './streamer/streamer.module';
 import { DelegatesModule } from './delegates/delegates.module';
 import { DocumentsModule } from './documents/documents.module';
+import { SportsUnitsModule } from './sports-units/sports-units.module';
+import { FieldsModule } from './fields/fields.module';
 
 @Module({
   imports: [
@@ -41,6 +43,8 @@ import { DocumentsModule } from './documents/documents.module';
     StreamerModule,
     DelegatesModule,
     DocumentsModule,
+    SportsUnitsModule,
+    FieldsModule,
   ],
   controllers: [AppController],
   providers: [

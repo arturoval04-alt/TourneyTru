@@ -81,6 +81,9 @@ export default function LoginPage() {
                 planLabel: data.user.planLabel ?? 'public',
                 delegateTeamId: data.user.delegateTeamId ?? null,
                 delegateTournamentId: data.user.delegateTournamentId ?? null,
+                delegateTeamIds: data.user.delegateTeamIds ?? [],
+                delegateTournamentIds: data.user.delegateTournamentIds ?? [],
+                delegateAssignments: data.user.delegateAssignments ?? [],
                 isDelegateActive: data.user.isDelegateActive ?? false,
                 forcePasswordChange: data.user.forcePasswordChange ?? false,
             });

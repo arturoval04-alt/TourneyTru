@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { AddRosterEntryDto } from './dto/roster.dto';
+import { AddRosterEntryDto, UpdateRosterEntryDto } from './dto/roster.dto';
 import { DelegatesService } from '../delegates/delegates.service';
 import { LeaguesService } from '../leagues/leagues.service';
 
@@ -19,8 +19,8 @@ export class RosterService {
         if (requestingUser.role === 'admin') return;
 
         if (requestingUser.role === 'delegado') {
-            const activeDelegate = await this.delegatesService.getActiveDelegateForUser(requestingUser.id);
-            if (!activeDelegate || activeDelegate.teamId !== teamId) {
+            const hasAccess = await this.delegatesService.hasActiveDelegateAccess(requestingUser.id, teamId);
+            if (!hasAccess) {
                 throw new ForbiddenException('No tienes permisos para modificar el roster de este equipo.');
             }
             return;
@@ -170,6 +170,32 @@ export class RosterService {
         if (!entry) throw new NotFoundException('Entrada de roster no encontrada');
         await this.assertRosterAccess(entry.teamId, requestingUser);
         return (this.prisma as any).rosterEntry.delete({ where: { id } });
+    }
+
+    async updateRosterEntry(id: string, dto: UpdateRosterEntryDto, requestingUser?: RequestingUser) {
+        const entry = await (this.prisma as any).rosterEntry.findUnique({
+            where: { id },
+            include: {
+                player: { select: { id: true, firstName: true, lastName: true, photoUrl: true, isVerified: true } },
+                team: { select: { id: true, name: true } },
+                tournament: { select: { id: true, name: true, season: true } },
+            },
+        });
+        if (!entry) throw new NotFoundException('Entrada de roster no encontrada');
+
+        await this.assertRosterAccess(entry.teamId, requestingUser);
+
+        return (this.prisma as any).rosterEntry.update({
+            where: { id },
+            data: {
+                number: dto.number ?? null,
+            },
+            include: {
+                player: { select: { id: true, firstName: true, lastName: true, photoUrl: true, isVerified: true } },
+                team: { select: { id: true, name: true } },
+                tournament: { select: { id: true, name: true, season: true } },
+            },
+        });
     }
 
     async getPlayerHistory(playerId: string) {

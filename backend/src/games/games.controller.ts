@@ -1,6 +1,6 @@
 import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query, Request } from '@nestjs/common';
 import { GamesService } from './games.service';
-import { AssignUmpireDto, CreateGameDto, UpdateGameDto, SetGameLineupDto, ChangeLineupDto, CambioSustitucionDto, CambioPosicionDto, CambioReingresoDto } from './dto/game.dto';
+import { AssignUmpireDto, CreateGameDto, UpdateGameDto, SetGameLineupDto, ChangeLineupDto, CambioSustitucionDto, CambioPosicionDto, CambioReingresoDto, ScheduleGameDto } from './dto/game.dto';
 import { SubmitManualStatsDto } from './dto/manual-stats.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
@@ -16,6 +16,9 @@ const buildRequestor = (user?: any): Requestor | undefined => {
         scorekeeperTournamentIds: user.scorekeeperTournamentIds ?? [],
         delegateTeamId: user.delegateTeamId ?? null,
         delegateTournamentId: user.delegateTournamentId ?? null,
+        delegateTeamIds: user.delegateTeamIds ?? [],
+        delegateTournamentIds: user.delegateTournamentIds ?? [],
+        delegateAssignments: user.delegateAssignments ?? [],
         isDelegateActive: user.isDelegateActive ?? false,
     };
 };
@@ -62,6 +65,12 @@ export class GamesController {
     @UseGuards(JwtAuthGuard)
     update(@Param('id') id: string, @Body() updateGameDto: UpdateGameDto, @Request() req: any) {
         return this.gamesService.update(id, updateGameDto, buildRequestor(req?.user));
+    }
+
+    @Patch(':id/schedule')
+    @UseGuards(JwtAuthGuard)
+    schedule(@Param('id') id: string, @Body() dto: ScheduleGameDto, @Request() req: any) {
+        return this.gamesService.scheduleGame(id, dto, buildRequestor(req?.user));
     }
 
     @Delete(':id')

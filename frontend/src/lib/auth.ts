@@ -16,6 +16,17 @@ export interface AuthUser {
     planLabel?: string | null;
     delegateTeamId?: string | null;
     delegateTournamentId?: string | null;
+    delegateTeamIds?: string[];
+    delegateTournamentIds?: string[];
+    delegateAssignments?: Array<{
+        id?: string;
+        teamId: string;
+        tournamentId: string;
+        teamName?: string | null;
+        tournamentName?: string | null;
+        tournamentSeason?: string | null;
+        tournamentStatus?: string | null;
+    }>;
     isDelegateActive?: boolean | null;
     forcePasswordChange?: boolean;
 }

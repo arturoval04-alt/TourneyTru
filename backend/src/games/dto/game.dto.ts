@@ -11,17 +11,22 @@ export class CreateGameDto {
     @IsUUID()
     awayTeamId: string;
 
+    @IsOptional()
     @IsDateString()
-    scheduledDate: string;
+    scheduledDate?: string;
 
     @IsOptional()
-    @IsIn(['scheduled', 'in_progress', 'finished', 'cancelled'])
+    @IsIn(['draft', 'scheduled', 'in_progress', 'finished', 'cancelled'])
     status?: string;
 
     @IsOptional()
     @IsString()
     @MaxLength(100)
     field?: string;
+
+    @IsOptional()
+    @IsUUID()
+    fieldId?: string;
 
     @IsOptional()
     @IsString()
@@ -57,8 +62,21 @@ export class CreateGameDto {
 
 export class UpdateGameDto {
     @IsOptional()
-    @IsIn(['scheduled', 'in_progress', 'finished', 'cancelled'])
+    @IsIn(['draft', 'scheduled', 'in_progress', 'finished', 'cancelled'])
     status?: string;
+
+    @IsOptional()
+    @IsDateString()
+    scheduledDate?: string;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    field?: string;
+
+    @IsOptional()
+    @IsUUID()
+    fieldId?: string;
 
     @IsOptional()
     @IsInt()
@@ -220,6 +238,29 @@ export class CambioReingresoDto {
 
     @IsUUID()
     starterPlayerId: string;
+}
+
+export class ScheduleGameDto {
+    @IsOptional()
+    @IsUUID()
+    fieldId?: string;
+
+    @IsOptional()
+    @IsDateString()
+    scheduledDate?: string;
+
+    @IsOptional()
+    @IsString()
+    startTime?: string;  // 'HH:mm'
+
+    @IsOptional()
+    @IsString()
+    endTime?: string;    // 'HH:mm'
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    round?: string;
 }
 
 export class AssignUmpireDto {

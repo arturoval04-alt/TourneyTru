@@ -161,7 +161,13 @@ export class TeamsService {
             if (league?.isPrivate) {
                 const isLeagueAdmin = requestor?.id === league.adminId;
                 const isAssignedSK = requestor?.role === 'scorekeeper' && requestor.scorekeeperTournamentIds?.includes(tournament.id);
-                if (!isLeagueAdmin && !isAssignedSK) {
+                const isAssignedDelegate = requestor?.role === 'delegado'
+                    && !!requestor.isDelegateActive
+                    && (
+                        requestor.delegateTeamIds?.includes(team.id)
+                        || requestor.delegateAssignments?.some((assignment) => assignment.teamId === team.id && assignment.tournamentId === tournament.id)
+                    );
+                if (!isLeagueAdmin && !isAssignedSK && !isAssignedDelegate) {
                     throw new ForbiddenException({ code: 'PRIVATE', message: 'Esta liga es privada.' });
                 }
             }
@@ -169,7 +175,13 @@ export class TeamsService {
                 const isLeagueAdmin = requestor?.id === league?.adminId;
                 const isOrganizer = tournament?.organizers?.some((o: any) => o.userId === requestor?.id);
                 const isAssignedSK = requestor?.role === 'scorekeeper' && requestor.scorekeeperTournamentIds?.includes(tournament.id);
-                if (!isLeagueAdmin && !isOrganizer && !isAssignedSK) {
+                const isAssignedDelegate = requestor?.role === 'delegado'
+                    && !!requestor.isDelegateActive
+                    && (
+                        requestor.delegateTeamIds?.includes(team.id)
+                        || requestor.delegateAssignments?.some((assignment) => assignment.teamId === team.id && assignment.tournamentId === tournament.id)
+                    );
+                if (!isLeagueAdmin && !isOrganizer && !isAssignedSK && !isAssignedDelegate) {
                     throw new ForbiddenException({ code: 'PRIVATE', message: 'Este torneo es privado.' });
                 }
             }
@@ -309,8 +321,8 @@ export class TeamsService {
         if (!requestingUser) throw new ForbiddenException('Se requiere autenticación.');
         if (requestingUser.role === 'admin') return;
         if (requestingUser.role === 'delegado') {
-            const activeDelegate = await this.delegatesService.getActiveDelegateForUser(requestingUser.id);
-            if (!activeDelegate || activeDelegate.teamId !== teamId) {
+            const hasAccess = await this.delegatesService.hasActiveDelegateAccess(requestingUser.id, teamId);
+            if (!hasAccess) {
                 throw new ForbiddenException('No tienes permisos para editar la información de este equipo.');
             }
             return;

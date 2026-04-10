@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getUser, saveSession, clearSession, AuthUser } from '@/lib/auth';
 import CreateGameWizard from '@/components/game/CreateGameWizard';
+import SportsUnitsManager from '@/components/fields/SportsUnitsManager';
+import FieldsReport from '@/components/fields/FieldsReport';
 import ImageUploader from '@/components/ui/ImageUploader';
 import api from '@/lib/api';
 import { uploadToCloudinary } from '@/lib/cloudinary';
@@ -33,7 +35,8 @@ export default function AdminDashboard() {
     const router = useRouter();
 
     // -- Types --
-    type TabType = 'perfil' | 'ligas' | 'torneos' | 'equipos' | 'jugadores' | 'juegos' | 'usuarios' | 'plan' | 'delegados';
+    type TabType = 'perfil' | 'ligas' | 'torneos' | 'equipos' | 'jugadores' | 'juegos' | 'usuarios' | 'plan' | 'delegados' | 'campos';
+    const validTabs: TabType[] = ['perfil', 'ligas', 'torneos', 'equipos', 'jugadores', 'juegos', 'usuarios', 'plan', 'delegados', 'campos'];
 
     interface GameData {
         id: string;
@@ -81,7 +84,9 @@ export default function AdminDashboard() {
         name: string;
         logoUrl?: string;
         managerName?: string;
-        tournament?: { id: string; name: string };
+        tournament?: { id: string; name: string; season?: string; status?: string; logoUrl?: string };
+        _count?: { rosterEntries?: number };
+        rosterEntries?: any[];
     }
 
     interface PlayerData {
@@ -92,9 +97,12 @@ export default function AdminDashboard() {
         curp?: string;
         birthDate?: string;
         birthPlace?: string;
-        number: string;
+        number?: string | number | null;
         position: string;
         photoUrl?: string;
+        rosterEntryId?: string;
+        rosterEntries?: Array<{ id: string; team?: { id: string; name: string } }>;
+        _count?: { rosterEntries?: number };
     }
 
     interface UserData {
@@ -118,6 +126,7 @@ export default function AdminDashboard() {
 
     // -- State: Navigation --
     const [activeTab, setActiveTab] = useState<TabType>('perfil');
+    const [camposSubTab, setCamposSubTab] = useState<'gestion' | 'reporte'>('gestion');
     const [saving, setSaving] = useState(false);
 
     // -- State: Modals --
@@ -154,6 +163,11 @@ export default function AdminDashboard() {
     const [userPhone, setUserPhone] = useState<string>('');
     const [userProfilePicture, setUserProfilePicture] = useState<string | null>(null);
     const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+    const [selectedTournament, setSelectedTournament] = useState('');
+    const [selectedTeam, setSelectedTeam] = useState('');
+    const [editingRosterNumberId, setEditingRosterNumberId] = useState<string | null>(null);
+    const [rosterNumberDraft, setRosterNumberDraft] = useState('');
+    const [savingRosterNumberId, setSavingRosterNumberId] = useState<string | null>(null);
 
     // -- Profile Editing State --
     const [isEditingPhone, setIsEditingPhone] = useState(false);
@@ -164,7 +178,7 @@ export default function AdminDashboard() {
         if (storedUser) {
             // Refrescar el perfil desde el servidor para obtener IDs relacionales si faltan en sesión local
             const needsScorekeeperRefresh = storedUser.role === 'scorekeeper' && !storedUser.scorekeeperLeagueId;
-            const needsDelegateRefresh = storedUser.role === 'delegado' && !storedUser.delegateTeamId;
+            const needsDelegateRefresh = storedUser.role === 'delegado' && !(storedUser.delegateAssignments?.length);
             
             if (needsScorekeeperRefresh || needsDelegateRefresh) {
                 api.get('/auth/me').then(({ data }) => {
@@ -173,6 +187,9 @@ export default function AdminDashboard() {
                         scorekeeperLeagueId: data.scorekeeperLeagueId ?? null,
                         delegateTeamId: data.delegateTeamId ?? null,
                         delegateTournamentId: data.delegateTournamentId ?? null,
+                        delegateTeamIds: data.delegateTeamIds ?? [],
+                        delegateTournamentIds: data.delegateTournamentIds ?? [],
+                        delegateAssignments: data.delegateAssignments ?? [],
                         isDelegateActive: data.isDelegateActive ?? false,
                     };
                     saveSession(refreshed);
@@ -186,6 +203,45 @@ export default function AdminDashboard() {
             setUserTournamentId(localStorage.getItem('userTournamentId') || null);
         }
     }, []);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const params = new URLSearchParams(window.location.search);
+        const tab = params.get('tab');
+        const tournament = params.get('tournament');
+        const team = params.get('team');
+
+        if (tab && validTabs.includes(tab as TabType)) {
+            setActiveTab(tab as TabType);
+        }
+        if (tournament) {
+            setSelectedTournament(tournament);
+        }
+        if (team) {
+            setSelectedTeam(team);
+        }
+    }, []);
+
+    const writeDashboardUrlState = (
+        nextTab: TabType = activeTab,
+        nextTournamentId: string = selectedTournament,
+        nextTeamId: string = selectedTeam,
+    ) => {
+        if (typeof window === 'undefined') return;
+        const params = new URLSearchParams(window.location.search);
+        params.set('tab', nextTab);
+        if (nextTournamentId) params.set('tournament', nextTournamentId);
+        else params.delete('tournament');
+        if (nextTeamId) params.set('team', nextTeamId);
+        else params.delete('team');
+        const query = params.toString();
+        const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+        window.history.replaceState({ ...window.history.state, as: nextUrl, url: nextUrl }, '', nextUrl);
+    };
+
+    useEffect(() => {
+        writeDashboardUrlState(activeTab, selectedTournament, selectedTeam);
+    }, [activeTab, selectedTournament, selectedTeam]);
 
     // El usuario ya está en el store JWT vía getUser() en el siguiente useEffect
 
@@ -207,6 +263,275 @@ export default function AdminDashboard() {
         setUserProfilePicture(currentUser.profilePicture ?? null);
     }, [currentUser]);
 
+    const delegateAssignments = currentUser?.delegateAssignments ?? [];
+    const delegateHasMultipleAssignments = delegateAssignments.length > 1;
+    const delegateHasMultipleTournaments = new Set(delegateAssignments.map((assignment) => assignment.tournamentId)).size > 1;
+
+    const resolveDelegateTournamentForTeam = (teamId?: string) => {
+        if (!teamId) return '';
+        return delegateAssignments.find((assignment) => assignment.teamId === teamId)?.tournamentId || '';
+    };
+
+    const handleTournamentFilterChange = (nextTournamentId: string, options?: { resetDirectoryPage?: boolean }) => {
+        setSelectedTournament(nextTournamentId);
+
+        if (userRole === 'delegado') {
+            const keepCurrentTeam = !!selectedTeam && delegateAssignments.some((assignment) =>
+                assignment.teamId === selectedTeam && (!nextTournamentId || assignment.tournamentId === nextTournamentId),
+            );
+
+            if (!keepCurrentTeam) {
+                setSelectedTeam('');
+            }
+        } else {
+            setSelectedTeam('');
+        }
+
+        if (options?.resetDirectoryPage) {
+            setDirectoryPage(1);
+        }
+    };
+
+    const canEditRosterJersey = userRole === 'admin' || userRole === 'organizer' || userRole === 'presi' || (userRole === 'delegado' && currentUser?.isDelegateActive !== false);
+
+    const beginRosterNumberEdit = (rosterEntryId?: string, currentNumber?: string | number | null) => {
+        if (!rosterEntryId || !canEditRosterJersey) return;
+        setEditingRosterNumberId(rosterEntryId);
+        setRosterNumberDraft(currentNumber == null ? '' : String(currentNumber));
+    };
+
+    const saveRosterNumber = async (rosterEntryId?: string) => {
+        if (!rosterEntryId || !canEditRosterJersey) return;
+
+        const trimmed = rosterNumberDraft.trim();
+        if (trimmed !== '') {
+            const parsed = Number(trimmed);
+            if (!Number.isInteger(parsed) || parsed < 0 || parsed > 99) {
+                alert('El número de jersey debe estar entre 0 y 99.');
+                return;
+            }
+        }
+
+        setSavingRosterNumberId(rosterEntryId);
+        try {
+            const payload = { number: trimmed === '' ? null : Number(trimmed) };
+            const { data } = await api.patch(`/roster/${rosterEntryId}`, payload);
+            const nextNumber = data?.number ?? payload.number;
+
+            setPlayers(prev => prev.map((player) =>
+                player.rosterEntryId === rosterEntryId
+                    ? { ...player, number: nextNumber == null ? '' : String(nextNumber) }
+                    : player,
+            ));
+            setDirectoryPlayers(prev => prev.map((player: any) => {
+                const currentRosterEntryId = player.rosterEntryId || player.rosterEntries?.[0]?.id;
+                if (currentRosterEntryId !== rosterEntryId) {
+                    return player;
+                }
+
+                return {
+                    ...player,
+                    number: nextNumber == null ? '' : String(nextNumber),
+                    rosterEntries: Array.isArray(player.rosterEntries) && player.rosterEntries.length > 0
+                        ? player.rosterEntries.map((entry: any, index: number) =>
+                            index === 0 ? { ...entry, number: nextNumber } : entry,
+                        )
+                        : player.rosterEntries,
+                };
+            }));
+        } catch (error) {
+            console.error(error);
+            alert('No se pudo actualizar el número de jersey.');
+            return;
+        } finally {
+            setSavingRosterNumberId(null);
+            setEditingRosterNumberId(null);
+            setRosterNumberDraft('');
+        }
+    };
+
+    const calculateAge = (birthDate?: string | null) => {
+        if (!birthDate) return '-';
+        const birth = new Date(birthDate);
+        if (Number.isNaN(birth.getTime())) return '-';
+        const today = new Date();
+        let age = today.getFullYear() - birth.getFullYear();
+        const monthDiff = today.getMonth() - birth.getMonth();
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+            age -= 1;
+        }
+        return age >= 0 ? String(age) : '-';
+    };
+
+    const formatBirthDate = (birthDate?: string | null) => {
+        if (!birthDate) return '-';
+        const date = new Date(birthDate);
+        if (Number.isNaN(date.getTime())) return '-';
+        return date.toLocaleDateString('es-MX');
+    };
+
+    const imageUrlToDataUrl = async (url?: string | null) => {
+        if (!url) return null;
+        try {
+            const response = await fetch(url);
+            if (!response.ok) return null;
+            const blob = await response.blob();
+            return await new Promise<string | null>((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+                reader.onerror = () => resolve(null);
+                reader.readAsDataURL(blob);
+            });
+        } catch {
+            return null;
+        }
+    };
+
+    const getPdfImageFormat = (dataUrl: string) => dataUrl.includes('image/jpeg') ? 'JPEG' : 'PNG';
+
+    const generateRosterPdf = async (team: TeamData) => {
+        setGeneratingRosterTeamId(team.id);
+        try {
+            const { data } = await api.get(`/teams/${team.id}`);
+            const { jsPDF } = await import('jspdf');
+
+            const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const margin = 12;
+            const contentWidth = pageWidth - margin * 2;
+
+            const delegateName = `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim() || 'Delegado asignado';
+            const teamLogo = await imageUrlToDataUrl(data.logoUrl);
+            const tournamentLogo = await imageUrlToDataUrl(data.tournament?.logoUrl);
+
+            const drawHeader = () => {
+                pdf.setFillColor(15, 28, 46);
+                pdf.rect(0, 0, pageWidth, 32, 'F');
+
+                if (tournamentLogo) {
+                    pdf.addImage(tournamentLogo, getPdfImageFormat(tournamentLogo), margin, 5, 18, 18);
+                } else {
+                    pdf.setFillColor(70, 132, 219);
+                    pdf.roundedRect(margin, 5, 18, 18, 3, 3, 'F');
+                }
+
+                if (teamLogo) {
+                    pdf.addImage(teamLogo, getPdfImageFormat(teamLogo), pageWidth - margin - 22, 4, 22, 22);
+                } else {
+                    pdf.setFillColor(70, 132, 219);
+                    pdf.roundedRect(pageWidth - margin - 22, 4, 22, 22, 3, 3, 'F');
+                }
+
+                pdf.setTextColor(255, 255, 255);
+                pdf.setFont('helvetica', 'bold');
+                pdf.setFontSize(18);
+                pdf.text(data.tournament?.name || 'Torneo', pageWidth / 2, 10.5, { align: 'center' });
+                pdf.setFontSize(13);
+                pdf.text(data.name || 'Equipo', pageWidth / 2, 17.5, { align: 'center' });
+                pdf.setFontSize(9);
+                pdf.text(`Delegado: ${delegateName}`, pageWidth / 2, 24, { align: 'center' });
+
+                pdf.setTextColor(32, 39, 54);
+                pdf.setFontSize(8);
+                pdf.text(`Generado: ${new Date().toLocaleString('es-MX')}`, margin, 39);
+            };
+
+            const columns = [
+                { key: 'index', label: '#', width: 10 },
+                { key: 'name', label: 'Nombre(s) y apellidos', width: 82 },
+                { key: 'birthDate', label: 'Fecha de nacimiento', width: 34 },
+                { key: 'age', label: 'Edad', width: 18 },
+                { key: 'curp', label: 'CURP', width: 48 },
+                { key: 'signature', label: 'Firma', width: contentWidth - (10 + 82 + 34 + 18 + 48) },
+            ] as const;
+
+            const roster: Array<{
+                index: string;
+                name: string;
+                birthDate: string;
+                age: string;
+                curp: string;
+                signature: string;
+            }> = (data.rosterEntries || []).map((entry: any, index: number) => ({
+                index: String(index + 1),
+                name: [entry.player?.firstName, entry.player?.lastName, entry.player?.secondLastName].filter(Boolean).join(' '),
+                birthDate: formatBirthDate(entry.player?.birthDate),
+                age: calculateAge(entry.player?.birthDate),
+                curp: entry.player?.curp || '-',
+                signature: '',
+            }));
+
+            let y = 46;
+            const rowHeight = 10;
+
+            const drawTableHeader = () => {
+                let x = margin;
+                pdf.setDrawColor(160, 173, 190);
+                pdf.setFont('helvetica', 'bold');
+                pdf.setFontSize(8.5);
+
+                columns.forEach((column) => {
+                    pdf.setFillColor(34, 43, 60);
+                    pdf.setTextColor(255, 255, 255);
+                    pdf.rect(x, y, column.width, rowHeight, 'FD');
+                    pdf.text(column.label, x + 2, y + 6.5);
+                    x += column.width;
+                });
+                y += rowHeight;
+            };
+
+            const ensurePageSpace = () => {
+                if (y + rowHeight > pageHeight - 15) {
+                    pdf.addPage();
+                    drawHeader();
+                    y = 46;
+                    drawTableHeader();
+                }
+            };
+
+            drawHeader();
+            drawTableHeader();
+
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(8);
+            pdf.setTextColor(32, 39, 54);
+
+            if (roster.length === 0) {
+                pdf.setTextColor(95, 105, 120);
+                pdf.text('No hay jugadores activos en el roster de este equipo.', margin, y + 8);
+            } else {
+                roster.forEach((row) => {
+                    ensurePageSpace();
+                    let x = margin;
+                    pdf.setTextColor(32, 39, 54);
+                    columns.forEach((column) => {
+                        pdf.setDrawColor(210, 217, 226);
+                        pdf.rect(x, y, column.width, rowHeight);
+                        const value = row[column.key] || '-';
+
+                        if (column.key === 'signature') {
+                            pdf.line(x + 4, y + 7, x + column.width - 4, y + 7);
+                        } else {
+                            pdf.text(String(value), x + 2, y + 6.5, {
+                                maxWidth: column.width - 4,
+                            });
+                        }
+                        x += column.width;
+                    });
+                    y += rowHeight;
+                });
+            }
+
+            pdf.save(`roster-${(data.name || 'equipo').replace(/\s+/g, '-').toLowerCase()}.pdf`);
+        } catch (err: any) {
+            console.error(err);
+            alert(err?.response?.data?.message || 'No se pudo generar el PDF del roster.');
+        } finally {
+            setGeneratingRosterTeamId(null);
+        }
+    };
+
     // -- Data Stores --
     const [myScorekeepers, setMyScorekeepers] = useState<UserData[]>([]);
     const [games, setGames] = useState<GameData[]>([]);
@@ -224,9 +549,10 @@ export default function AdminDashboard() {
     const [delegateTournamentId, setDelegateTournamentId] = useState('');
     const [showDelegateModal, setShowDelegateModal] = useState(false);
     const [delegateForm, setDelegateForm] = useState({
-        firstName: '', lastName: '', email: '', password: '', phone: '', teamId: '', tournamentId: '',
+        firstName: '', lastName: '', email: '', password: '', phone: '', teamId: '', tournamentId: '', linkExistingAccount: false,
     });
     const [delegateTeams, setDelegateTeams] = useState<TeamData[]>([]);
+    const [generatingRosterTeamId, setGeneratingRosterTeamId] = useState<string | null>(null);
 
     // -- Filtros de juegos --
     const [filterLeague, setFilterLeague] = useState('');
@@ -239,12 +565,8 @@ export default function AdminDashboard() {
     const [users, setUsers] = useState<UserData[]>([]);
 
     // -- Form: Create Game --
-    const [selectedTournament, setSelectedTournament] = useState('');
     const [homeTeamId, setHomeTeamId] = useState('');
     const [awayTeamId, setAwayTeamId] = useState('');
-
-    // -- Form: Jugadores --
-    const [selectedTeam, setSelectedTeam] = useState('');
     
     // -- Admin Directory Jugadores --
     const [directoryPlayers, setDirectoryPlayers] = useState<any[]>([]);
@@ -253,6 +575,37 @@ export default function AdminDashboard() {
     const [directorySearch, setDirectorySearch] = useState("");
     const [directorySearchDebounced, setDirectorySearchDebounced] = useState("");
     const [directoryLoading, setDirectoryLoading] = useState(false);
+
+    const refreshPlayersViews = async (teamIdOverride?: string, tournamentIdOverride?: string) => {
+        const resolvedTeamId = teamIdOverride || selectedTeam;
+        const resolvedTournamentId = tournamentIdOverride || selectedTournament;
+
+        setActiveTab('jugadores');
+        if (resolvedTournamentId) setSelectedTournament(resolvedTournamentId);
+        if (resolvedTeamId) setSelectedTeam(resolvedTeamId);
+        writeDashboardUrlState('jugadores', resolvedTournamentId, resolvedTeamId);
+
+        if (resolvedTeamId) {
+            try {
+                const { data } = await api.get('/players', { params: { teamId: resolvedTeamId } });
+                setPlayers(data || []);
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        try {
+            const params: any = { page: directoryPage, limit: 12 };
+            if (directorySearchDebounced.length >= 2) params.q = directorySearchDebounced;
+            if (resolvedTeamId) params.teamId = resolvedTeamId;
+            else if (resolvedTournamentId) params.tournamentId = resolvedTournamentId;
+            const { data } = await api.get('/players/directory', { params });
+            setDirectoryPlayers(data.data || []);
+            setDirectoryMeta(data.meta || { total: 0, page: 1, limit: 12, totalPages: 1 });
+        } catch (err) {
+            console.error(err);
+        }
+    };
 
     useEffect(() => {
         const handler = setTimeout(() => setDirectorySearchDebounced(directorySearch), 400);
@@ -291,6 +644,7 @@ export default function AdminDashboard() {
         logoUrl: '',
         leagueId: '',
         isPrivate: false,
+        startDate: '',
     });
 
     // -- Form: Create Team --
@@ -426,15 +780,15 @@ export default function AdminDashboard() {
         e.preventDefault();
         setSaving(true);
         try {
-            const { data } = await api.post('/delegates', {
+            await api.post('/delegates', {
                 ...delegateForm,
                 tournamentId: delegateForm.tournamentId || delegateTournamentId,
             });
             fetchDelegates(delegateForm.tournamentId || delegateTournamentId);
             setShowDelegateModal(false);
-            setDelegateForm({ firstName: '', lastName: '', email: '', password: '', phone: '', teamId: '', tournamentId: '' });
+            setDelegateForm({ firstName: '', lastName: '', email: '', password: '', phone: '', teamId: '', tournamentId: '', linkExistingAccount: false });
         } catch (err: any) {
-            alert(err?.response?.data?.message || 'Error al crear delegado');
+            alert(err?.response?.data?.message || 'Error al crear o vincular delegado');
         } finally { setSaving(false); }
     };
 
@@ -449,12 +803,12 @@ export default function AdminDashboard() {
 
     const handleDeleteDelegate = async (delegate: DelegateData) => {
         const name = `${delegate.user.firstName} ${delegate.user.lastName}`;
-        if (!confirm(`¿Eliminar la cuenta del delegado "${name}" y su acceso?\nEsta acción no se puede deshacer.`)) return;
+        if (!confirm(`¿Desvincular a "${name}" de este equipo?\nLa cuenta seguirá existiendo si también participa en otros equipos o ligas.`)) return;
         try {
             await api.delete(`/delegates/${delegate.id}`);
             setDelegates(prev => prev.filter(d => d.id !== delegate.id));
         } catch (err: any) {
-            alert(err?.response?.data?.message || 'Error al eliminar delegado');
+            alert(err?.response?.data?.message || 'Error al desvincular delegado');
         }
     };
 
@@ -497,27 +851,83 @@ export default function AdminDashboard() {
             fetchTournaments(adminId);
             fetchMyScorekeepers();
         } else if (userRole === 'delegado') {
-            // Delegado: auto-selecciona su equipo y torneo, y carga los datos necesarios
-            if (currentUser?.delegateTournamentId) {
-                setSelectedTournament(currentUser.delegateTournamentId);
-                // Cargar el torneo para que el dropdown no esté vacío
-                api.get(`/torneos/${currentUser.delegateTournamentId}`)
-                    .then(({ data }) => {
-                        if (data) setTournaments([data]);
-                    })
-                    .catch(console.error);
+            const assignments = currentUser?.delegateAssignments ?? [];
+
+            if (assignments.length === 0) {
+                setTournaments([]);
+                setTeams([]);
+                setSelectedTournament('');
+                setSelectedTeam('');
+                return;
             }
-            if (currentUser?.delegateTeamId) {
-                setSelectedTeam(currentUser.delegateTeamId);
-                // Cargar el equipo para el dropdown de equipos
-                api.get(`/teams/${currentUser.delegateTeamId}`)
-                    .then(({ data }) => {
-                        if (data) setTeams([data]);
-                    })
-                    .catch(console.error);
+
+            const tournamentMap = new Map<string, TournamentData>();
+            assignments.forEach((assignment) => {
+                if (!tournamentMap.has(assignment.tournamentId)) {
+                    tournamentMap.set(assignment.tournamentId, {
+                        id: assignment.tournamentId,
+                        name: assignment.tournamentName || 'Torneo asignado',
+                        season: assignment.tournamentSeason || '',
+                        status: assignment.tournamentStatus || 'upcoming',
+                        sport: 'Béisbol',
+                        branch: 'Varonil',
+                    } as TournamentData);
+                }
+            });
+
+            const selectedAssignment = selectedTeam
+                ? assignments.find((assignment) => assignment.teamId === selectedTeam)
+                : null;
+            const requestedTournamentId = selectedTournament && tournamentMap.has(selectedTournament)
+                ? selectedTournament
+                : '';
+            const effectiveTournamentId = requestedTournamentId || selectedAssignment?.tournamentId || (assignments.length === 1 ? assignments[0]?.tournamentId || '' : '');
+
+            setTournaments(Array.from(tournamentMap.values()));
+            if (effectiveTournamentId !== selectedTournament) {
+                setSelectedTournament(effectiveTournamentId);
             }
+
+            const loadDelegateTeams = async () => {
+                const relevantAssignments = assignments.filter((assignment) =>
+                    !effectiveTournamentId || assignment.tournamentId === effectiveTournamentId,
+                );
+
+                if (relevantAssignments.length === 0) {
+                    setTeams([]);
+                    if (selectedTeam) setSelectedTeam('');
+                    return;
+                }
+
+                const tournamentIds = Array.from(new Set(relevantAssignments.map((assignment) => assignment.tournamentId)));
+                const responses = await Promise.all(
+                    tournamentIds.map((tournamentId) =>
+                        api.get('/teams', { params: { tournamentId } })
+                            .then(({ data }) => data || [])
+                            .catch(() => []),
+                    ),
+                );
+
+                const allowedTeamIds = new Set(relevantAssignments.map((assignment) => assignment.teamId));
+                const fullTeams = responses
+                    .flat()
+                    .filter((team: TeamData) => allowedTeamIds.has(team.id))
+                    .sort((a: TeamData, b: TeamData) => a.name.localeCompare(b.name));
+
+                setTeams(fullTeams);
+
+                const validSelectedTeam = fullTeams.some((team: TeamData) => team.id === selectedTeam)
+                    ? selectedTeam
+                    : (!effectiveTournamentId && assignments.length > 1 ? '' : fullTeams[0]?.id || '');
+
+                if (validSelectedTeam !== selectedTeam) {
+                    setSelectedTeam(validSelectedTeam);
+                }
+            };
+
+            loadDelegateTeams().catch(console.error);
         }
-    }, [userRole, currentUser]);
+    }, [userRole, currentUser, selectedTournament, selectedTeam]);
 
     // Fetch Teams when Game Creation Tournament changes
     useEffect(() => {
@@ -541,6 +951,25 @@ export default function AdminDashboard() {
             .then(({ data }) => setPlayers(data || []))
             .catch(err => console.error(err));
     }, [selectedTeam]);
+
+    useEffect(() => {
+        if (!selectedTeam) return;
+
+        if (userRole === 'delegado') {
+            const isValidDelegateTeam = delegateAssignments.some((assignment) =>
+                assignment.teamId === selectedTeam && (!selectedTournament || assignment.tournamentId === selectedTournament),
+            );
+
+            if (!isValidDelegateTeam) {
+                setSelectedTeam('');
+            }
+            return;
+        }
+
+        if (!teams.some((team) => team.id === selectedTeam)) {
+            setSelectedTeam('');
+        }
+    }, [selectedTeam, selectedTournament, teams, userRole, delegateAssignments]);
 
     // Cerrar dropdown de liga al hacer clic fuera
     useEffect(() => {
@@ -614,6 +1043,7 @@ export default function AdminDashboard() {
                 description: tournForm.description,
                 logoUrl: tournForm.logoUrl,
                 isPrivate: tournForm.isPrivate,
+                startDate: tournForm.startDate || undefined,
             });
             if (newTourn) {
                 alert('Torneo Creado Satisfactoriamente');
@@ -631,6 +1061,7 @@ export default function AdminDashboard() {
                     logoUrl: '',
                     leagueId: '',
                     isPrivate: false,
+                    startDate: '',
                 });
                 fetchTournaments(
                     (userRole === 'organizer' || userRole === 'presi') ? currentUser?.id : undefined,
@@ -682,6 +1113,7 @@ export default function AdminDashboard() {
                 logoUrl: '',
                 leagueId: '',
                 isPrivate: false,
+                startDate: '',
             });
             fetchTournaments(
                 (userRole === 'organizer' || userRole === 'presi') ? currentUser?.id : undefined,
@@ -724,6 +1156,7 @@ export default function AdminDashboard() {
             logoUrl: tourn.logoUrl || '',
             leagueId: tourn.league?.id || '',
             isPrivate: (tourn as any).isPrivate ?? false,
+            startDate: (tourn as any).startDate ? new Date((tourn as any).startDate).toISOString().split('T')[0] : '',
         });
         setShowEditTournModal(true);
     };
@@ -795,10 +1228,20 @@ export default function AdminDashboard() {
             setShowTeamModal(false);
             setEditingTeam(null);
             setTeamForm({ name: '', manager: '', logoUrl: '', tournament_id: '' });
-            if (userRole === 'delegado' && currentUser?.delegateTeamId) {
-                api.get(`/teams/${currentUser.delegateTeamId}`)
-                    .then(({ data }) => setTeams(data ? [data] : []))
-                    .catch(console.error);
+            if (userRole === 'delegado') {
+                const activeDelegateTeams = (currentUser?.delegateAssignments ?? [])
+                    .filter((assignment) => !selectedTournament || assignment.tournamentId === selectedTournament)
+                    .map((assignment) => ({
+                        id: assignment.teamId,
+                        name: assignment.teamName || 'Equipo asignado',
+                        tournament: {
+                            id: assignment.tournamentId,
+                            name: assignment.tournamentName || 'Torneo asignado',
+                            season: assignment.tournamentSeason || '',
+                            status: assignment.tournamentStatus || 'upcoming',
+                        },
+                    })) as TeamData[];
+                setTeams(activeDelegateTeams);
             } else if (selectedTournament) {
                 api.get('/teams', { params: { tournamentId: selectedTournament } })
                     .then(({ data }) => setTeams(data || []))
@@ -813,6 +1256,13 @@ export default function AdminDashboard() {
         e.preventDefault();
         setSaving(true);
         try {
+            const targetTeamId = playerForm.team_id;
+            const targetTournamentId =
+                selectedTournament ||
+                resolveDelegateTournamentForTeam(targetTeamId) ||
+                teams.find(t => t.id === targetTeamId)?.tournament?.id ||
+                '';
+
             await api.post('/players', {
                 firstName: playerForm.firstName,
                 lastName: playerForm.lastName,
@@ -820,8 +1270,8 @@ export default function AdminDashboard() {
                 curp: playerForm.curp || undefined,
                 birthDate: playerForm.birthDate || undefined,
                 number: playerForm.number ? parseInt(playerForm.number) : null,
-                teamId: playerForm.team_id,
-                tournamentId: selectedTournament || currentUser?.delegateTournamentId, // Esto previene el error 400 y activa la detección de duplicados
+                teamId: targetTeamId,
+                tournamentId: targetTournamentId,
                 position: playerForm.position,
                 bats: playerForm.bats,
                 throws: playerForm.throws,
@@ -832,16 +1282,12 @@ export default function AdminDashboard() {
             alert('Jugador Registrado Satisfactoriamente');
             setShowPlayerModal(false);
             setPlayerForm({ firstName: '', lastName: '', secondLastName: '', curp: '', birthDate: '', birthPlace: '', number: '', position: 'INF', bats: 'R', throws: 'R', photoUrl: '', team_id: '' });
-            if (selectedTeam === playerForm.team_id) {
-                api.get('/players', { params: { teamId: selectedTeam } })
-                    .then(({ data }) => setPlayers(data || []))
-                    .catch(console.error);
-            }
+            await refreshPlayersViews(targetTeamId, targetTournamentId);
         } catch (err: any) {
             console.error(err);
             const data = err?.response?.data;
             if (data?.code === 'QUOTA_EXCEEDED') {
-                alert(`Límite alcanzado: ${data.message}`);
+                alert(`Limite alcanzado: ${data.message}`);
             } else {
                 alert('Error al crear jugador');
             }
@@ -895,7 +1341,7 @@ export default function AdminDashboard() {
 
     const handleCsvPreview = async () => {
         const teamId = csvTeamId || playerForm.team_id;
-        const tournamentId = selectedTournament || currentUser?.delegateTournamentId || teams.find(t => t.id === teamId)?.tournament?.id;
+        const tournamentId = selectedTournament || resolveDelegateTournamentForTeam(teamId) || teams.find(t => t.id === teamId)?.tournament?.id;
         if (!teamId) { setCsvError('Selecciona un equipo destino'); return; }
         const valid = csvRows.filter(r => r.firstName && r.lastName);
         if (valid.length === 0) { setCsvError('Cada jugador necesita al menos nombre y apellido'); return; }
@@ -935,7 +1381,7 @@ export default function AdminDashboard() {
     const handleConfirmImport = async () => {
         if (!importPreview) return;
         const teamId = csvTeamId || playerForm.team_id;
-        const tournamentId = selectedTournament || currentUser?.delegateTournamentId || teams.find(t => t.id === teamId)?.tournament?.id;
+        const tournamentId = selectedTournament || resolveDelegateTournamentForTeam(teamId) || teams.find(t => t.id === teamId)?.tournament?.id;
         setConfirmingImport(true);
         const selected = importPreview.filter(r => importChecked.has(r.row));
         const toCreate = selected
@@ -962,11 +1408,9 @@ export default function AdminDashboard() {
             await api.post('/players/confirm-import', { teamId, tournamentId, toCreate, toRoster });
             setShowPlayerModal(false);
             resetCsvState();
-            if (teamId === selectedTeam) {
-                api.get('/players', { params: { teamId } }).then(({ data }) => setPlayers(data || [])).catch(console.error);
-            }
+            await refreshPlayersViews(teamId, tournamentId);
         } catch (err: any) {
-            setCsvError(err?.response?.data?.message || 'Error al confirmar importación');
+            setCsvError(err?.response?.data?.message || 'Error al confirmar importacion');
         } finally { setConfirmingImport(false); }
     };
 
@@ -1049,6 +1493,13 @@ export default function AdminDashboard() {
         if (!editingPlayer) return;
         setSaving(true);
         try {
+            const targetTeamId = playerForm.team_id || selectedTeam || editingPlayer.team_id || '';
+            const targetTournamentId =
+                selectedTournament ||
+                teams.find(t => t.id === targetTeamId)?.tournament?.id ||
+                resolveDelegateTournamentForTeam(targetTeamId) ||
+                '';
+
             await api.patch(`/players/${editingPlayer.id}`, {
                 firstName: playerForm.firstName,
                 lastName: playerForm.lastName,
@@ -1056,8 +1507,8 @@ export default function AdminDashboard() {
                 curp: playerForm.curp || undefined,
                 birthDate: playerForm.birthDate || undefined,
                 number: playerForm.number && playerForm.number.trim() !== '' ? parseInt(playerForm.number) : undefined,
-                teamId: playerForm.team_id || undefined,
-                tournamentId: selectedTournament || undefined,
+                teamId: targetTeamId || undefined,
+                tournamentId: targetTournamentId || undefined,
                 position: playerForm.position || undefined,
                 bats: playerForm.bats || 'R',
                 throws: playerForm.throws || 'R',
@@ -1068,14 +1519,10 @@ export default function AdminDashboard() {
             setShowEditPlayerModal(false);
             setEditingPlayer(null);
             setPlayerForm({ firstName: '', lastName: '', secondLastName: '', curp: '', birthDate: '', birthPlace: '', number: '', position: 'INF', bats: 'R', throws: 'R', photoUrl: '', team_id: '' });
-            if (selectedTeam) {
-                api.get('/players', { params: { teamId: selectedTeam } })
-                    .then(({ data }) => setPlayers(data || []))
-                    .catch(console.error);
-            }
-        } catch (err) { 
+            await refreshPlayersViews(targetTeamId, targetTournamentId);
+        } catch (err) {
             console.error(err);
-            alert('Error al actualizar jugador'); 
+            alert('Error al actualizar jugador');
         } finally { setSaving(false); }
     };
 
@@ -1384,6 +1831,7 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
             { id: 'juegos', label: 'Juegos & Stats', icon: '📊', roles: ['admin', 'organizer', 'presi', 'scorekeeper'] },
             { id: 'usuarios', label: (userRole === 'organizer' || userRole === 'presi') ? 'Mi Personal' : 'Control de Accesos', icon: '🔑', roles: ['admin', 'organizer', 'presi'] },
             { id: 'delegados', label: 'Delegados', icon: '🪪', roles: ['admin', 'organizer', 'presi'] },
+            { id: 'campos', label: 'Unid. Deportivas', icon: '🏟️', roles: ['admin', 'organizer', 'presi'] },
             { id: 'plan', label: 'Mi Plan', icon: '💎', roles: ['organizer'] },
         ];
         return (
@@ -1751,18 +2199,28 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                             <section className="animate-fade-in-up">
                                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                                     <h2 className="text-xl font-black text-foreground flex items-center gap-2">
-                                        <span className="w-2 h-4 bg-primary rounded-full"></span> {userRole === 'delegado' ? 'Mi Equipo' : 'Equipos Registrados'}
+                                        <span className="w-2 h-4 bg-primary rounded-full"></span> {userRole === 'delegado' ? (delegateHasMultipleAssignments ? 'Mis Equipos' : 'Mi Equipo') : 'Equipos Registrados'}
                                     </h2>
-                                    {userRole !== 'delegado' && (
+                                    {(userRole !== 'delegado' || delegateHasMultipleAssignments) && (
                                         <div className="flex items-center gap-3 w-full sm:w-auto">
                                             <select
                                                 className="w-full sm:w-64 bg-surface border border-muted/30 text-foreground rounded-lg p-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm"
                                                 value={selectedTournament}
-                                                onChange={(e) => setSelectedTournament(e.target.value)}
+                                                onChange={(e) => handleTournamentFilterChange(e.target.value)}
                                             >
-                                                <option value="">Filtrar por Torneo...</option>
+                                                <option value="">{userRole === 'delegado' ? 'Todos mis torneos' : 'Filtrar por Torneo...'}</option>
                                                 {tournaments.map((t: TournamentData) => <option key={t.id} value={t.id}>{t.name} ({t.season})</option>)}
                                             </select>
+                                            {userRole === 'delegado' && delegateHasMultipleAssignments && (
+                                                <select
+                                                    className="w-full sm:w-64 bg-surface border border-muted/30 text-foreground rounded-lg p-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm"
+                                                    value={selectedTeam}
+                                                    onChange={(e) => setSelectedTeam(e.target.value)}
+                                                >
+                                                    <option value="">Todos mis equipos</option>
+                                                    {teams.map((t: TeamData) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                                </select>
+                                            )}
                                             {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (() => {
                                                 const maxTeams = (userRole === 'admin' || userRole === 'presi') ? 999 : (currentUser?.maxTeamsPerTournament ?? 0);
                                                 const atTeamQuota = userRole !== 'admin' && !!selectedTournament && teams.length >= maxTeams;
@@ -1800,10 +2258,12 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                             ) : teams.length === 0 ? (
                                                 <tr>
                                                     <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
-                                                        {userRole === 'delegado' ? 'Identificando la información de tu equipo...' : 'No hay equipos registrados en este torneo. Clic en "Añadir Equipo".'}
+                                                        {userRole === 'delegado' ? 'No tienes equipos asignados con los filtros actuales.' : 'No hay equipos registrados en este torneo. Clic en "Añadir Equipo".'}
                                                     </td>
                                                 </tr>
-                                            ) : teams.map((team: any) => (
+                                            ) : teams
+                                                .filter((team: any) => !selectedTeam || team.id === selectedTeam)
+                                                .map((team: any) => (
                                                 <tr key={team.id} className="hover:bg-muted/5 transition-colors">
                                                     <td className="px-6 py-4 font-bold text-foreground">
                                                         <div className="flex items-center gap-3">
@@ -1827,6 +2287,15 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
                                                         <button className="text-primary hover:underline font-bold text-xs mr-4" onClick={() => router.push(`/equipos/${team.id}`)}>Ver Perfil</button>
+                                                        {userRole === 'delegado' && (
+                                                            <button
+                                                                className="text-primary hover:underline font-bold text-xs mr-4 disabled:text-muted-foreground disabled:no-underline"
+                                                                onClick={() => generateRosterPdf(team)}
+                                                                disabled={generatingRosterTeamId === team.id}
+                                                            >
+                                                                {generatingRosterTeamId === team.id ? 'Generando...' : 'Generar Roster'}
+                                                            </button>
+                                                        )}
                                                         {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi' || userRole === 'delegado') && (
                                                             <button className="text-muted-foreground hover:text-foreground font-bold text-xs" onClick={() => openEditTeam(team)}>Editar</button>
                                                         )}
@@ -1857,23 +2326,23 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                                 onChange={(e) => { setDirectorySearch(e.target.value); setDirectoryPage(1); }}
                                             />
                                         </div>
-                                        {userRole !== 'delegado' && (
+                                        {(userRole !== 'delegado' || delegateHasMultipleAssignments) && (
                                             <>
                                                 <select
                                                     className="flex-grow sm:flex-grow-0 sm:w-40 bg-surface border border-muted/30 text-foreground rounded-lg p-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm"
                                                     value={selectedTournament}
-                                                    onChange={(e) => { setSelectedTournament(e.target.value); setDirectoryPage(1); }}
+                                                    onChange={(e) => handleTournamentFilterChange(e.target.value, { resetDirectoryPage: true })}
                                                 >
-                                                    <option value="">Todos los Torneos</option>
+                                                    <option value="">{userRole === 'delegado' ? 'Todos mis torneos' : 'Todos los Torneos'}</option>
                                                     {tournaments.map((t: TournamentData) => <option key={t.id} value={t.id}>{t.name}</option>)}
                                                 </select>
                                                 <select
-                                                    disabled={!selectedTournament}
+                                                    disabled={!selectedTournament && userRole !== 'delegado'}
                                                     className="flex-grow sm:flex-grow-0 sm:w-40 bg-surface border border-muted/30 text-foreground rounded-lg p-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm disabled:opacity-50"
                                                     value={selectedTeam}
                                                     onChange={(e) => { setSelectedTeam(e.target.value); setDirectoryPage(1); }}
                                                 >
-                                                    <option value="">Todos los Equipos</option>
+                                                    <option value="">{userRole === 'delegado' ? 'Todos mis equipos' : 'Todos los Equipos'}</option>
                                                     {teams.map((t: TeamData) => <option key={t.id} value={t.id}>{t.name}</option>)}
                                                 </select>
                                             </>
@@ -1952,6 +2421,7 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                         <thead className="bg-muted/10 text-xs uppercase text-foreground font-black tracking-wider border-b border-muted/20">
                                             <tr>
                                                 <th className="px-6 py-4">Jugador</th>
+                                                <th className="px-4 py-4"># Jersey</th>
                                                 <th className="px-6 py-4">Equipos Registrado</th>
                                                 <th className="px-6 py-4">Posición</th>
                                                 <th className="px-6 py-4 text-right">Acciones</th>
@@ -1960,7 +2430,7 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                         <tbody className="divide-y divide-muted/10">
                                             {directoryLoading ? (
                                                 <tr>
-                                                    <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
+                                                    <td colSpan={5} className="px-6 py-12 text-center text-muted-foreground">
                                                         <div className="flex flex-col items-center justify-center opacity-60">
                                                             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin mb-3"></div>
                                                             <span>Cargando directorio...</span>
@@ -1969,11 +2439,15 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                                 </tr>
                                             ) : directoryPlayers.length === 0 ? (
                                                 <tr>
-                                                    <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
+                                                    <td colSpan={5} className="px-6 py-12 text-center text-muted-foreground">
                                                         No se encontraron jugadores que coincidan con la búsqueda o los filtros actuales.
                                                     </td>
                                                 </tr>
-                                            ) : directoryPlayers.map((player: any) => (
+                                            ) : directoryPlayers.map((player: any) => {
+                                                const rosterEntryId = player.rosterEntryId || player.rosterEntries?.[0]?.id;
+                                                const rosterNumber = player.number ?? player.rosterEntries?.[0]?.number ?? null;
+                                                const canEditThisRosterNumber = canEditRosterJersey && !!selectedTeam && !!rosterEntryId;
+                                                return (
                                                 <tr key={player.id} className="hover:bg-muted/5 transition-colors">
                                                     <td className="px-6 py-4 min-w-[200px]">
                                                         <div className="font-bold text-foreground flex items-center gap-3">
@@ -1998,6 +2472,50 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                                                 </span>
                                                             </div>
                                                         </div>
+                                                    </td>
+                                                    <td className="px-4 py-4 min-w-[110px]">
+                                                        {editingRosterNumberId === rosterEntryId ? (
+                                                            <input
+                                                                type="number"
+                                                                min={0}
+                                                                max={99}
+                                                                autoFocus
+                                                                value={rosterNumberDraft}
+                                                                onChange={(e) => setRosterNumberDraft(e.target.value)}
+                                                                onBlur={() => void saveRosterNumber(rosterEntryId)}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        void saveRosterNumber(rosterEntryId);
+                                                                    }
+                                                                    if (e.key === 'Escape') {
+                                                                        setEditingRosterNumberId(null);
+                                                                        setRosterNumberDraft('');
+                                                                    }
+                                                                }}
+                                                                disabled={savingRosterNumberId === rosterEntryId}
+                                                                className="w-20 rounded-lg border border-primary/30 bg-background px-2 py-1 text-sm font-black text-foreground outline-none focus:border-primary"
+                                                            />
+                                                        ) : (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => beginRosterNumberEdit(rosterEntryId, rosterNumber)}
+                                                                disabled={!canEditThisRosterNumber || savingRosterNumberId === rosterEntryId}
+                                                                className={`inline-flex min-w-[4.5rem] items-center justify-center rounded-lg border px-3 py-1.5 text-xs font-black transition ${
+                                                                    canEditThisRosterNumber
+                                                                        ? 'border-primary/30 bg-primary/10 text-primary hover:bg-primary/20'
+                                                                        : 'border-muted/20 bg-muted/10 text-muted-foreground cursor-default'
+                                                                }`}
+                                                                title={canEditThisRosterNumber ? 'Editar jersey' : 'Filtra por un equipo para editar el jersey correcto'}
+                                                            >
+                                                                {savingRosterNumberId === rosterEntryId
+                                                                    ? '...'
+                                                                    : rosterNumber != null && String(rosterNumber).trim() !== ''
+                                                                        ? `#${rosterNumber}`
+                                                                        : canEditThisRosterNumber
+                                                                            ? 'Asignar'
+                                                                            : '-'}
+                                                            </button>
+                                                        )}
                                                     </td>
                                                     <td className="px-6 py-4 text-xs font-bold text-muted-foreground uppercase">
                                                         <span className="bg-muted/10 px-2 py-1 rounded-md">
@@ -2067,7 +2585,7 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                                         )}
                                                     </td>
                                                 </tr>
-                                            ))}
+                                            )})}
                                         </tbody>
                                     </table>
                                 </div>
@@ -2686,7 +3204,7 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                     </h2>
                                     <button
                                         onClick={() => {
-                                            setDelegateForm({ firstName: '', lastName: '', email: '', password: '', phone: '', teamId: '', tournamentId: delegateTournamentId });
+                                            setDelegateForm({ firstName: '', lastName: '', email: '', password: '', phone: '', teamId: '', tournamentId: delegateTournamentId, linkExistingAccount: false });
                                             setShowDelegateModal(true);
                                         }}
                                         disabled={!delegateTournamentId}
@@ -2736,7 +3254,10 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                         <p className="text-muted-foreground font-bold mb-2">No hay delegados en este torneo.</p>
                                         <p className="text-sm text-muted-foreground mb-6">Crea un delegado por equipo para que cada representante gestione su propio roster.</p>
                                         <button
-                                            onClick={() => setShowDelegateModal(true)}
+                                            onClick={() => {
+                                                setDelegateForm({ firstName: '', lastName: '', email: '', password: '', phone: '', teamId: '', tournamentId: delegateTournamentId, linkExistingAccount: false });
+                                                setShowDelegateModal(true);
+                                            }}
                                             className="px-5 py-2 bg-primary hover:bg-primary-light text-white font-bold rounded-lg transition text-sm"
                                         >
                                             + Crear primer delegado
@@ -2792,6 +3313,54 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                 )}
                             </section>
                         )}
+
+                        {activeTab === 'campos' && (userRole === 'admin' || userRole === 'organizer' || userRole === 'presi') && (() => {
+                            const myLeague = leagues.find(l => l.adminId === currentUser?.id)
+                                ?? (userRole === 'presi' && currentUser?.scorekeeperLeagueId ? { id: currentUser.scorekeeperLeagueId } as any : null);
+                            return (
+                                <section className="animate-fade-in-up">
+                                    <div className="mb-4 flex items-center justify-between flex-wrap gap-3">
+                                        <div>
+                                            <h2 className="text-xl font-black text-foreground flex items-center gap-2 mb-1">
+                                                <span className="w-2 h-4 bg-primary rounded-full" /> Unidades Deportivas y Campos
+                                            </h2>
+                                            <p className="text-sm text-muted-foreground">
+                                                Organiza los campos de tu liga en unidades deportivas.
+                                            </p>
+                                        </div>
+                                        <div className="flex rounded-xl border border-muted/30 overflow-hidden">
+                                            <button
+                                                onClick={() => setCamposSubTab('gestion')}
+                                                className={`px-4 py-2 text-sm font-medium transition-colors ${camposSubTab === 'gestion' ? 'bg-primary text-white' : 'bg-surface text-muted-foreground hover:bg-muted/20'}`}
+                                            >
+                                                🏟️ Gestión
+                                            </button>
+                                            <button
+                                                onClick={() => setCamposSubTab('reporte')}
+                                                className={`px-4 py-2 text-sm font-medium transition-colors border-l border-muted/30 ${camposSubTab === 'reporte' ? 'bg-primary text-white' : 'bg-surface text-muted-foreground hover:bg-muted/20'}`}
+                                            >
+                                                📊 Ocupación
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {myLeague ? (
+                                        <>
+                                            {camposSubTab === 'gestion' && (
+                                                <SportsUnitsManager leagueId={myLeague.id} canEdit={true} />
+                                            )}
+                                            {camposSubTab === 'reporte' && (
+                                                <FieldsReport leagueId={myLeague.id} leagueName={(myLeague as any).name} />
+                                            )}
+                                        </>
+                                    ) : (
+                                        <div className="text-center py-16 text-muted-foreground">
+                                            <p className="font-bold">No tienes una liga activa vinculada.</p>
+                                            <p className="text-sm mt-1">Crea o accede a una liga primero.</p>
+                                        </div>
+                                    )}
+                                </section>
+                            );
+                        })()}
 
                     </main>
                 </div>
@@ -2898,6 +3467,19 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                     className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition h-24 resize-none"
                                     placeholder="Información relevante sobre el torneo, reglas especiales, premios, etc."
                                 />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Fecha de Inicio</label>
+                                <input
+                                    type="date"
+                                    value={tournForm.startDate}
+                                    onChange={e => setTournForm({ ...tournForm, startDate: e.target.value })}
+                                    className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition [color-scheme:dark]"
+                                />
+                                <p className="text-[10px] text-muted-foreground mt-1">
+                                    A partir de esta fecha los delegados <strong>no podrán</strong> dar de alta jugadores. Organizador y Presi siempre pueden hacerlo.
+                                </p>
                             </div>
 
                             {/* Toggle privacidad */}
@@ -3336,7 +3918,7 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                                             tournamentId: team.tournament.id,
                                                         });
                                                         setShowPlayerModal(false);
-                                                        window.location.reload();
+                                                        await refreshPlayersViews(playerForm.team_id, team.tournament.id);
                                                     } catch (err: any) {
                                                         alert(err?.response?.data?.message || 'Error al vincular jugador');
                                                     } finally { setSaving(false); }
@@ -3957,30 +4539,82 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                         <h2 className="text-2xl font-black text-foreground mb-1 uppercase tracking-tight pb-4 border-b border-muted/20">Nuevo Delegado</h2>
                         <p className="text-xs text-muted-foreground mb-4">El delegado podrá armar el roster del equipo asignado mientras el torneo esté en estado <span className="text-amber-400 font-bold">Próximo</span>.</p>
                         <form onSubmit={handleCreateDelegate} className="space-y-4">
-                            <div className="flex gap-3">
-                                <div className="flex-1">
-                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Nombre</label>
-                                    <input required type="text" value={delegateForm.firstName} onChange={e => setDelegateForm({ ...delegateForm, firstName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Carlos" />
-                                </div>
-                                <div className="flex-1">
-                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Apellido</label>
-                                    <input required type="text" value={delegateForm.lastName} onChange={e => setDelegateForm({ ...delegateForm, lastName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Ramírez" />
-                                </div>
+                            <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-background border border-muted/20">
+                                <button
+                                    type="button"
+                                    onClick={() => setDelegateForm({
+                                        ...delegateForm,
+                                        linkExistingAccount: false,
+                                        firstName: '',
+                                        lastName: '',
+                                        password: '',
+                                        phone: '',
+                                    })}
+                                    className={`px-3 py-2 rounded-lg text-xs font-bold transition ${!delegateForm.linkExistingAccount ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:text-foreground'}`}
+                                >
+                                    Crear cuenta nueva
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setDelegateForm({
+                                        ...delegateForm,
+                                        linkExistingAccount: true,
+                                        firstName: '',
+                                        lastName: '',
+                                        password: '',
+                                        phone: '',
+                                    })}
+                                    className={`px-3 py-2 rounded-lg text-xs font-bold transition ${delegateForm.linkExistingAccount ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:text-foreground'}`}
+                                >
+                                    Vincular cuenta
+                                </button>
                             </div>
-                            <div className="flex gap-3">
-                                <div className="flex-1">
-                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Correo</label>
-                                    <input required type="email" value={delegateForm.email} onChange={e => setDelegateForm({ ...delegateForm, email: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="delegado@correo.com" />
+                            {delegateForm.linkExistingAccount ? (
+                                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 space-y-3">
+                                    <div>
+                                        <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Correo de la cuenta existente</label>
+                                        <input
+                                            required
+                                            type="email"
+                                            value={delegateForm.email}
+                                            onChange={e => setDelegateForm({ ...delegateForm, email: e.target.value })}
+                                            className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition"
+                                            placeholder="persona@correo.com"
+                                        />
+                                    </div>
+                                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                        Puedes vincular una cuenta pública ya verificada o una cuenta que ya sea delegado en otra liga.
+                                        La misma persona no podrá quedar ligada a dos equipos distintos dentro del mismo torneo.
+                                    </p>
                                 </div>
-                                <div className="flex-1">
-                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Teléfono (opcional)</label>
-                                    <input type="tel" value={delegateForm.phone} onChange={e => setDelegateForm({ ...delegateForm, phone: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="6681234567" />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Contraseña Provisoria</label>
-                                <input required type="password" value={delegateForm.password} onChange={e => setDelegateForm({ ...delegateForm, password: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="••••••••" />
-                            </div>
+                            ) : (
+                                <>
+                                    <div className="flex gap-3">
+                                        <div className="flex-1">
+                                            <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Nombre</label>
+                                            <input required type="text" value={delegateForm.firstName} onChange={e => setDelegateForm({ ...delegateForm, firstName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Carlos" />
+                                        </div>
+                                        <div className="flex-1">
+                                            <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Apellido</label>
+                                            <input required type="text" value={delegateForm.lastName} onChange={e => setDelegateForm({ ...delegateForm, lastName: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="Ej. Ramírez" />
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <div className="flex-1">
+                                            <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Correo</label>
+                                            <input required type="email" value={delegateForm.email} onChange={e => setDelegateForm({ ...delegateForm, email: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="delegado@correo.com" />
+                                        </div>
+                                        <div className="flex-1">
+                                            <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Teléfono (opcional)</label>
+                                            <input type="tel" value={delegateForm.phone} onChange={e => setDelegateForm({ ...delegateForm, phone: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="6681234567" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Contraseña Provisoria</label>
+                                        <input required type="password" value={delegateForm.password} onChange={e => setDelegateForm({ ...delegateForm, password: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="••••••••" />
+                                    </div>
+                                </>
+                            )}
                             <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl">
                                 <label className="block text-[10px] font-black text-primary mb-2 uppercase text-center">ASIGNAR A EQUIPO</label>
                                 <select
@@ -3999,7 +4633,7 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                 )}
                             </div>
                             <button type="submit" disabled={saving || delegateTeams.length === 0} className={`w-full py-3 mt-2 font-bold rounded-xl transition shadow-lg ${saving || delegateTeams.length === 0 ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-primary/20 cursor-pointer active:scale-95'}`}>
-                                {saving ? 'Creando...' : 'Crear Delegado'}
+                                {saving ? (delegateForm.linkExistingAccount ? 'Vinculando...' : 'Creando...') : (delegateForm.linkExistingAccount ? 'Vincular Cuenta' : 'Crear Delegado')}
                             </button>
                         </form>
                     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Navbar from "@/components/Navbar";
 import Image from "next/image";
 import Link from "next/link";
@@ -9,6 +9,8 @@ import { getUser } from '@/lib/auth';
 import api from "@/lib/api";
 import { ArrowLeft, MapPin, Calendar, Users, Target, Clock, Settings, Radio, X, CheckCircle2, CheckCircle, ChevronRight, Trophy, Lock, Download, Edit3, Check, ChevronDown, Swords, Upload, FileText, Plus, Trash2 } from "lucide-react";
 import CreateGameWizard from "@/components/game/CreateGameWizard";
+import CalendarioTab from "@/components/game/CalendarioTab";
+import FieldsReport from "@/components/fields/FieldsReport";
 import ImageUploader from "@/components/ui/ImageUploader";
 import { uploadFileToCloudinary } from "@/lib/cloudinary";
 
@@ -31,8 +33,8 @@ export default function TournamentProfilePage() {
         isPrivate?: boolean;
         league?: { name: string };
         teams: { id: string; name: string; shortName?: string; logoUrl?: string; managerName?: string; _count?: { rosterEntries: number } }[];
-        games: { id: string; homeTeam: { id: string; name: string; shortName?: string; logoUrl?: string; wins?: number; losses?: number }; awayTeam: { id: string; name: string; shortName?: string; logoUrl?: string; wins?: number; losses?: number }; homeScore: number; awayScore: number; currentInning: number; half: string; status: string; scheduledDate: string; field?: string; round?: string; winningPitcher?: { id: string; firstName: string; lastName: string; photoUrl?: string } | null; mvpBatter1?: { id: string; firstName: string; lastName: string; photoUrl?: string } | null; mvpBatter2?: { id: string; firstName: string; lastName: string; photoUrl?: string } | null }[];
-        fields: { id: string; name: string; location?: string }[];
+        games: { id: string; homeTeam: { id: string; name: string; shortName?: string; logoUrl?: string; wins?: number; losses?: number }; awayTeam: { id: string; name: string; shortName?: string; logoUrl?: string; wins?: number; losses?: number }; homeScore: number; awayScore: number; currentInning: number; half: string; status: string; scheduledDate: string; startTime?: string | null; endTime?: string | null; field?: string; fieldId?: string | null; round?: string; winningPitcher?: { id: string; firstName: string; lastName: string; photoUrl?: string } | null; mvpBatter1?: { id: string; firstName: string; lastName: string; photoUrl?: string } | null; mvpBatter2?: { id: string; firstName: string; lastName: string; photoUrl?: string } | null }[];
+        fields: { id: string; name: string; location?: string; sportsUnit?: { id: string; name: string } | null }[];
         organizers: { id: string; user: { firstName?: string; lastName?: string; email: string } }[];
         news?: { id: string; title: string; description?: string; coverUrl?: string; facebookUrl?: string; type?: string; hasVideo?: boolean; createdAt: string }[];
     }
@@ -57,6 +59,7 @@ export default function TournamentProfilePage() {
 
     // Actions & Modal State
     const [isCreatingGame, setIsCreatingGame] = useState(false);
+    const [calendarPrefill, setCalendarPrefill] = useState<{ fieldId?: string; scheduledDate?: string; startTime?: string } | undefined>(undefined);
     const [lineupGameId, setLineupGameId] = useState<string | null>(null);
     const [isActionsOpen, setIsActionsOpen] = useState(false);
 
@@ -157,7 +160,9 @@ export default function TournamentProfilePage() {
     };
 
     const [isAddingField, setIsAddingField] = useState(false);
-    const [fieldForm, setFieldForm] = useState({ name: '', address: '', mapsUrl: '' });
+    const [fieldForm, setFieldForm] = useState({ name: '', location: '', sportsUnitId: '' });
+    const [leagueUnits, setLeagueUnits] = useState<{ id: string; name: string }[]>([]);
+    const [addingFieldLoading, setAddingFieldLoading] = useState(false);
 
     const [isAddingTeam, setIsAddingTeam] = useState(false);
 
@@ -342,7 +347,8 @@ export default function TournamentProfilePage() {
         }
     };
 
-    const [activeTab, setActiveTab] = useState<"informacion" | "equipos" | "juegos" | "posiciones" | "estadisticas">("informacion");
+    const [activeTab, setActiveTab] = useState<"informacion" | "equipos" | "juegos" | "calendario" | "posiciones" | "estadisticas">("informacion");
+    const [calendarioSubTab, setCalendarioSubTab] = useState<'calendario' | 'ocupacion'>('calendario');
 
     // ── Calendar / Jornadas ────────────────────────────────────────────────────
     const [selectedRound, setSelectedRound] = useState<string | null>(null);
@@ -498,10 +504,23 @@ export default function TournamentProfilePage() {
         }
     }, [tournament]);
 
+    const tournamentRounds = useMemo(() => {
+        const allGames = tournament?.games || [];
+        const PLAYOFF_KEYWORDS = ['final', 'semi', 'cuarto', 'dieciseisavo', 'octavo', 'playoff', 'eliminacion'];
+        const isPlayoff = (r?: string | null) => r ? PLAYOFF_KEYWORDS.some(k => r.toLowerCase().includes(k)) : false;
+        const regularGames = allGames.filter((g: any) => !isPlayoff(g.round));
+        return Array.from(new Set(regularGames.map((g: any) => g.round || 'Sin Jornada'))).sort((a, b) => {
+            const numA = parseInt(a.replace(/\D/g, '')) || 0;
+            const numB = parseInt(b.replace(/\D/g, '')) || 0;
+            return numA - numB || a.localeCompare(b);
+        });
+    }, [tournament]);
+
     const tabs = [
         { id: "informacion", label: "Información" },
         { id: "equipos", label: "Equipos" },
         { id: "juegos", label: "Juegos" },
+        { id: "calendario", label: "Calendario" },
         { id: "posiciones", label: "Posiciones" },
         { id: "estadisticas", label: "Estadísticas" },
     ] as const;
@@ -704,7 +723,8 @@ export default function TournamentProfilePage() {
                     {/* Main Content Area */}
                     <div className="w-full min-w-0">
                         {activeTab === 'informacion' && (
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in-up">
+                            <div className="animate-fade-in-up space-y-6">
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                 <div className="lg:col-span-2 space-y-6">
                                     <section className="bg-surface border border-muted/30 rounded-2xl p-6 shadow-sm">
                                         <div className="flex justify-between items-center mb-4">
@@ -730,11 +750,7 @@ export default function TournamentProfilePage() {
                                         const playoffGames = allGames.filter(g => isPlayoff(g.round));
 
                                         // Unique rounds for regular season, sorted
-                                        const rounds = Array.from(new Set(regularGames.map(g => g.round || 'Sin Jornada'))).sort((a, b) => {
-                                            const numA = parseInt(a.replace(/\D/g, '')) || 0;
-                                            const numB = parseInt(b.replace(/\D/g, '')) || 0;
-                                            return numA - numB || a.localeCompare(b);
-                                        });
+                                        const rounds = tournamentRounds;
 
                                         const activeRound = selectedRound ?? rounds[0] ?? null;
 
@@ -1344,7 +1360,20 @@ export default function TournamentProfilePage() {
                                         <div className="flex justify-between items-center mb-6">
                                             <h3 className="text-lg font-bold text-foreground">Campos</h3>
                                             {canEdit && (
-                                                <button onClick={() => setIsAddingField(true)} className="text-[10px] font-bold text-primary hover:underline">+ Añadir</button>
+                                                <button
+                                                    onClick={async () => {
+                                                        setIsAddingField(true);
+                                                        if (tournament?.leagueId && leagueUnits.length === 0) {
+                                                            try {
+                                                                const { data } = await api.get(`/leagues/${tournament.leagueId}/sports-units`);
+                                                                setLeagueUnits(data.map((u: any) => ({ id: u.id, name: u.name })));
+                                                            } catch {}
+                                                        }
+                                                    }}
+                                                    className="text-[10px] font-bold text-primary hover:underline"
+                                                >
+                                                    + Añadir
+                                                </button>
                                             )}
                                         </div>
                                         <div className="space-y-5">
@@ -1355,6 +1384,9 @@ export default function TournamentProfilePage() {
                                                     <div className="flex gap-3">
                                                         <MapPin className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
                                                         <div>
+                                                            {field.sportsUnit && (
+                                                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-0.5">{field.sportsUnit.name}</p>
+                                                            )}
                                                             <p className="text-sm font-bold text-foreground">{field.name}</p>
                                                             {field.location && (
                                                                 <a
@@ -1380,6 +1412,9 @@ export default function TournamentProfilePage() {
 
 
                                 </div>
+                            </div>
+
+
                             </div>
                         )}
 
@@ -1600,6 +1635,60 @@ export default function TournamentProfilePage() {
                                 </div>
                             );
                         })()}
+
+                        {activeTab === 'calendario' && tournament && (
+                            <div className="animate-fade-in-up space-y-4">
+                                {/* Sub-tabs */}
+                                <div className="flex gap-1 border-b border-muted/20 pb-0">
+                                    <button
+                                        onClick={() => setCalendarioSubTab('calendario')}
+                                        className={`px-4 py-2 text-xs font-black uppercase tracking-widest rounded-t-lg transition-colors ${calendarioSubTab === 'calendario' ? 'bg-primary/10 text-primary border border-b-0 border-primary/30' : 'text-muted-foreground hover:text-foreground'}`}
+                                    >
+                                        📅 Calendario
+                                    </button>
+                                    {tournament.leagueId && canEdit && (
+                                        <button
+                                            onClick={() => setCalendarioSubTab('ocupacion')}
+                                            className={`px-4 py-2 text-xs font-black uppercase tracking-widest rounded-t-lg transition-colors ${calendarioSubTab === 'ocupacion' ? 'bg-primary/10 text-primary border border-b-0 border-primary/30' : 'text-muted-foreground hover:text-foreground'}`}
+                                        >
+                                            📊 Ocupación de campos
+                                        </button>
+                                    )}
+                                </div>
+
+                                {calendarioSubTab === 'calendario' && (
+                                    <CalendarioTab
+                                        tournamentId={tournamentId}
+                                        leagueId={tournament.leagueId ?? ''}
+                                        canEdit={canEdit}
+                                        games={tournament.games as any}
+                                        rounds={tournamentRounds}
+                                        onOpenCreateWizard={(prefill) => {
+                                            setCalendarPrefill(prefill);
+                                            setIsCreatingGame(true);
+                                        }}
+                                        onGameClick={(gameId) => {
+                                            const game = tournament.games.find(g => g.id === gameId);
+                                            if (!game) return;
+                                            if (game.status === 'scheduled') router.push(`/gamescheduled/${gameId}`);
+                                            else if (game.status === 'live') router.push(`/gamecast/${gameId}`);
+                                            else if (game.status === 'finished') router.push(`/gamefinalizado/${gameId}`);
+                                        }}
+                                        onRefresh={() => window.location.reload()}
+                                    />
+                                )}
+
+                                {calendarioSubTab === 'ocupacion' && tournament.leagueId && canEdit && (
+                                    <FieldsReport
+                                        leagueId={tournament.leagueId}
+                                        tournamentId={tournamentId}
+                                        tournamentName={tournament.name}
+                                        leagueName={tournament.league?.name}
+                                        rounds={tournamentRounds}
+                                    />
+                                )}
+                            </div>
+                        )}
 
                         {activeTab === 'posiciones' && (
                             <div className="space-y-6 animate-fade-in-up">
@@ -2049,7 +2138,10 @@ export default function TournamentProfilePage() {
                 <CreateGameWizard
                     context="torneo"
                     tournamentId={tournamentId}
-                    onClose={() => setIsCreatingGame(false)}
+                    leagueId={tournament?.leagueId}
+                    calendarPrefill={calendarPrefill}
+                    onClose={() => { setIsCreatingGame(false); setCalendarPrefill(undefined); }}
+                    onGameCreated={() => { setIsCreatingGame(false); setCalendarPrefill(undefined); window.location.reload(); }}
                 />
             )}
 
@@ -2106,43 +2198,64 @@ export default function TournamentProfilePage() {
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in-up">
                     <div className="bg-surface w-full max-w-lg rounded-3xl shadow-2xl border border-muted/30 overflow-hidden flex flex-col">
                         <div className="p-6 border-b border-muted/20 flex justify-between items-center bg-muted/5 shrink-0">
-                            <h2 className="text-xl font-black text-foreground">Añadir Nuevo Campo</h2>
-                            <button onClick={() => setIsAddingField(false)} className="w-10 h-10 rounded-full bg-muted/10 hover:bg-muted/20 flex items-center justify-center text-muted-foreground transition-colors"><X className="w-5 h-5" /></button>
+                            <h2 className="text-xl font-black text-foreground">Añadir Campo a la Liga</h2>
+                            <button onClick={() => { setIsAddingField(false); setFieldForm({ name: '', location: '', sportsUnitId: '' }); }} className="w-10 h-10 rounded-full bg-muted/10 hover:bg-muted/20 flex items-center justify-center text-muted-foreground transition-colors"><X className="w-5 h-5" /></button>
                         </div>
                         <div className="p-6 space-y-4 flex-1">
+                            {leagueUnits.length > 0 ? (
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Unidad Deportiva</label>
+                                    <select
+                                        value={fieldForm.sportsUnitId}
+                                        onChange={e => setFieldForm({ ...fieldForm, sportsUnitId: e.target.value })}
+                                        className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium"
+                                    >
+                                        <option value="">— Selecciona una unidad —</option>
+                                        {leagueUnits.map(u => (
+                                            <option key={u.id} value={u.id}>{u.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            ) : (
+                                <p className="text-xs text-muted-foreground bg-muted/10 rounded-lg p-3">
+                                    Los campos pertenecen a la liga y se comparten entre todos los torneos. Ve a <strong>Unid. Deportivas</strong> en el panel de administración para gestionar unidades.
+                                </p>
+                            )}
                             <div>
-                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Nombre de las Instalaciones</label>
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Nombre del Campo</label>
                                 <input type="text" placeholder="Ej. Estadio Mobil Super" value={fieldForm.name} onChange={e => setFieldForm({ ...fieldForm, name: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Dirección Corta</label>
-                                <input type="text" placeholder="Ej. Av. Manuel L. Barragán" value={fieldForm.address} onChange={e => setFieldForm({ ...fieldForm, address: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Enlace a Google Maps</label>
-                                <input type="text" placeholder="https://maps.google.com/..." value={fieldForm.mapsUrl} onChange={e => setFieldForm({ ...fieldForm, mapsUrl: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" />
+                                <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Dirección / Enlace Google Maps</label>
+                                <input type="text" placeholder="Ej. Av. Manuel L. Barragán o https://maps.google.com/..." value={fieldForm.location} onChange={e => setFieldForm({ ...fieldForm, location: e.target.value })} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors font-medium" />
                             </div>
                             <div className="flex justify-end pt-4 gap-3 border-t border-muted/10 mt-6">
-                                <button onClick={() => setIsAddingField(false)} className="px-6 py-2.5 rounded-xl font-bold text-muted-foreground hover:bg-muted/10 transition-colors text-sm">Cancelar</button>
+                                <button onClick={() => { setIsAddingField(false); setFieldForm({ name: '', location: '', sportsUnitId: '' }); }} className="px-6 py-2.5 rounded-xl font-bold text-muted-foreground hover:bg-muted/10 transition-colors text-sm">Cancelar</button>
                                 <button
-                                    className="px-6 py-2.5 rounded-xl font-black bg-primary text-white hover:bg-primary-light transition-colors shadow-lg shadow-primary/20 text-sm"
+                                    disabled={addingFieldLoading || !fieldForm.name.trim()}
+                                    className="px-6 py-2.5 rounded-xl font-black bg-primary text-white hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20 text-sm disabled:opacity-50"
                                     onClick={async () => {
+                                        if (!tournament?.leagueId || !fieldForm.name.trim()) return;
+                                        setAddingFieldLoading(true);
                                         try {
-                                            await api.post(`/torneos/${tournamentId}/fields`, {
-                                                name: fieldForm.name,
-                                                location: fieldForm.address || null,
-                                                mapsUrl: fieldForm.mapsUrl || null,
+                                            await api.post(`/leagues/${tournament.leagueId}/fields`, {
+                                                name: fieldForm.name.trim(),
+                                                location: fieldForm.location.trim() || undefined,
+                                                sportsUnitId: fieldForm.sportsUnitId || undefined,
                                             });
-                                            alert('Campo Registrado');
                                             setIsAddingField(false);
-                                            window.location.reload();
-                                        } catch (error) {
-                                            console.error(error);
-                                            alert('Error al registrar campo');
+                                            setFieldForm({ name: '', location: '', sportsUnitId: '' });
+                                            // Refrescar datos del torneo
+                                            const { data } = await api.get(`/torneos/${tournamentId}`);
+                                            setTournament(data);
+                                        } catch (err: any) {
+                                            alert(err?.response?.data?.message ?? 'Error al registrar campo');
+                                        } finally {
+                                            setAddingFieldLoading(false);
                                         }
                                     }}
                                 >
-                                    Guardar Campo
+                                    {addingFieldLoading ? 'Guardando…' : 'Guardar Campo'}
                                 </button>
                             </div>
                         </div>

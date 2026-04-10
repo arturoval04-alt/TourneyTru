@@ -82,6 +82,8 @@ model League {
   tournaments   Tournament[]
   umpires       Umpire[]
   subscriptions Subscription[]
+  sportsUnits   SportsUnit[]
+  fields        Field[]
 
   @@map("leagues")
 }
@@ -136,16 +138,70 @@ model TournamentOrganizer {
   @@map("tournament_organizers")
 }
 
+// ─────────────────────────────────────────────
+// SPORTS UNIT — Unidad deportiva de una liga (estadio, complejo, parque)
+// Un campo pertenece a una unidad; cualquier torneo de la liga puede usarlos
+// ─────────────────────────────────────────────
+model SportsUnit {
+  id             String   @id @default(uuid())
+  leagueId       String   @map("league_id")
+  name           String   @db.NVarChar(200)
+  location       String?  @db.NVarChar(500)
+  isActive       Boolean  @default(true) @map("is_active")
+  // JSON: { slots: string[], avgDurationMinutes: number, minGapMinutes: number, allowOverlap: boolean }
+  scheduleConfig String?  @map("schedule_config") @db.NVarChar(Max)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+
+  league League  @relation(fields: [leagueId], references: [id], onDelete: Cascade, map: "su_league_id_fkey")
+  fields Field[]
+
+  @@index([leagueId, isActive], map: "sports_units_league_active_idx")
+  @@map("sports_units")
+}
+
 model Field {
   id           String     @id @default(uuid())
-  name         String
-  location     String?
-  tournamentId String     @map("tournament_id")
+  name         String     @db.NVarChar(200)
+  location     String?    @db.NVarChar(500)
+  // ─── Nuevo: campo pertenece a liga y unidad deportiva ─────
+  leagueId     String?    @map("league_id")
+  sportsUnitId String?    @map("sports_unit_id")
+  isActive     Boolean    @default(true) @map("is_active")
+  // ─── Legado: mantener durante migración ───────────────────
+  tournamentId String?    @map("tournament_id")
   createdAt    DateTime   @default(now()) @map("created_at")
-  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  teamsAsHome  Team[]
+  updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at")
 
+  league       League?      @relation(fields: [leagueId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "field_league_id_fkey")
+  sportsUnit   SportsUnit?  @relation(fields: [sportsUnitId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "field_sports_unit_id_fkey")
+  tournament   Tournament?  @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  teamsAsHome  Team[]
+  games        Game[]       @relation("GameField")
+  availability FieldAvailability[]
+
+  @@index([leagueId, sportsUnitId, isActive], map: "fields_league_unit_active_idx")
   @@map("fields")
+}
+
+// ─────────────────────────────────────────────
+// FIELD AVAILABILITY — Bloques de disponibilidad/ocupación por campo
+// ─────────────────────────────────────────────
+model FieldAvailability {
+  id        String   @id @default(uuid())
+  fieldId   String   @map("field_id")
+  date      DateTime @db.Date
+  startTime DateTime @map("start_time") @db.Time
+  endTime   DateTime @map("end_time") @db.Time
+  // 'available' | 'blocked' | 'reserved'
+  type      String   @default("available") @db.NVarChar(20)
+  notes     String?  @db.NVarChar(500)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  field Field @relation(fields: [fieldId], references: [id], onDelete: Cascade, map: "fa_field_id_fkey")
+
+  @@index([fieldId, date, startTime, endTime], map: "field_availability_idx")
+  @@map("field_availability")
 }
 
 model Team {
@@ -236,10 +292,12 @@ model GameUmpire {
 
 model Game {
   id               String         @id @default(uuid())
-  field            String?
-  scheduledDate    DateTime       @map("scheduled_date")
+  field            String?        // legado — usar fieldId cuando esté disponible
+  fieldId          String?        @map("field_id")
+  scheduledDate    DateTime?      @map("scheduled_date")   // nullable para juegos en estado draft
   startTime        DateTime?      @map("start_time")
   endTime          DateTime?      @map("end_time")
+  // status: 'draft' | 'scheduled' | 'live' | 'completed'
   status           String         @default("scheduled")
   homeScore        Int            @default(0) @map("home_score")
   awayScore        Int            @default(0) @map("away_score")
@@ -257,6 +315,7 @@ model Game {
   createdById      String?        @map("created_by_id")
   liveStateJson    String?        @map("live_state_json") @db.NVarChar(Max)
   createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @default(now()) @updatedAt @map("updated_at")
   umpireBase1        String?        @map("umpire_base1")
   umpireBase2        String?        @map("umpire_base2")
   umpireBase3        String?        @map("umpire_base3")
@@ -270,6 +329,7 @@ model Game {
   mvpBatter1       Player?        @relation("GameMvpBatter1", fields: [mvpBatter1Id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   mvpBatter2       Player?        @relation("GameMvpBatter2", fields: [mvpBatter2Id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   tournament       Tournament     @relation(fields: [tournamentId], references: [id], onUpdate: NoAction)
+  fieldRef         Field?         @relation("GameField", fields: [fieldId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "game_field_id_fkey")
   winningPitcher   Player?        @relation("GameWinningPitcher", fields: [winningPitcherId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   losingPitcher    Player?        @relation("GameLosingPitcher", fields: [losingPitcherId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   savePitcher      Player?        @relation("GameSavePitcher", fields: [savePitcherId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -278,6 +338,7 @@ model Game {
   lineups          Lineup[]
   plays            Play[]
 
+  @@index([tournamentId, scheduledDate, fieldId, status], map: "games_tournament_date_field_status_idx")
   @@index([tournamentId, status], map: "games_tournament_status_idx")
   @@index([status, createdAt], map: "games_status_created_idx")
   @@index([homeTeamId, awayTeamId], map: "games_teams_idx")

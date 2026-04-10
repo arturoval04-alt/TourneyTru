@@ -245,7 +245,7 @@ export class TournamentsService {
                     },
                     orderBy: { scheduledDate: 'asc' },
                 },
-                fields: true,
+                fields: { include: { sportsUnit: { select: { id: true, name: true } } } },
                 organizers: { include: { user: true } },
                 news: { orderBy: { createdAt: 'desc' } }
             },

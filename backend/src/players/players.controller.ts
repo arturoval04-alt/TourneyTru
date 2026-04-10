@@ -15,6 +15,9 @@ const buildRequestor = (user?: any): Requestor | undefined => {
         scorekeeperTournamentIds: user.scorekeeperTournamentIds ?? [],
         delegateTeamId: user.delegateTeamId ?? null,
         delegateTournamentId: user.delegateTournamentId ?? null,
+        delegateTeamIds: user.delegateTeamIds ?? [],
+        delegateTournamentIds: user.delegateTournamentIds ?? [],
+        delegateAssignments: user.delegateAssignments ?? [],
         isDelegateActive: user.isDelegateActive ?? false,
     };
 };

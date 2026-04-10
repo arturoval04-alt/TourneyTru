@@ -36,7 +36,13 @@ export class TeamsController {
             userId: req.user.id,
             role: req.user.role, 
             scorekeeperLeagueId: req.user.scorekeeperLeagueId ?? null,
-            scorekeeperTournamentIds: req.user.scorekeeperTournamentIds ?? []
+            scorekeeperTournamentIds: req.user.scorekeeperTournamentIds ?? [],
+            delegateTeamId: req.user.delegateTeamId ?? null,
+            delegateTournamentId: req.user.delegateTournamentId ?? null,
+            delegateTeamIds: req.user.delegateTeamIds ?? [],
+            delegateTournamentIds: req.user.delegateTournamentIds ?? [],
+            delegateAssignments: req.user.delegateAssignments ?? [],
+            isDelegateActive: req.user.isDelegateActive ?? false,
         } : undefined;
         return this.teamsService.findOne(id, requestor);
     }

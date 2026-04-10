@@ -27,7 +27,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
                 role: true,
                 teamDelegates: {
                     where: { isActive: true },
-                    include: { tournament: true }
+                    include: {
+                        team: { select: { id: true, name: true } },
+                        tournament: { select: { id: true, name: true, season: true, status: true } },
+                    }
                 },
                 scorekeeperTournaments: {
                     select: { tournamentId: true }
@@ -37,8 +40,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
         if (!user) throw new UnauthorizedException('Token inv?lido');
 
-        const activeDelegate = (user as any).teamDelegates?.[0];
+        const delegateAssignments = ((user as any).teamDelegates ?? [])
+            .filter((assignment: any) => ['upcoming', 'active'].includes(assignment.tournament?.status))
+            .map((assignment: any) => ({
+                id: assignment.id,
+                teamId: assignment.teamId,
+                tournamentId: assignment.tournamentId,
+                teamName: assignment.team?.name ?? null,
+                tournamentName: assignment.tournament?.name ?? null,
+                tournamentSeason: assignment.tournament?.season ?? null,
+                tournamentStatus: assignment.tournament?.status ?? null,
+            }));
+        const activeDelegate = delegateAssignments[0];
         const sktIds = (user as any).scorekeeperTournaments?.map((s: any) => s.tournamentId) || [];
+        const delegateTeamIds = delegateAssignments.map((assignment: any) => assignment.teamId);
+        const delegateTournamentIds = Array.from(new Set(delegateAssignments.map((assignment: any) => assignment.tournamentId)));
 
         return {
             id: user.id,
@@ -52,7 +68,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
             scorekeeperTournamentIds: sktIds,
             delegateTeamId: activeDelegate?.teamId ?? null,
             delegateTournamentId: activeDelegate?.tournamentId ?? null,
-            isDelegateActive: !!activeDelegate,
+            delegateTeamIds,
+            delegateTournamentIds,
+            delegateAssignments,
+            isDelegateActive: delegateAssignments.length > 0,
         };
     }
 }

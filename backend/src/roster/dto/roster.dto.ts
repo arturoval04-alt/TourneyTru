@@ -21,3 +21,11 @@ export class AddRosterEntryDto {
     @MaxLength(10)
     position?: string;
 }
+
+export class UpdateRosterEntryDto {
+    @IsOptional()
+    @IsInt()
+    @Min(0)
+    @Max(99)
+    number?: number | null;
+}

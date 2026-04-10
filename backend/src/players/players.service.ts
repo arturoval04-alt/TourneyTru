@@ -55,6 +55,23 @@ export class PlayersService {
         private leaguesService: LeaguesService,
     ) { }
 
+    private async assertDelegateRosterAccess(
+        requestingUser: { id: string; role: string },
+        teamId: string,
+        tournamentId: string,
+        message: string,
+    ) {
+        if (requestingUser.role !== 'delegado') return;
+        const hasAccess = await this.delegatesService.hasActiveDelegateAccess(requestingUser.id, teamId, tournamentId);
+        if (!hasAccess) {
+            throw new ForbiddenException(message);
+        }
+    }
+
+    private async getDelegateAssignmentsForUser(userId: string) {
+        return this.delegatesService.getActiveDelegatesForUser(userId);
+    }
+
 
     private canAccessTournament(tournament: any, requestor?: Requestor): boolean {
         if (!tournament) return false;
@@ -65,7 +82,13 @@ export class PlayersService {
         const isTournamentAdmin = requestorId === tournament.adminId;
         const isOrganizer = tournament.organizers?.some((o: any) => o.userId === requestorId);
         const isAssignedScorekeeper = requestor?.role === 'scorekeeper' && requestor.scorekeeperTournamentIds?.includes(tournament.id);
-        const isAssignedDelegate = requestor?.role === 'delegado' && requestor.delegateTournamentId === tournament.id && requestor.isDelegateActive;
+        const isAssignedDelegate = requestor?.role === 'delegado'
+            && !!requestor.isDelegateActive
+            && (
+                requestor.delegateTournamentIds?.includes(tournament.id)
+                || requestor.delegateAssignments?.some((assignment) => assignment.tournamentId === tournament.id)
+                || requestor.delegateTournamentId === tournament.id
+            );
 
         if (tournament.league?.isPrivate && !isLeagueAdmin && !isTournamentAdmin && !isAssignedScorekeeper) {
             return false;
@@ -240,12 +263,12 @@ export class PlayersService {
         }
 
         // Delegado: solo permite si está asignado a ese equipo y torneo
-        if (requestingUser.role === 'delegado') {
-            const activeDelegate = await this.delegatesService.getActiveDelegateForUser((requestingUser as any).id);
-            if (!activeDelegate || activeDelegate.teamId !== data.teamId || activeDelegate.tournamentId !== data.tournamentId) {
-                throw new ForbiddenException('No tienes permisos para agregar jugadores a este equipo o torneo.');
-            }
-        }
+        await this.assertDelegateRosterAccess(
+            requestingUser as any,
+            data.teamId,
+            data.tournamentId,
+            'No tienes permisos para agregar jugadores a este equipo o torneo.',
+        );
 
         // Quota check
         await this.checkQuota(data.teamId, data.tournamentId);
@@ -391,8 +414,8 @@ export class PlayersService {
             const reqUser = params.requestingUser as any;
             let scopeCondition: any = null;
 
-            if (reqUser.role === 'delegado' && reqUser.delegateTeamId) {
-                scopeCondition = { some: { teamId: reqUser.delegateTeamId, isActive: true } };
+            if (reqUser.role === 'delegado' && reqUser.delegateTeamIds?.length) {
+                scopeCondition = { some: { teamId: { in: reqUser.delegateTeamIds }, isActive: true } };
             } else if (reqUser.role === 'scorekeeper' && reqUser.scorekeeperTournamentIds?.length) {
                 scopeCondition = { some: { tournamentId: { in: reqUser.scorekeeperTournamentIds }, isActive: true } };
             } else if (reqUser.role === 'presi') {
@@ -435,6 +458,7 @@ export class PlayersService {
                     rosterEntries: {
                         where: { isActive: true },
                         select: {
+                            id: true,
                             number: true,
                             team: {
                                 select: {
@@ -734,12 +758,12 @@ export class PlayersService {
         const { teamId, tournamentId, players } = data;
 
         // Delegado check
-        if (requestingUser.role === 'delegado') {
-            const activeDelegate = await this.delegatesService.getActiveDelegateForUser(requestingUser.id);
-            if (!activeDelegate || activeDelegate.teamId !== teamId || activeDelegate.tournamentId !== tournamentId) {
-                throw new ForbiddenException('No tienes permisos para importar jugadores a este equipo o torneo.');
-            }
-        }
+        await this.assertDelegateRosterAccess(
+            requestingUser,
+            teamId,
+            tournamentId,
+            'No tienes permisos para importar jugadores a este equipo o torneo.',
+        );
 
         if (requestingUser.role === 'streamer') {
             const created = await this.prisma.$transaction(async (tx) => {
@@ -796,12 +820,12 @@ export class PlayersService {
         const { teamId, tournamentId, toCreate, toRoster } = data;
 
         // Delegado check
-        if (requestingUser.role === 'delegado') {
-            const activeDelegate = await this.delegatesService.getActiveDelegateForUser(requestingUser.id);
-            if (!activeDelegate || activeDelegate.teamId !== teamId || activeDelegate.tournamentId !== tournamentId) {
-                throw new ForbiddenException('No tienes permisos para confirmar importaciones en este equipo o torneo.');
-            }
-        }
+        await this.assertDelegateRosterAccess(
+            requestingUser,
+            teamId,
+            tournamentId,
+            'No tienes permisos para confirmar importaciones en este equipo o torneo.',
+        );
         await this.checkQuota(teamId, tournamentId, toCreate.length);
 
         return this.prisma.$transaction(async (tx) => {
@@ -866,17 +890,22 @@ export class PlayersService {
 
         // VALIDACIÓN DE SEGURIDAD PARA DELEGADO
         if (requestingUser?.role === 'delegado') {
-            const activeDelegate = await this.delegatesService.getActiveDelegateForUser(requestingUser.id);
-            if (!activeDelegate) throw new ForbiddenException('Tu cuenta de delegado no está activa.');
+            const assignments = await this.getDelegateAssignmentsForUser(requestingUser.id);
+            if (assignments.length === 0) throw new ForbiddenException('Tu cuenta de delegado no está activa.');
 
             // Si se está actualizando un RosterEntry específico (teamId + tournamentId), debe ser el suyo
             if (teamId && tournamentId) {
-                if (teamId !== activeDelegate.teamId || tournamentId !== activeDelegate.tournamentId) {
+                const hasAccess = assignments.some((assignment) => assignment.teamId === teamId && assignment.tournamentId === tournamentId);
+                if (!hasAccess) {
                     throw new ForbiddenException('No tienes permisos para editar jugadores de otros equipos.');
                 }
             } else {
                 // Si no se pasó contexto, verificar que el jugador pertenezca a su equipo en algún lado
-                const belongsToMe = player.rosterEntries.some((e: any) => e.teamId === activeDelegate.teamId && e.tournamentId === activeDelegate.tournamentId && e.isActive);
+                const belongsToMe = player.rosterEntries.some((entry: any) =>
+                    entry.isActive && assignments.some((assignment) =>
+                        assignment.teamId === entry.teamId && assignment.tournamentId === entry.tournamentId,
+                    ),
+                );
                 if (!belongsToMe) {
                     throw new ForbiddenException('Este jugador no pertenece a tu plantilla activa.');
                 }
@@ -1059,9 +1088,11 @@ export class PlayersService {
 
         // Validación de Permisos si no es el Super Admin "admin"
         if (reqUser && reqUser.role !== 'admin') {
-            const activeDelegate = reqUser.role === 'delegado' ? await this.delegatesService.getActiveDelegateForUser(reqUser.id) : null;
+            const delegateAssignments = reqUser.role === 'delegado'
+                ? await this.getDelegateAssignmentsForUser(reqUser.id)
+                : [];
 
-            if (reqUser.role === 'delegado' && !activeDelegate) {
+            if (reqUser.role === 'delegado' && delegateAssignments.length === 0) {
                 throw new ForbiddenException('Tu cuenta de delegado no está activa.');
             }
 
@@ -1076,7 +1107,10 @@ export class PlayersService {
                 const trn = entry.team?.tournament;
                 
                 if (reqUser.role === 'delegado') {
-                    if (entry.teamId !== activeDelegate?.teamId || entry.tournamentId !== activeDelegate?.tournamentId) {
+                    const hasAccess = delegateAssignments.some((assignment) =>
+                        assignment.teamId === entry.teamId && assignment.tournamentId === entry.tournamentId,
+                    );
+                    if (!hasAccess) {
                         throw new ForbiddenException('No puedes eliminar a este jugador porque no pertenece a tu plantilla.');
                     }
                 } else {

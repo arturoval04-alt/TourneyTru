@@ -13,11 +13,16 @@ export default function DelegadoIndexPage() {
             router.replace('/login');
             return;
         }
-        if (user.delegateTeamId) {
+        const assignments = user.delegateAssignments ?? [];
+        if (assignments.length > 1) {
+            router.replace('/admin/dashboard?tab=equipos');
+        } else if (assignments[0]?.teamId || user.delegateTeamId) {
+            const targetTeamId = assignments[0]?.teamId || user.delegateTeamId;
+            router.replace(`/delegado/equipo/${targetTeamId}`);
+        } else if (user.delegateTeamId) {
             router.replace(`/delegado/equipo/${user.delegateTeamId}`);
         } else {
-            // Sin equipo asignado — mostrar mensaje en lugar de loop
-            router.replace('/login');
+            router.replace('/admin/dashboard?tab=equipos');
         }
     }, [router]);
 

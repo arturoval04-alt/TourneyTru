@@ -477,8 +477,7 @@ export default function PlayerProfilePage() {
                     <PlayerAvatar
                         photoUrl={player.photoUrl}
                         firstName={player.firstName}
-                        number={player.number}
-                        size="lg"
+                        size="xl"
                     />
 
                     {/* Info */}
@@ -534,11 +533,10 @@ export default function PlayerProfilePage() {
                         <button
                             key={t.id}
                             onClick={() => setActiveTab(t.id)}
-                            className={`px-5 py-4 text-xs font-black uppercase tracking-widest whitespace-nowrap border-b-2 transition-colors cursor-pointer ${
-                                activeTab === t.id
-                                    ? "border-primary text-primary"
-                                    : "border-transparent text-muted-foreground hover:text-foreground"
-                            }`}
+                            className={`px-5 py-4 text-xs font-black uppercase tracking-widest whitespace-nowrap border-b-2 transition-colors cursor-pointer ${activeTab === t.id
+                                ? "border-primary text-primary"
+                                : "border-transparent text-muted-foreground hover:text-foreground"
+                                }`}
                         >
                             {t.label}
                         </button>
@@ -773,13 +771,12 @@ export default function PlayerProfilePage() {
                                                                 <>
                                                                     <span className="text-muted-foreground/40">—</span>
                                                                     {gameBoxscores[g.id].results.map((r, i) => (
-                                                                        <span key={i} className={`text-[11px] font-bold font-mono px-1.5 py-0.5 rounded ${
-                                                                            r.startsWith('HR') ? 'bg-primary/20 text-primary' :
+                                                                        <span key={i} className={`text-[11px] font-bold font-mono px-1.5 py-0.5 rounded ${r.startsWith('HR') ? 'bg-primary/20 text-primary' :
                                                                             r.startsWith('H') ? 'bg-emerald-500/15 text-emerald-400' :
-                                                                            r === 'BB' || r === 'HBP' ? 'bg-blue-500/15 text-blue-400' :
-                                                                            r.startsWith('K') ? 'bg-red-500/15 text-red-400' :
-                                                                            'bg-muted/10 text-muted-foreground'
-                                                                        }`}>
+                                                                                r === 'BB' || r === 'HBP' ? 'bg-blue-500/15 text-blue-400' :
+                                                                                    r.startsWith('K') ? 'bg-red-500/15 text-red-400' :
+                                                                                        'bg-muted/10 text-muted-foreground'
+                                                                            }`}>
                                                                             {r}
                                                                         </span>
                                                                     ))}
@@ -808,39 +805,39 @@ export default function PlayerProfilePage() {
                     <div className="animate-fade-in-up space-y-6">
                         {/* Active teams */}
                         {activeEntries.length > 0 && (
-                        <div>
-                            <SectionTitle>Equipos Activos ({activeEntries.length})</SectionTitle>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {activeEntries.map(entry => (
-                                    <Link key={entry.id} href={`/equipos/${entry.teamId}`} className="bg-surface border border-emerald-500/30 rounded-2xl p-5 shadow-sm hover:border-emerald-400/50 hover:-translate-y-1 transition-all group relative overflow-hidden">
-                                        <span className="absolute top-3 right-3 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded-full">Activo</span>
-                                        <div className="flex items-center gap-4 mb-3">
-                                            <div className="w-14 h-14 bg-surface rounded-full shadow-md flex items-center justify-center border-2 border-muted/20 overflow-hidden font-black text-lg shrink-0 group-hover:border-emerald-400/50 transition-colors">
-                                                {entry.team.logoUrl ? (
-                                                    <img src={entry.team.logoUrl} alt={entry.team.name} className="w-full h-full object-cover" />
-                                                ) : (
-                                                    entry.team.shortName || entry.team.name?.substring(0, 2)
-                                                )}
+                            <div>
+                                <SectionTitle>Equipos Activos ({activeEntries.length})</SectionTitle>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {activeEntries.map(entry => (
+                                        <Link key={entry.id} href={`/equipos/${entry.teamId}`} className="bg-surface border border-emerald-500/30 rounded-2xl p-5 shadow-sm hover:border-emerald-400/50 hover:-translate-y-1 transition-all group relative overflow-hidden">
+                                            <span className="absolute top-3 right-3 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded-full">Activo</span>
+                                            <div className="flex items-center gap-4 mb-3">
+                                                <div className="w-14 h-14 bg-surface rounded-full shadow-md flex items-center justify-center border-2 border-muted/20 overflow-hidden font-black text-lg shrink-0 group-hover:border-emerald-400/50 transition-colors">
+                                                    {entry.team.logoUrl ? (
+                                                        <img src={entry.team.logoUrl} alt={entry.team.name} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        entry.team.shortName || entry.team.name?.substring(0, 2)
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <h4 className="font-black text-base text-foreground leading-tight group-hover:text-primary transition-colors truncate">
+                                                        {entry.team.name}
+                                                    </h4>
+                                                    <p className="text-[11px] text-muted-foreground font-medium mt-0.5 flex items-center gap-1">
+                                                        <Trophy className="w-3 h-3" /> {entry.tournament.name} · {entry.tournament.season}
+                                                    </p>
+                                                </div>
+                                                <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
                                             </div>
-                                            <div className="flex-1 min-w-0">
-                                                <h4 className="font-black text-base text-foreground leading-tight group-hover:text-primary transition-colors truncate">
-                                                    {entry.team.name}
-                                                </h4>
-                                                <p className="text-[11px] text-muted-foreground font-medium mt-0.5 flex items-center gap-1">
-                                                    <Trophy className="w-3 h-3" /> {entry.tournament.name} · {entry.tournament.season}
-                                                </p>
+                                            <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                                                <span className="bg-primary/20 text-primary px-2 py-0.5 rounded">{entry.position || player.position || 'UTIL'}</span>
+                                                {entry.number != null && <span>#{entry.number}</span>}
+                                                <span className="ml-auto text-muted-foreground/60">Desde {new Date(entry.joinedAt).toLocaleDateString('es-MX', { month: 'short', year: 'numeric' })}</span>
                                             </div>
-                                            <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
-                                        </div>
-                                        <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                                            <span className="bg-primary/20 text-primary px-2 py-0.5 rounded">{entry.position || player.position || 'UTIL'}</span>
-                                            {entry.number != null && <span>#{entry.number}</span>}
-                                            <span className="ml-auto text-muted-foreground/60">Desde {new Date(entry.joinedAt).toLocaleDateString('es-MX', { month: 'short', year: 'numeric' })}</span>
-                                        </div>
-                                    </Link>
-                                ))}
+                                        </Link>
+                                    ))}
+                                </div>
                             </div>
-                        </div>
                         )}
 
                         {activeEntries.length === 0 && (
@@ -1029,7 +1026,7 @@ export default function PlayerProfilePage() {
                             <div>
                                 <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Posición Principal</label>
                                 <select value={playerForm.position} onChange={e => setPlayerForm(f => ({ ...f, position: e.target.value }))} className="w-full bg-background border border-muted/30 text-foreground text-sm rounded-lg p-3 outline-none focus:border-primary transition-colors">
-                                    {['P','C','1B','2B','3B','SS','LF','CF','RF','DH','INF','OF'].map(pos => <option key={pos} value={pos}>{pos}</option>)}
+                                    {['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH', 'INF', 'OF'].map(pos => <option key={pos} value={pos}>{pos}</option>)}
                                 </select>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
