@@ -8,7 +8,26 @@ import CreateGameWizard from '@/components/game/CreateGameWizard';
 import ImageUploader from '@/components/ui/ImageUploader';
 import api from '@/lib/api';
 import { uploadToCloudinary } from '@/lib/cloudinary';
-import { CheckCircle, AlertTriangle, XCircle, Search, Plus, MapPin, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CheckCircle, AlertTriangle, XCircle, Search, Plus, MapPin, ChevronLeft, ChevronRight, Upload, Download, FileText } from 'lucide-react';
+
+type ImportRowStatus = 'pending_confirm' | 'duplicate_global' | 'duplicate_tournament' | 'duplicate_team';
+interface ImportRowResult {
+    row: number;
+    status: ImportRowStatus;
+    firstName: string;
+    lastName: string;
+    secondLastName?: string | null;
+    existing?: {
+        id: string;
+        firstName: string;
+        lastName: string;
+        secondLastName?: string | null;
+        photoUrl?: string | null;
+        birthPlace?: string | null;
+        isVerified: boolean;
+        team: { id: string; name: string; shortName?: string | null; tournament: { id: string; name: string; season: string } };
+    };
+}
 
 export default function AdminDashboard() {
     const router = useRouter();
@@ -108,6 +127,16 @@ export default function AdminDashboard() {
     const [showTeamModal, setShowTeamModal] = useState(false);
     const [editingTeam, setEditingTeam] = useState<any>(null);
     const [showPlayerModal, setShowPlayerModal] = useState(false);
+    const [addPlayerTab, setAddPlayerTab] = useState<'manual' | 'csv'>('manual');
+    const [csvRows, setCsvRows] = useState<{ firstName: string; lastName: string; secondLastName: string; number: string; position: string; bats: string; throws: string; curp: string; birthDate: string; birthPlace: string }[]>([]);
+    const [csvError, setCsvError] = useState('');
+    const [importingCsv, setImportingCsv] = useState(false);
+    const [importPreview, setImportPreview] = useState<ImportRowResult[] | null>(null);
+    const [importStep, setImportStep] = useState<'upload' | 'preview'>('upload');
+    const [importChecked, setImportChecked] = useState<Set<number>>(new Set());
+    const [importSummary, setImportSummary] = useState<{ pendingConfirm: number; globalWarnings: number; blocked: number } | null>(null);
+    const [confirmingImport, setConfirmingImport] = useState(false);
+    const [csvTeamId, setCsvTeamId] = useState('');
     const [showUserModal, setShowUserModal] = useState(false);
     const [showAccessModal, setShowAccessModal] = useState(false);
     const [editingUser, setEditingUser] = useState<UserData | null>(null);
@@ -817,6 +846,138 @@ export default function AdminDashboard() {
                 alert('Error al crear jugador');
             }
         } finally { setSaving(false); }
+    };
+
+    const downloadCsvTemplate = () => {
+        const csv = 'Nombre,Apellido,ApellidoMaterno,Número,Posición,Bats,Throws,CURP,FechaNacimiento,LugarNacimiento\nJuan,Pérez,García,5,SS,R,R,,1990-05-24,Hermosillo\nMaría,López,,12,OF,L,R,AAAA000000AAAAAA00,,';
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'plantilla_jugadores.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setCsvError('');
+        setImportPreview(null);
+        setImportStep('upload');
+        setImportChecked(new Set());
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const text = (ev.target?.result as string).replace(/^\uFEFF/, '');
+            const lines = text.split(/\r?\n/).filter(l => l.trim());
+            if (lines.length < 2) { setCsvError('El archivo no tiene datos de jugadores'); return; }
+            const rows = lines.slice(1).map(line => {
+                const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+                return {
+                    firstName: cols[0] || '',
+                    lastName: cols[1] || '',
+                    secondLastName: cols[2] || '',
+                    number: cols[3] || '',
+                    position: cols[4] || 'INF',
+                    bats: cols[5] || 'R',
+                    throws: cols[6] || 'R',
+                    curp: cols[7] || '',
+                    birthDate: cols[8] || '',
+                    birthPlace: cols[9] || '',
+                };
+            }).filter(r => r.firstName || r.lastName);
+            if (rows.length === 0) { setCsvError('No se encontraron jugadores válidos'); return; }
+            setCsvRows(rows);
+        };
+        reader.readAsText(file, 'UTF-8');
+        e.target.value = '';
+    };
+
+    const handleCsvPreview = async () => {
+        const teamId = csvTeamId || playerForm.team_id;
+        const tournamentId = selectedTournament || currentUser?.delegateTournamentId || teams.find(t => t.id === teamId)?.tournament?.id;
+        if (!teamId) { setCsvError('Selecciona un equipo destino'); return; }
+        const valid = csvRows.filter(r => r.firstName && r.lastName);
+        if (valid.length === 0) { setCsvError('Cada jugador necesita al menos nombre y apellido'); return; }
+        setImportingCsv(true);
+        setCsvError('');
+        try {
+            const { data } = await api.post('/players/import', {
+                teamId,
+                tournamentId,
+                players: valid.map(r => ({
+                    firstName: r.firstName,
+                    lastName: r.lastName,
+                    secondLastName: r.secondLastName || undefined,
+                    number: r.number ? parseInt(r.number) : undefined,
+                    position: r.position || undefined,
+                    bats: ['R', 'L', 'S'].includes(r.bats) ? r.bats : undefined,
+                    throws: ['R', 'L'].includes(r.throws) ? r.throws : undefined,
+                    curp: r.curp || undefined,
+                    birthDate: r.birthDate || undefined,
+                    birthPlace: r.birthPlace || undefined,
+                })),
+            });
+            setImportPreview(data.results);
+            setImportSummary(data.summary);
+            const eligible = new Set<number>(
+                (data.results as ImportRowResult[])
+                    .filter(r => r.status === 'pending_confirm' || r.status === 'duplicate_global')
+                    .map(r => r.row)
+            );
+            setImportChecked(eligible);
+            setImportStep('preview');
+        } catch (err: any) {
+            setCsvError(err?.response?.data?.message || 'Error al verificar jugadores');
+        } finally { setImportingCsv(false); }
+    };
+
+    const handleConfirmImport = async () => {
+        if (!importPreview) return;
+        const teamId = csvTeamId || playerForm.team_id;
+        const tournamentId = selectedTournament || currentUser?.delegateTournamentId || teams.find(t => t.id === teamId)?.tournament?.id;
+        setConfirmingImport(true);
+        const selected = importPreview.filter(r => importChecked.has(r.row));
+        const toCreate = selected
+            .filter(r => r.status === 'pending_confirm')
+            .map(r => {
+                const orig = csvRows.find(c => c.firstName === r.firstName && c.lastName === r.lastName);
+                return {
+                    firstName: r.firstName,
+                    lastName: r.lastName,
+                    secondLastName: r.secondLastName || undefined,
+                    number: orig?.number ? parseInt(orig.number) : undefined,
+                    position: orig?.position || undefined,
+                    bats: orig?.bats || undefined,
+                    throws: orig?.throws || undefined,
+                    curp: orig?.curp || undefined,
+                    birthDate: orig?.birthDate || undefined,
+                    birthPlace: orig?.birthPlace || undefined,
+                };
+            });
+        const toRoster = selected
+            .filter(r => r.status === 'duplicate_global' && r.existing)
+            .map(r => ({ playerId: r.existing!.id }));
+        try {
+            await api.post('/players/confirm-import', { teamId, tournamentId, toCreate, toRoster });
+            setShowPlayerModal(false);
+            resetCsvState();
+            if (teamId === selectedTeam) {
+                api.get('/players', { params: { teamId } }).then(({ data }) => setPlayers(data || [])).catch(console.error);
+            }
+        } catch (err: any) {
+            setCsvError(err?.response?.data?.message || 'Error al confirmar importación');
+        } finally { setConfirmingImport(false); }
+    };
+
+    const resetCsvState = () => {
+        setCsvRows([]);
+        setCsvError('');
+        setImportPreview(null);
+        setImportStep('upload');
+        setImportChecked(new Set());
+        setImportSummary(null);
+        setCsvTeamId('');
     };
 
     const handleEditPlayer = (player: any) => {
@@ -1740,7 +1901,7 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                                         </button>
                                                     )}
                                                     <button
-                                                        onClick={() => !atPlayerQuota && setShowPlayerModal(true)}
+                                                        onClick={() => { if (!atPlayerQuota) { setShowPlayerModal(true); setAddPlayerTab('manual'); resetCsvState(); } }}
                                                         disabled={atPlayerQuota || isMissingTournament}
                                                         title={isDelegateSuspended ? "Tu acceso para dar de alta jugadores está suspendido por el organizador" : isMissingTournament ? "Filtra por un Torneo primero para dar alta" : atPlayerQuota ? `Límite de tu plan: ${maxPlayers} jugador(es) por equipo` : undefined}
                                                         className={`px-5 py-2 min-w-max font-bold transition text-sm flex items-center justify-center gap-2 rounded-lg ${(atPlayerQuota || isMissingTournament) ? 'bg-muted/30 text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary-light text-white shadow-md hover:shadow-primary/40 cursor-pointer'}`}
@@ -2969,15 +3130,38 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
             {/* MODAL NUEVO JUGADOR */}
             {showPlayerModal && (
                 <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
-                    <div className="bg-surface border border-muted/30 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl relative animate-fade-in-up flex flex-col">
-                        <button onClick={() => setShowPlayerModal(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground z-10">
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                        </button>
+                    <div className="bg-surface border border-muted/30 rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl animate-fade-in-up flex flex-col">
+                        {/* Header */}
+                        <div className="p-6 border-b border-muted/20 flex justify-between items-center bg-muted/5 shrink-0">
+                            <div>
+                                <h2 className="text-xl font-black text-foreground">Agregar Jugadores</h2>
+                                <p className="text-xs text-muted-foreground mt-0.5">Uno por uno o importa el roster completo desde un archivo</p>
+                            </div>
+                            <button onClick={() => { setShowPlayerModal(false); resetCsvState(); }} className="w-10 h-10 rounded-full bg-muted/10 hover:bg-muted/20 flex items-center justify-center text-muted-foreground transition-colors">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        {/* Tabs */}
+                        <div className="flex border-b border-muted/20 shrink-0">
+                            <button
+                                onClick={() => setAddPlayerTab('manual')}
+                                className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold transition-colors ${addPlayerTab === 'manual' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                            >
+                                <Plus className="w-4 h-4" />
+                                Manual
+                            </button>
+                            <button
+                                onClick={() => setAddPlayerTab('csv')}
+                                className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold transition-colors ${addPlayerTab === 'csv' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                            >
+                                <Upload className="w-4 h-4" />
+                                Importar CSV
+                            </button>
+                        </div>
+
+                        {/* Tab: Manual */}
+                        {addPlayerTab === 'manual' && (
                         <div className="flex-1 overflow-y-auto p-5 sm:p-8">
-                        <h2 className="text-2xl font-black text-foreground mb-6 uppercase tracking-tight pb-4 border-b border-muted/20">
-                            Alta de Jugador
-                        </h2>
-                        
                         <div className="flex flex-col lg:flex-row gap-6">
                             <form onSubmit={(e) => handleCreatePlayer(e)} className="space-y-4 flex-1">
                                 <div>
@@ -3194,6 +3378,197 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                             </div>
                         </div>
                         </div>
+                        )} {/* end Tab: Manual */}
+
+                        {/* Tab: CSV */}
+                        {addPlayerTab === 'csv' && (
+                            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                                {/* Selector de equipo */}
+                                <div>
+                                    <label className="block text-xs font-bold text-muted-foreground mb-1 uppercase">Equipo Destino</label>
+                                    <select
+                                        value={csvTeamId || playerForm.team_id}
+                                        onChange={e => setCsvTeamId(e.target.value)}
+                                        className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm"
+                                    >
+                                        <option value="">-- Seleccionar Equipo --</option>
+                                        {teams.map((t: TeamData) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                    </select>
+                                </div>
+
+                                {/* Descargar plantilla */}
+                                <div className="flex items-center justify-between p-3 bg-muted/10 border border-muted/20 rounded-xl">
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                        <FileText className="w-4 h-4 shrink-0" />
+                                        <span>Descarga la plantilla y llénala en Excel o Google Sheets</span>
+                                    </div>
+                                    <button onClick={downloadCsvTemplate} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 rounded-lg text-xs font-bold transition-colors">
+                                        <Download className="w-3.5 h-3.5" />
+                                        Plantilla
+                                    </button>
+                                </div>
+
+                                {/* Paso 1: Subir archivo */}
+                                {importStep === 'upload' && csvRows.length === 0 && (
+                                    <label className="flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed border-muted/30 rounded-2xl cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-colors">
+                                        <Upload className="w-8 h-8 text-muted-foreground" />
+                                        <div className="text-center">
+                                            <p className="text-sm font-bold text-foreground">Seleccionar archivo CSV</p>
+                                            <p className="text-xs text-muted-foreground mt-0.5">Columnas: Nombre, Apellido, Ap. Materno, Número, Posición, Bats, Throws</p>
+                                        </div>
+                                        <input type="file" accept=".csv" onChange={handleCsvFile} className="hidden" />
+                                    </label>
+                                )}
+
+                                {/* Archivo cargado — verificar */}
+                                {importStep === 'upload' && csvRows.length > 0 && (
+                                    <>
+                                        <div className="flex items-center justify-between">
+                                            <p className="text-sm font-bold text-foreground">{csvRows.length} jugador{csvRows.length !== 1 ? 'es' : ''} en el archivo</p>
+                                            <button onClick={resetCsvState} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Cambiar archivo</button>
+                                        </div>
+                                        <div className="overflow-x-auto rounded-xl border border-muted/20 max-h-48">
+                                            <table className="w-full text-xs">
+                                                <thead className="sticky top-0 bg-surface">
+                                                    <tr className="bg-muted/10 border-b border-muted/20">
+                                                        <th className="text-left p-2.5 font-bold text-muted-foreground uppercase tracking-wider">Nombre</th>
+                                                        <th className="text-left p-2.5 font-bold text-muted-foreground uppercase tracking-wider">Apellidos</th>
+                                                        <th className="text-center p-2.5 font-bold text-muted-foreground uppercase tracking-wider">#</th>
+                                                        <th className="text-center p-2.5 font-bold text-muted-foreground uppercase tracking-wider">Pos</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {csvRows.map((r, i) => (
+                                                        <tr key={i} className={`border-b border-muted/10 last:border-0 ${!r.firstName || !r.lastName ? 'bg-red-500/5' : ''}`}>
+                                                            <td className="p-2.5 font-medium text-foreground">{r.firstName || <span className="text-red-400">—</span>}</td>
+                                                            <td className="p-2.5 font-medium text-foreground">{r.lastName}{r.secondLastName ? ` ${r.secondLastName}` : ''}</td>
+                                                            <td className="p-2.5 text-center text-muted-foreground">{r.number || '—'}</td>
+                                                            <td className="p-2.5 text-center text-muted-foreground">{r.position || 'INF'}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div className="flex justify-end pt-1">
+                                            <button onClick={handleCsvPreview} disabled={importingCsv} className="px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-black text-sm transition-colors hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2">
+                                                {importingCsv ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Search className="w-4 h-4" />}
+                                                Verificar duplicados
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* Paso 2: Preview con colores */}
+                                {importStep === 'preview' && importPreview && (
+                                    <>
+                                        {importSummary && (
+                                            <div className="flex gap-2 flex-wrap">
+                                                {importSummary.pendingConfirm > 0 && (
+                                                    <span className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-xs font-bold text-emerald-400">
+                                                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                                                        {importSummary.pendingConfirm} nuevos
+                                                    </span>
+                                                )}
+                                                {importSummary.globalWarnings > 0 && (
+                                                    <span className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs font-bold text-amber-400">
+                                                        <span className="w-2 h-2 rounded-full bg-amber-400" />
+                                                        {importSummary.globalWarnings} ya en sistema
+                                                    </span>
+                                                )}
+                                                {importSummary.blocked > 0 && (
+                                                    <span className="flex items-center gap-1.5 px-2.5 py-1 bg-red-500/10 border border-red-500/20 rounded-lg text-xs font-bold text-red-400">
+                                                        <span className="w-2 h-2 rounded-full bg-red-400" />
+                                                        {importSummary.blocked} bloqueados
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+                                        <div className="overflow-x-auto rounded-xl border border-muted/20 max-h-64">
+                                            <table className="w-full text-xs">
+                                                <thead className="sticky top-0 bg-surface">
+                                                    <tr className="bg-muted/10 border-b border-muted/20">
+                                                        <th className="p-2.5 w-8" />
+                                                        <th className="text-left p-2.5 font-bold text-muted-foreground uppercase tracking-wider">Jugador</th>
+                                                        <th className="text-left p-2.5 font-bold text-muted-foreground uppercase tracking-wider">Estado</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {importPreview.map((r) => {
+                                                        const isBlocked = r.status === 'duplicate_team' || r.status === 'duplicate_tournament';
+                                                        const isWarning = r.status === 'duplicate_global';
+                                                        const isNew = r.status === 'pending_confirm';
+                                                        const rowBg = isBlocked ? 'bg-red-500/5' : isWarning ? 'bg-amber-500/5' : 'bg-emerald-500/5';
+                                                        return (
+                                                            <tr key={r.row} className={`border-b border-muted/10 last:border-0 ${rowBg}`}>
+                                                                <td className="p-2.5 text-center">
+                                                                    {isBlocked ? (
+                                                                        <span className="w-4 h-4 flex items-center justify-center mx-auto text-red-400">✕</span>
+                                                                    ) : (
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={importChecked.has(r.row)}
+                                                                            onChange={e => {
+                                                                                const next = new Set(importChecked);
+                                                                                e.target.checked ? next.add(r.row) : next.delete(r.row);
+                                                                                setImportChecked(next);
+                                                                            }}
+                                                                            className="accent-primary"
+                                                                        />
+                                                                    )}
+                                                                </td>
+                                                                <td className="p-2.5 font-medium text-foreground">
+                                                                    <div className="flex items-center gap-2">
+                                                                        {isWarning && r.existing?.photoUrl && (
+                                                                            <img src={r.existing.photoUrl} alt="" className="w-6 h-6 rounded-full object-cover border border-amber-500/30 shrink-0" />
+                                                                        )}
+                                                                        <span>{r.firstName} {r.lastName}{r.secondLastName ? ` ${r.secondLastName}` : ''}</span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="p-2.5">
+                                                                    {isNew && <span className="text-emerald-400 font-bold">Nuevo</span>}
+                                                                    {isWarning && (
+                                                                        <div className="flex flex-col gap-0.5">
+                                                                            <span className="text-amber-400 font-bold">En: {r.existing?.team?.name}</span>
+                                                                            {r.existing?.birthPlace && (
+                                                                                <span className="text-[10px] text-muted-foreground">📍 {r.existing.birthPlace}</span>
+                                                                            )}
+                                                                            <a href={`/jugadores/${r.existing?.id}`} target="_blank" rel="noopener noreferrer" className="text-[10px] text-amber-500 hover:text-amber-400 underline underline-offset-2">
+                                                                                Ver perfil →
+                                                                            </a>
+                                                                        </div>
+                                                                    )}
+                                                                    {r.status === 'duplicate_team' && <span className="text-red-400 font-bold">Ya en este equipo</span>}
+                                                                    {r.status === 'duplicate_tournament' && (
+                                                                        <span className="text-red-400 font-bold">En torneo: {r.existing?.team?.name}</span>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div className="flex items-center justify-between pt-1">
+                                            <button onClick={resetCsvState} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                                                Volver a cargar archivo
+                                            </button>
+                                            <button
+                                                onClick={handleConfirmImport}
+                                                disabled={confirmingImport || importChecked.size === 0}
+                                                className="px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-black text-sm transition-colors hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2"
+                                            >
+                                                {confirmingImport ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                                                Confirmar ({importChecked.size} jugadores)
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+
+                                {csvError && (
+                                    <p className="text-sm text-red-400 font-medium text-center">{csvError}</p>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

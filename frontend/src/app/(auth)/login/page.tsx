@@ -87,7 +87,12 @@ export default function LoginPage() {
             if (data.user.forcePasswordChange) {
                 router.push("/change-password");
             } else {
-                router.push(getPostLoginRedirect(data.user));
+                const redirectTarget =
+                    typeof window !== 'undefined'
+                        ? new URLSearchParams(window.location.search).get('redirect')
+                        : null;
+                const safeRedirect = redirectTarget && redirectTarget.startsWith('/') ? redirectTarget : null;
+                router.push(safeRedirect || getPostLoginRedirect(data.user));
             }
         } catch (err: any) {
             const msg = err?.response?.data?.message;
