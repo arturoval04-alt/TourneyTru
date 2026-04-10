@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import api from "@/lib/api";
-import { saveSession } from "@/lib/auth";
+import { saveSession, clearSession } from "@/lib/auth";
 
 const PLANS = [
     {
@@ -55,6 +55,10 @@ export default function LoginPage() {
     const [resendLoading, setResendLoading]     = useState(false);
     const [resendMessage, setResendMessage]     = useState("");
     const router = useRouter();
+
+    useEffect(() => {
+        clearSession();
+    }, []);
 
     const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
