@@ -8,18 +8,20 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 const ACCESS_COOKIE_OPTIONS = {
     httpOnly: true,
-    sameSite: 'lax' as const,
-    secure: process.env.NODE_ENV === 'production',
+    sameSite: (isProduction ? 'none' : 'lax') as 'none' | 'lax',
+    secure: isProduction,
     maxAge: 24 * 60 * 60 * 1000,
     path: '/',
 };
 
 const REFRESH_COOKIE_OPTIONS = {
     httpOnly: true,
-    sameSite: 'lax' as const,
-    secure: process.env.NODE_ENV === 'production',
+    sameSite: (isProduction ? 'none' : 'lax') as 'none' | 'lax',
+    secure: isProduction,
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: '/',
 };

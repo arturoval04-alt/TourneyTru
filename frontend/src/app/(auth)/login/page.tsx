@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import api from "@/lib/api";
-import { saveSession, clearSession } from "@/lib/auth";
+import { saveSession, getPostLoginRedirect } from "@/lib/auth";
 
 const PLANS = [
     {
@@ -56,10 +56,6 @@ export default function LoginPage() {
     const [resendMessage, setResendMessage]     = useState("");
     const router = useRouter();
 
-    useEffect(() => {
-        clearSession();
-    }, []);
-
     const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         setError("");
@@ -83,13 +79,15 @@ export default function LoginPage() {
                 maxTeamsPerTournament: data.user.maxTeamsPerTournament ?? 0,
                 maxPlayersPerTeam: data.user.maxPlayersPerTeam ?? 25,
                 planLabel: data.user.planLabel ?? 'public',
+                delegateTeamId: data.user.delegateTeamId ?? null,
+                delegateTournamentId: data.user.delegateTournamentId ?? null,
+                isDelegateActive: data.user.isDelegateActive ?? false,
                 forcePasswordChange: data.user.forcePasswordChange ?? false,
             });
-            const dashboardRoles = ['admin', 'organizer', 'scorekeeper', 'presi'];
             if (data.user.forcePasswordChange) {
                 router.push("/change-password");
             } else {
-                router.push(dashboardRoles.includes(data.user.role) ? "/admin/dashboard" : "/");
+                router.push(getPostLoginRedirect(data.user));
             }
         } catch (err: any) {
             const msg = err?.response?.data?.message;

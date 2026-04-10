@@ -25,12 +25,39 @@ export interface AuthTokens {
     refreshToken?: string;
 }
 
+const SESSION_COOKIE_NAME = 'tt_session';
+const ROLE_COOKIE_NAME = 'tt_role';
+const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 días
+
+function setClientCookie(name: string, value: string, maxAgeSeconds = SESSION_MAX_AGE) {
+    if (typeof document === 'undefined') return;
+    document.cookie = `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax`;
+}
+
+function clearClientCookie(name: string) {
+    if (typeof document === 'undefined') return;
+    document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
+}
+
+function syncSessionMarker(user: AuthUser | null) {
+    if (!user) {
+        clearClientCookie(SESSION_COOKIE_NAME);
+        clearClientCookie(ROLE_COOKIE_NAME);
+        return;
+    }
+
+    setClientCookie(SESSION_COOKIE_NAME, '1');
+    setClientCookie(ROLE_COOKIE_NAME, user.role || 'general');
+}
+
 export function saveSession(user: AuthUser) {
     localStorage.setItem('user', JSON.stringify(user));
+    syncSessionMarker(user);
 }
 
 export async function clearSession() {
     localStorage.removeItem('user');
+    syncSessionMarker(null);
     try {
         await fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
     } catch {
@@ -55,6 +82,21 @@ export function getUser(): AuthUser | null {
 
 export function isLoggedIn(): boolean {
     return !!getUser();
+}
+
+export function getPostLoginRedirect(user: Pick<AuthUser, 'role'> | null | undefined): string {
+    const role = user?.role;
+    if (!role) return '/';
+
+    if (['admin', 'organizer', 'scorekeeper', 'presi', 'delegado'].includes(role)) {
+        return '/admin/dashboard';
+    }
+
+    if (role === 'streamer') {
+        return '/dashboard';
+    }
+
+    return '/';
 }
 
 export async function apiFetch(path: string, options: RequestInit = {}) {
