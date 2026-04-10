@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getUser, saveSession, AuthUser } from '@/lib/auth';
+import { getUser, saveSession, clearSession, AuthUser } from '@/lib/auth';
 import CreateGameWizard from '@/components/game/CreateGameWizard';
 import ImageUploader from '@/components/ui/ImageUploader';
 import api from '@/lib/api';
@@ -1296,6 +1296,12 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                     <h2 className="text-xl font-black text-foreground flex items-center gap-2">
                                         <span className="w-2 h-4 bg-primary rounded-full"></span> Mi Perfil
                                     </h2>
+                                    <button
+                                        onClick={() => { clearSession(); router.push('/'); }}
+                                        className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 text-sm font-bold rounded-lg transition cursor-pointer"
+                                    >
+                                        Cerrar Sesión
+                                    </button>
                                 </div>
                                 <div className="bg-surface border border-muted/30 rounded-2xl overflow-hidden shadow-sm p-4 sm:p-8 flex flex-col md:flex-row gap-4 sm:gap-8 items-center sm:items-start">
                                     <div className="shrink-0 flex flex-col items-center gap-4">
