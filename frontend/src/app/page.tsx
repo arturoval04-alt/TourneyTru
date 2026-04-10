@@ -8,7 +8,7 @@ import Navbar from '@/components/Navbar';
 import { Trophy, PlayCircle, BarChart3, Share2, Search, ArrowRight, Activity, Users } from 'lucide-react';
 import api from '@/lib/api';
 // Use motion from framer-motion
-import { motion, AnimatePresence, Variants } from 'framer-motion';
+import { motion, AnimatePresence, Variants } from 'motion/react';
 
 interface GameItem {
   id: string;
