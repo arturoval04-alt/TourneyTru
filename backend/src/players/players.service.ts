@@ -735,7 +735,14 @@ export class PlayersService {
         player.gamesMvp2?.forEach((game: any) => collectTournament(game.tournament));
         player.gamesWonAsPitcher?.forEach((game: any) => collectTournament(game.tournament));
 
-        if (accessibleTournamentIds.size === 0) {
+        const totalTournaments = (player.rosterEntries?.length || 0) + 
+                                 (player.playerStats?.length || 0) +
+                                 (player.lineupEntries?.length || 0) +
+                                 (player.gamesMvp1?.length || 0) +
+                                 (player.gamesMvp2?.length || 0) +
+                                 (player.gamesWonAsPitcher?.length || 0);
+
+        if (totalTournaments > 0 && accessibleTournamentIds.size === 0) {
             throw new ForbiddenException({ code: 'PRIVATE', message: 'Este jugador pertenece a un torneo privado.' });
         }
 
