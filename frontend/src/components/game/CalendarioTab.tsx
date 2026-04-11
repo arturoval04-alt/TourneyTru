@@ -521,9 +521,10 @@ export default function CalendarioTab({ tournamentId, leagueId, canEdit, games, 
 
                                 {/* Grid: columna de hora + campos distribuidos en el ancho */}
                                 <div
+                                    className="overflow-x-auto custom-scrollbar"
                                     style={{
                                         display: 'grid',
-                                        gridTemplateColumns: `72px repeat(${unit.fields.length}, 1fr)`,
+                                        gridTemplateColumns: `72px repeat(${unit.fields.length}, minmax(200px, 1fr))`,
                                     }}
                                 >
                                     {/* Cabecera: esquina + nombres de campos */}
