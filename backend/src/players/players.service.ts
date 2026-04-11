@@ -409,34 +409,47 @@ export class PlayersService {
             where.rosterEntries = { some: { team: { tournament: { leagueId: params.leagueId } }, isActive: true } };
         }
 
-        // Restricción de Permisos por Rol
-        if (params.requestingUser && params.requestingUser.role !== 'admin') {
+        // Configuración de visibilidad (Permisos Públicos y Privados)
+        const publicScope = {
+            some: {
+                isActive: true,
+                team: { tournament: { isPrivate: false, league: { isPrivate: false } } }
+            }
+        };
+
+        const visibilityConditions: any[] = [];
+
+        if (!params.requestingUser) {
+            visibilityConditions.push({ rosterEntries: publicScope });
+        } else if (params.requestingUser.role !== 'admin') {
             const reqUser = params.requestingUser as any;
-            let scopeCondition: any = null;
+            
+            visibilityConditions.push({ rosterEntries: publicScope });
 
             if (reqUser.role === 'delegado' && reqUser.delegateTeamIds?.length) {
-                scopeCondition = { some: { teamId: { in: reqUser.delegateTeamIds }, isActive: true } };
+                visibilityConditions.push({ rosterEntries: { some: { teamId: { in: reqUser.delegateTeamIds }, isActive: true } } });
             } else if (reqUser.role === 'scorekeeper' && reqUser.scorekeeperTournamentIds?.length) {
-                scopeCondition = { some: { tournamentId: { in: reqUser.scorekeeperTournamentIds }, isActive: true } };
+                visibilityConditions.push({ rosterEntries: { some: { tournamentId: { in: reqUser.scorekeeperTournamentIds }, isActive: true } } });
             } else if (reqUser.role === 'presi') {
-                scopeCondition = { some: { team: { tournament: { organizers: { some: { userId: reqUser.id } } } }, isActive: true } };
+                visibilityConditions.push({ rosterEntries: { some: { team: { tournament: { organizers: { some: { userId: reqUser.id } } } }, isActive: true } } });
             } else if (reqUser.role === 'organizer') {
-                scopeCondition = { some: { team: { tournament: { league: { adminId: reqUser.id } } }, isActive: true } };
-            } else {
-                where.id = 'NO_ACCESS';
+                visibilityConditions.push({ rosterEntries: { some: { team: { tournament: { league: { adminId: reqUser.id } } }, isActive: true } } });
             }
+        }
 
-            if (scopeCondition) {
-                if (where.rosterEntries) {
-                    where.AND = [
-                        { rosterEntries: where.rosterEntries },
-                        { rosterEntries: scopeCondition }
-                    ];
-                    delete where.rosterEntries;
-                } else {
-                    where.rosterEntries = scopeCondition;
-                }
+        if (visibilityConditions.length > 0) {
+            const visFilter = visibilityConditions.length === 1 
+                ? visibilityConditions[0] 
+                : { OR: visibilityConditions };
+
+            if (!where.AND) where.AND = [];
+            
+            if (where.rosterEntries) {
+                where.AND.push({ rosterEntries: where.rosterEntries });
+                delete where.rosterEntries;
             }
+            
+            where.AND.push(visFilter);
         }
 
         const [total, data] = await Promise.all([

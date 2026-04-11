@@ -38,20 +38,25 @@ export class LeaguesService {
 
     async findAll(adminId?: string, requestor?: Requestor) {
         const isSystemAdmin = requestor?.role === 'admin';
-        const isRestricted = requestor?.role === 'scorekeeper' || requestor?.role === 'presi';
-        const isOrganizer = requestor?.role === 'organizer';
         const where: any = {};
 
-        if (isRestricted && requestor?.scorekeeperLeagueId) {
-            // Scorekeeper y presi: solo ven su liga asignada (aunque sea privada)
-            where.id = requestor.scorekeeperLeagueId;
-        } else if (adminId) {
+        if (adminId) {
+            // Si piden las ligas de un admin específico, eso manda
             where.adminId = adminId;
-        } else if (isOrganizer && requestor?.userId) {
-            // Organizer sin adminId explícito: solo ve las ligas donde es admin
-            where.adminId = requestor.userId;
         } else if (!isSystemAdmin) {
-            where.isPrivate = false;
+            // Usuario público o con rol: puede ver las públicas + las suyas propias
+            const orConditions: any[] = [{ isPrivate: false }];
+            
+            if (requestor?.userId) {
+                // Ligas donde es administrador
+                orConditions.push({ adminId: requestor.userId });
+            }
+            if (requestor?.scorekeeperLeagueId) {
+                // Liga adonde está asignado (presi o scorekeeper)
+                orConditions.push({ id: requestor.scorekeeperLeagueId });
+            }
+
+            where.OR = orConditions;
         }
 
         const results = await this.prisma.league.findMany({
@@ -63,14 +68,7 @@ export class LeaguesService {
             orderBy: { name: 'asc' },
         }) as any[];
 
-        // Roles con query ya acotada — no aplicar filtro de privacidad adicional
-        if (adminId || isSystemAdmin || isRestricted || isOrganizer) return results;
-
-        // Listado público: filtrar ligas privadas en memoria
-        return results.filter((l: any) => {
-            if (!(l.isPrivate ?? false)) return true;
-            return requestor?.userId === l.adminId;
-        });
+        return results;
     }
 
     async findOne(id: string, requestor?: Requestor) {
