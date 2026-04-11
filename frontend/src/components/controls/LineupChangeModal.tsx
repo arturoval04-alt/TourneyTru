@@ -43,6 +43,7 @@ export default function LineupChangeModal({ isOpen, onClose }: LineupChangeModal
         awayLineup,
         fetchGameConfig,
         connectSocket,
+        registerCustomPlay,
         syncStateToBackend,
     } = useGameStore();
 
@@ -146,6 +147,11 @@ export default function LineupChangeModal({ isOpen, onClose }: LineupChangeModal
 
         setLoading(true);
         try {
+            const playerIn = availablePlayers.find((p) => p.id === playerInId);
+            const outgoing = currentSlot?.player;
+            const teamLabel = selectedTeamId === homeTeamId ? 'Local' : 'Visitante';
+            const posLabel = normalizePosition(position) === 'DH' && dhForPosition ? `DH por ${dhForPosition}` : position;
+
             await api.post(`/games/${gameId}/lineup-change`, {
                 teamId: selectedTeamId,
                 battingOrder,
@@ -156,6 +162,11 @@ export default function LineupChangeModal({ isOpen, onClose }: LineupChangeModal
             });
 
             await fetchGameConfig();
+            if (playerIn) {
+                const incomingName = `${playerIn.firstName} ${playerIn.lastName}`.trim();
+                const outgoingName = outgoing ? `${outgoing.firstName} ${outgoing.lastName}`.trim() : 'jugador anterior';
+                await registerCustomPlay(`SUB|Cambio de lineup ${teamLabel}: entra ${incomingName} por ${outgoingName} en orden #${battingOrder} como ${posLabel}.`);
+            }
             connectSocket();
             syncStateToBackend();
             onClose();

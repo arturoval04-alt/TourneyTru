@@ -165,6 +165,10 @@ export default function AdminDashboard() {
     const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
     const [selectedTournament, setSelectedTournament] = useState('');
     const [selectedTeam, setSelectedTeam] = useState('');
+    // ── Estados AISLADOS para el directorio de jugadores (no comparten nada con otros tabs) ──
+    const [dirTournamentId, setDirTournamentId] = useState('');
+    const [dirTeamId, setDirTeamId] = useState('');
+    const [dirTeams, setDirTeams] = useState<TeamData[]>([]);
     const [editingRosterNumberId, setEditingRosterNumberId] = useState<string | null>(null);
     const [rosterNumberDraft, setRosterNumberDraft] = useState('');
     const [savingRosterNumberId, setSavingRosterNumberId] = useState<string | null>(null);
@@ -208,40 +212,23 @@ export default function AdminDashboard() {
         if (typeof window === 'undefined') return;
         const params = new URLSearchParams(window.location.search);
         const tab = params.get('tab');
-        const tournament = params.get('tournament');
-        const team = params.get('team');
-
+        // Solo restauramos el tab activo — los filtros de cada sub-pestaña son independientes
+        // y NO se persisten en la URL para evitar contaminación cruzada entre pestañas.
         if (tab && validTabs.includes(tab as TabType)) {
             setActiveTab(tab as TabType);
         }
-        if (tournament) {
-            setSelectedTournament(tournament);
-        }
-        if (team) {
-            setSelectedTeam(team);
-        }
     }, []);
 
-    const writeDashboardUrlState = (
-        nextTab: TabType = activeTab,
-        nextTournamentId: string = selectedTournament,
-        nextTeamId: string = selectedTeam,
-    ) => {
+    // Solo persiste el tab activo en la URL — los filtros internos de cada sub-pestaña son aislados
+    const writeDashboardUrlState = (nextTab: TabType = activeTab) => {
         if (typeof window === 'undefined') return;
-        const params = new URLSearchParams(window.location.search);
-        params.set('tab', nextTab);
-        if (nextTournamentId) params.set('tournament', nextTournamentId);
-        else params.delete('tournament');
-        if (nextTeamId) params.set('team', nextTeamId);
-        else params.delete('team');
-        const query = params.toString();
-        const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+        const nextUrl = `${window.location.pathname}?tab=${nextTab}`;
         window.history.replaceState({ ...window.history.state, as: nextUrl, url: nextUrl }, '', nextUrl);
     };
 
     useEffect(() => {
-        writeDashboardUrlState(activeTab, selectedTournament, selectedTeam);
-    }, [activeTab, selectedTournament, selectedTeam]);
+        writeDashboardUrlState(activeTab);
+    }, [activeTab]);
 
     // El usuario ya está en el store JWT vía getUser() en el siguiente useEffect
 
@@ -581,9 +568,10 @@ export default function AdminDashboard() {
         const resolvedTournamentId = tournamentIdOverride || selectedTournament;
 
         setActiveTab('jugadores');
-        if (resolvedTournamentId) setSelectedTournament(resolvedTournamentId);
-        if (resolvedTeamId) setSelectedTeam(resolvedTeamId);
-        writeDashboardUrlState('jugadores', resolvedTournamentId, resolvedTeamId);
+        // Actualizar estados AISLADOS del directorio (no tocar selectedTournament/selectedTeam)
+        if (resolvedTournamentId) setDirTournamentId(resolvedTournamentId);
+        if (resolvedTeamId) setDirTeamId(resolvedTeamId);
+        writeDashboardUrlState('jugadores');
 
         if (resolvedTeamId) {
             try {
@@ -617,9 +605,9 @@ export default function AdminDashboard() {
         setDirectoryLoading(true);
         const params: any = { page: directoryPage, limit: 12 };
         if (directorySearchDebounced.length >= 2) params.q = directorySearchDebounced;
-        if (selectedTeam) params.teamId = selectedTeam;
-        else if (selectedTournament) params.tournamentId = selectedTournament;
-        // Si no hay filtros, el endpoint por defecto usará req.user para filtrar automáticamente.
+        // Usar estados AISLADOS del directorio — independientes de otros tabs
+        if (dirTeamId) params.teamId = dirTeamId;
+        else if (dirTournamentId) params.tournamentId = dirTournamentId;
 
         api.get('/players/directory', { params })
             .then(({ data }) => {
@@ -628,7 +616,7 @@ export default function AdminDashboard() {
             })
             .catch(console.error)
             .finally(() => setDirectoryLoading(false));
-    }, [activeTab, directoryPage, directorySearchDebounced, selectedTeam, selectedTournament]);
+    }, [activeTab, directoryPage, directorySearchDebounced, dirTeamId, dirTournamentId]);
 
     // -- Form: Create Tournament --
     const [tournForm, setTournForm] = useState({
@@ -676,7 +664,8 @@ export default function AdminDashboard() {
             return;
         }
         
-        const team = teams.find(t => t.id === playerForm.team_id);
+        const allTeams = [...teams, ...dirTeams.filter(dt => !teams.some(t => t.id === dt.id))];
+        const team = allTeams.find(t => t.id === playerForm.team_id);
         const tourneyId = team?.tournament?.id || '';
 
         const timeoutId = setTimeout(() => {
@@ -951,6 +940,28 @@ export default function AdminDashboard() {
             .then(({ data }) => setPlayers(data || []))
             .catch(err => console.error(err));
     }, [selectedTeam]);
+
+    // ── Equipos del DIRECTORIO (aislados del tab jugadores) ──────────────────
+    useEffect(() => {
+        if (userRole === 'delegado') {
+            // Para delegado: filtrar sus assignments según dirTournamentId
+            const filtered = delegateAssignments
+                .filter(a => !dirTournamentId || a.tournamentId === dirTournamentId)
+                .map(a => ({ id: a.teamId, name: a.teamName ?? a.teamId } as any));
+            setDirTeams(filtered);
+            if (dirTeamId && !filtered.some((t: any) => t.id === dirTeamId)) setDirTeamId('');
+            return;
+        }
+        if (!dirTournamentId) {
+            setDirTeams([]);
+            setDirTeamId('');
+            return;
+        }
+        api.get('/teams', { params: { tournamentId: dirTournamentId } })
+            .then(({ data }) => setDirTeams(data || []))
+            .catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dirTournamentId, userRole]);
 
     useEffect(() => {
         if (!selectedTeam) return;
@@ -2330,28 +2341,27 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                             <>
                                                 <select
                                                     className="flex-grow sm:flex-grow-0 sm:w-40 bg-surface border border-muted/30 text-foreground rounded-lg p-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm"
-                                                    value={selectedTournament}
-                                                    onChange={(e) => handleTournamentFilterChange(e.target.value, { resetDirectoryPage: true })}
+                                                    value={dirTournamentId}
+                                                    onChange={(e) => { setDirTournamentId(e.target.value); setDirTeamId(''); setDirectoryPage(1); }}
                                                 >
                                                     <option value="">{userRole === 'delegado' ? 'Todos mis torneos' : 'Todos los Torneos'}</option>
                                                     {tournaments.map((t: TournamentData) => <option key={t.id} value={t.id}>{t.name}</option>)}
                                                 </select>
                                                 <select
-                                                    disabled={!selectedTournament && userRole !== 'delegado'}
+                                                    disabled={!dirTournamentId && userRole !== 'delegado'}
                                                     className="flex-grow sm:flex-grow-0 sm:w-40 bg-surface border border-muted/30 text-foreground rounded-lg p-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition text-sm disabled:opacity-50"
-                                                    value={selectedTeam}
-                                                    onChange={(e) => { setSelectedTeam(e.target.value); setDirectoryPage(1); }}
+                                                    value={dirTeamId}
+                                                    onChange={(e) => { setDirTeamId(e.target.value); setDirectoryPage(1); }}
                                                 >
                                                     <option value="">{userRole === 'delegado' ? 'Todos mis equipos' : 'Todos los Equipos'}</option>
-                                                    {teams.map((t: TeamData) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                                    {dirTeams.map((t: TeamData) => <option key={t.id} value={t.id}>{t.name}</option>)}
                                                 </select>
                                             </>
                                         )}
                                         {(userRole === 'admin' || userRole === 'organizer' || userRole === 'presi' || userRole === 'delegado') && (() => {
                                             const maxPlayers = (userRole === 'admin' || userRole === 'presi' || userRole === 'delegado') ? 999 : (currentUser?.maxPlayersPerTeam ?? 25);
-                                            const atPlayerQuota = ((userRole !== 'admin' && userRole !== 'presi' && userRole !== 'delegado') && !!selectedTeam && players.length >= maxPlayers) || isDelegateSuspended;
-                                            
-                                            const isMissingTournament = !selectedTournament && userRole !== 'delegado';
+                                            const atPlayerQuota = ((userRole !== 'admin' && userRole !== 'presi' && userRole !== 'delegado') && !!dirTeamId && players.length >= maxPlayers) || isDelegateSuspended;
+                                            const isMissingTournament = !dirTournamentId && userRole !== 'delegado';
 
                                             return (
                                                 <div className="flex gap-2 flex-grow sm:flex-grow-0">
@@ -2778,6 +2788,14 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                                                 >
                                                                     Configurar Lineups
                                                                 </button>
+                                                                {(userRole === 'organizer' || userRole === 'presi' || userRole === 'scorekeeper') && (
+                                                                    <button
+                                                                        onClick={() => router.push(`/gamescheduled/${game.id}?tab=stream`)}
+                                                                        className="px-3 py-1.5 bg-fuchsia-900/40 border border-fuchsia-700 text-fuchsia-300 hover:bg-fuchsia-800/60 transition text-xs font-bold rounded-lg"
+                                                                    >
+                                                                        Panel Stream
+                                                                    </button>
+                                                                )}
                                                                 <button
                                                                     onClick={() => router.push(`/game/${game.id}`)}
                                                                     className="px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-lg transition text-xs font-bold"
@@ -3755,7 +3773,7 @@ No se puede deshacer. ¿Deseas continuar?`)) return;
                                         className="w-full bg-background border border-muted/30 text-foreground rounded-lg p-3 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition"
                                     >
                                         <option value="">-- Seleccionar Equipo --</option>
-                                        {teams.map((t: TeamData) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                        {(activeTab === 'jugadores' ? dirTeams : teams).map((t: TeamData) => <option key={t.id} value={t.id}>{t.name}</option>)}
                                     </select>
                                 </div>
                                 <div className="flex gap-4">

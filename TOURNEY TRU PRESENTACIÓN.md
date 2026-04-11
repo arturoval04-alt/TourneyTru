@@ -163,6 +163,50 @@ PASO 6: Al terminar, el sistema consolida resultados y estadísticas
 
 ---
 
+## Actualizaciones recientes del producto
+
+### Operación de juego más confiable
+- Corrección del flujo de lineup para streamer, incluyendo selección de posiciones
+- Inicio de juego en vivo más estable, con bateador actual y play-by-play correctos al arrancar
+- Cambios de pitcher, sustituciones, reingresos y cambios de posición reflejados en vivo y también en el play-by-play
+- Log de jugadas con outs acumulados correctamente visibles por inning
+
+### Calendarización y control operativo más profesional
+- El calendario del torneo ya refleja correctamente juegos programados en su horario real
+- Bloqueo de juegos duplicados en el mismo campo y horario
+- Mejor manejo de fechas y horas en vistas operativas como ocupación de campos
+- Creación, refresh y navegación dentro del torneo sin regresos forzados a tabs por defecto
+
+### Experiencia de transmisión lista para producción
+- Overlays funcionales también fuera del navegador autenticado, incluyendo uso en OBS
+- URLs firmadas para streaming y lectura pública controlada de overlays
+- Accesos rápidos a `Configurar Lineup` y `Panel Stream` desde calendario, dashboard y vista previa del juego
+- Flujo pensado para que el transmisor llegue con el juego ya configurado en OBS antes del primer lanzamiento
+
+### Gamecast y boxscore con más valor visual
+- Scorebook visual enriquecido con avances entre bases, outs en trayecto y eventos como `SB`, `WP`, `PB`, `BK` y carreras sucias
+- Boxscore de pitcheo separado por equipo, con abridor, relevos, pitcher activo y línea en vivo
+- Historial de movimientos visible en alineaciones para entender cómo cambió el juego
+- Tirilla y boxscore con mejor lectura visual tanto en pantalla como en exportación e impresión
+
+### Motor de anotación más cercano al beisbol real
+- Avance individual de corredores por wild pitch, passed ball y balk
+- Resolución libre de corredores en hits y errores, en lugar de avances fijos
+- Mejor control de jugadas complejas como bola ocupada, reingresos y carreras limpias/sucias
+- Base sólida para seguir evolucionando hacia una experiencia de anotación estilo videojuego profesional, pero con integridad estadística real
+
+### Exportación e impresión más usable
+- Exportación del juego con separación más clara entre boxscore y tirilla
+- Paginación pensada para carta horizontal
+- Hoja dedicada por boxscore de equipo y hojas separadas de tirilla por equipo para evitar cortes visuales
+
+### Lo que esto incrementa en valor
+- Reduce fricción operativa para organizadores, scorekeepers y streamers
+- Eleva la percepción profesional del producto frente a ligas, patrocinadores y aficionados
+- Acerca la plataforma a un estándar muy difícil de encontrar en ligas amateur: operación, transmisión y estadística viva en una sola herramienta
+
+---
+
 ## Diferenciadores clave
 
 1. **Gamecast en vivo sin app**

@@ -7,7 +7,7 @@ import PlayerInfo from '@/components/live/PlayerInfo';
 import PlayByPlayLog from '@/components/live/PlayByPlayLog';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useGameStore, LineupItem } from '@/store/gameStore';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { GameBoxscoreDto } from '@/types/boxscore';
 import { ScorebookTable } from '@/components/ScorebookTable';
 import api from '@/lib/api';
@@ -15,6 +15,8 @@ import { Users, LayoutDashboard, Radio, Trophy, Printer } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import { isLoggedIn, getUser } from '@/lib/auth';
 import StreamAdminPanel from '@/components/live/StreamAdminPanel';
+import TeamLineupCard from '@/components/live/TeamLineupCard';
+import PitchingBoxscore from '@/components/live/PitchingBoxscore';
 import AILineupScanner from '@/components/game/AILineupScanner';
 import type { LineupEntry, Player } from '@/components/game/LineupBuilder';
 
@@ -50,6 +52,7 @@ const formatPosition = (item: LineupItem, lineup?: LineupItem[]) => {
 export default function ScorekeeperLivePanel() {
     const params = useParams();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [boxscore, setBoxscore] = useState<GameBoxscoreDto | null>(null);
     const [boxscoreLoading, setBoxscoreLoading] = useState(true);
     const [boxscoreError, setBoxscoreError] = useState(false);
@@ -69,6 +72,13 @@ export default function ScorekeeperLivePanel() {
     const [selectedBatter1Id, setSelectedBatter1Id] = useState<string>('');
     const [selectedBatter2Id, setSelectedBatter2Id] = useState<string>('');
 
+    useEffect(() => {
+        const requestedTab = searchParams.get('tab');
+        if (requestedTab === 'alineaciones' || requestedTab === 'scorekeeper' || requestedTab === 'stream') {
+            setActiveTab(requestedTab);
+        }
+    }, [searchParams]);
+
     // Auth + role + scope guard — no renderiza nada hasta confirmar acceso
     useEffect(() => {
         if (!isLoggedIn()) {
@@ -76,7 +86,7 @@ export default function ScorekeeperLivePanel() {
             return;
         }
         const user = getUser();
-        const allowedRoles = ['admin', 'organizer', 'scorekeeper', 'streamer'];
+        const allowedRoles = ['admin', 'organizer', 'presi', 'scorekeeper', 'streamer'];
         if (!user || !allowedRoles.includes(user.role)) {
             router.replace('/');
             return;
@@ -87,18 +97,19 @@ export default function ScorekeeperLivePanel() {
             return;
         }
 
-        // Organizer y Scorekeeper: verificar que el juego pertenece a su liga
+        // Organizer, Presi y Scorekeeper: verificar que el juego pertenece a su liga/torneo
         api.get(`/games/${params.id}`).then(({ data }) => {
             const gameLeagueId = data.tournament?.leagueId;
             const leagueAdminId = data.tournament?.league?.adminId;
+            const isAssignedOrganizer = data.tournament?.organizers?.some((o: any) => o.user?.id === user.id || o.userId === user.id);
 
             if (user.role === 'scorekeeper') {
                 if (gameLeagueId && user.scorekeeperLeagueId && gameLeagueId !== user.scorekeeperLeagueId) {
                     router.replace('/');
                     return;
                 }
-            } else if (user.role === 'organizer') {
-                if (leagueAdminId && leagueAdminId !== user.id) {
+            } else if (user.role === 'organizer' || user.role === 'presi') {
+                if (leagueAdminId && leagueAdminId !== user.id && !isAssignedOrganizer) {
                     router.replace('/');
                     return;
                 }
@@ -112,10 +123,15 @@ export default function ScorekeeperLivePanel() {
     // Live base tracking
     const {
         baseIds, inning, half, currentBatter, currentBatterId,
-        homeLineup, awayLineup, homeScore, awayScore, playLogs,
+        homeLineup, awayLineup, homeScore, awayScore, playLogs, plays,
         shouldPromptEndGame, clearEndGamePrompt,
         homeTeamId, awayTeamId, homeTeamName, awayTeamName,
     } = useGameStore();
+
+    const livePitcherId = useMemo(() => {
+        const defensiveLineup = half === 'top' ? homeLineup : awayLineup;
+        return defensiveLineup.find((item: LineupItem) => item.position === '1' || item.position === 'P')?.playerId || null;
+    }, [awayLineup, half, homeLineup]);
 
     const handleFinalizarJuego = () => {
         const currentUser = getUser();
@@ -436,36 +452,18 @@ export default function ScorekeeperLivePanel() {
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                    {[{ label: 'Visitante', lineup: awayLineup }, { label: 'Local', lineup: homeLineup }].map(({ label, lineup }) => (
-                                        <div key={label} className="bg-slate-900/60 backdrop-blur-sm border border-slate-700/40 rounded-2xl p-6 shadow-lg">
-                                            <h3 className="text-lg font-black text-sky-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                                                <Users className="w-5 h-5" /> {label}
-                                            </h3>
-                                            <table className="w-full text-sm">
-                                                <thead>
-                                                    <tr className="border-b border-slate-700/40 text-slate-500">
-                                                        <th className="py-2 text-left font-bold w-10">#</th>
-                                                        <th className="py-2 text-left font-bold">Jugador</th>
-                                                        <th className="py-2 text-center font-bold w-16">Pos</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {lineup.map((item: LineupItem) => (
-                                                        <tr key={item.playerId} className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
-                                                            <td className="py-2.5 text-slate-500 font-bold">{item.battingOrder}</td>
-                                                            <td className="py-2.5 text-white font-semibold">
-                                                                {item.player ? `${item.player.firstName} ${item.player.lastName}` : 'Desconocido'}
-                                                            </td>
-                                                            <td className="py-2.5 text-center">
-                                                                <span className="bg-sky-500/10 text-sky-400 font-black text-xs px-2 py-1 rounded">
-                                                                    {formatPosition(item, lineup)}
-                                                                </span>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
+                                    {[
+                                        { label: 'Visitante', teamName: awayTeamName, lineup: awayLineup },
+                                        { label: 'Local', teamName: homeTeamName, lineup: homeLineup },
+                                    ].map(({ label, teamName, lineup }) => (
+                                        <TeamLineupCard
+                                            key={label}
+                                            label={label}
+                                            teamName={teamName}
+                                            lineup={lineup}
+                                            plays={plays}
+                                            formatPosition={formatPosition}
+                                        />
                                     ))}
                                 </div>
                             )}
@@ -538,15 +536,55 @@ export default function ScorekeeperLivePanel() {
                                     <div className="p-20 text-center text-rose-500 font-bold">Error al cargar el resumen oficial.</div>
                                 ) : boxscore && (
                                     <div className="flex flex-col gap-8">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                            <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 px-4 py-3">
+                                                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-300">Turno Actual</div>
+                                                <div className="mt-1 text-sm font-bold text-white">
+                                                    {half === 'top' ? boxscore.awayTeam.teamName : boxscore.homeTeam.teamName}
+                                                </div>
+                                                <div className="text-xs text-slate-300">{currentBatter}</div>
+                                            </div>
+                                            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3">
+                                                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-300">Corredores Vivos</div>
+                                                <div className="mt-1 text-sm font-bold text-white">
+                                                    {[baseIds.first, baseIds.second, baseIds.third].filter(Boolean).length} en base
+                                                </div>
+                                                <div className="text-xs text-slate-300">
+                                                    {[
+                                                        baseIds.first ? '1B' : null,
+                                                        baseIds.second ? '2B' : null,
+                                                        baseIds.third ? '3B' : null,
+                                                    ].filter(Boolean).join(' • ') || 'Bases limpias'}
+                                                </div>
+                                            </div>
+                                            <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 px-4 py-3">
+                                                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-300">Lanzador Defensivo</div>
+                                                <div className="mt-1 text-sm font-bold text-white">{pitcherInfo.name}</div>
+                                                <div className="text-xs text-slate-300">{pitcherInfo.stats}</div>
+                                            </div>
+                                        </div>
+
                                         <ScorebookTable
                                             teamBoxscore={boxscore.awayTeam}
                                             baseIds={half === 'top' ? baseIds : null}
                                             currentInning={inning}
+                                            activeBatterId={half === 'top' ? currentBatterId : null}
+                                            isBattingTeamLive={half === 'top'}
+                                        />
+                                        <PitchingBoxscore
+                                            teamBoxscore={boxscore.awayTeam}
+                                            livePitcherId={half === 'bottom' ? livePitcherId : null}
                                         />
                                         <ScorebookTable
                                             teamBoxscore={boxscore.homeTeam}
                                             baseIds={half === 'bottom' ? baseIds : null}
                                             currentInning={inning}
+                                            activeBatterId={half === 'bottom' ? currentBatterId : null}
+                                            isBattingTeamLive={half === 'bottom'}
+                                        />
+                                        <PitchingBoxscore
+                                            teamBoxscore={boxscore.homeTeam}
+                                            livePitcherId={half === 'top' ? livePitcherId : null}
                                         />
                                     </div>
                                 )}

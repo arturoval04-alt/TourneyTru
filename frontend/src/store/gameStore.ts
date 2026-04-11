@@ -26,6 +26,39 @@ export interface LineupItem {
     player?: Player;
 }
 
+type BaseKey = 'first' | 'second' | 'third';
+type RunnerAdvanceReason = 'wildPitch' | 'passedBall' | 'balk';
+
+const NEXT_BASE_BY_ORIGIN: Record<BaseKey, 'second' | 'third' | 'home'> = {
+    first: 'second',
+    second: 'third',
+    third: 'home',
+};
+
+const BASE_ADVANCE_LABELS: Record<BaseKey, string> = {
+    first: '1ra',
+    second: '2da',
+    third: '3ra',
+};
+
+const RUNNER_ADVANCE_META: Record<RunnerAdvanceReason, { runCode: string; runText: string; advanceText: string }> = {
+    wildPitch: {
+        runCode: 'WP_RUN',
+        runText: 'Carrera por Wild Pitch',
+        advanceText: 'Wild Pitch',
+    },
+    passedBall: {
+        runCode: 'PB_RUN',
+        runText: 'Carrera por Passed Ball (Imbateable)',
+        advanceText: 'Passed Ball',
+    },
+    balk: {
+        runCode: 'BK_RUN',
+        runText: 'Carrera por Balk',
+        advanceText: 'Balk',
+    },
+};
+
 // Tipos para el estado del juego
 type BaseState = {
     inning: number;
@@ -106,8 +139,8 @@ export interface GameState extends BaseState {
     addOut: (customLogText?: string, isGroundout?: boolean, emitPlay?: boolean) => void;
     registerHit: (basesAdvanced: number, customLogText?: string) => void;
     executeAdvancedPlay: (newBases: { first: string | null, second: string | null, third: string | null }, newBaseIds: { first: string | null, second: string | null, third: string | null }, runsScored: number, outsRecorded: number, desc: string, additionalRunnerOutIds?: string[]) => void;
-    executeBaseAction: (origin: 'first' | 'second' | 'third', dest: 'second' | 'third' | 'home' | null, isOut: boolean, desc: string) => void;
-    executeWildPitchOrPassedBall: (desc: string) => void;
+    executeBaseAction: (origin: BaseKey, dest: 'second' | 'third' | 'home' | null, isOut: boolean, desc: string) => void;
+    executeRunnerAdvanceByEvent: (origin: BaseKey, reason: RunnerAdvanceReason) => void;
     executeWildPitch: () => void;
     executePassedBall: () => void;
     executeBalk: () => void;
@@ -116,7 +149,7 @@ export interface GameState extends BaseState {
     registerHBP: () => void;
     registerIBB: () => void;
     registerDroppedThirdStrike: () => void;
-    registerCustomPlay: (description: string) => void;
+    registerCustomPlay: (description: string) => Promise<void>;
     cycleBatter: () => void;
     nextHalfInning: () => void;
     resetCount: () => void;
@@ -298,7 +331,7 @@ const emitPlayToBackend = async (get: () => GameState, resultStr: string, runsSc
             await api.post(`/games/${stateSnapshot.gameId}/plays`, playPayload);
             removePlayFromQueue(stateSnapshot.gameId, queueId);
             useGameStore.setState({ pendingPlays: getPlayQueue(stateSnapshot.gameId).length });
-        } catch (e) {
+        } catch {
             console.warn('[Queue] Sin conexión — jugada guardada en cola, se enviará al reconectar.');
             // Si el socket se reconectó entre tanto, flushar ahora mismo
             if (gameSocket?.connected && stateSnapshot.gameId) {
@@ -337,6 +370,59 @@ const syncStateToBackend = (get: () => GameState) => {
                 playbackId: Date.now().toString()
             }
         });
+    }
+};
+
+const advanceSingleRunnerByReason = (
+    set: (partial: Partial<GameState>) => void,
+    get: () => GameState,
+    origin: BaseKey,
+    reason: RunnerAdvanceReason,
+) => {
+    const state = get();
+    const runner = state.bases[origin];
+    const runnerId = state.baseIds[origin];
+    const dest = NEXT_BASE_BY_ORIGIN[origin];
+
+    if (!runner) return;
+    if (dest !== 'home' && state.bases[dest]) return;
+
+    const newBases = { ...state.bases };
+    const newBaseIds = { ...state.baseIds };
+    let runs = 0;
+
+    newBases[origin] = null;
+    newBaseIds[origin] = null;
+
+    if (dest === 'home') {
+        runs = 1;
+    } else {
+        newBases[dest] = runner;
+        newBaseIds[dest] = runnerId;
+    }
+
+    set({
+        bases: newBases,
+        baseIds: newBaseIds,
+        homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore,
+        awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore,
+    });
+    syncStateToBackend(get);
+
+    const meta = RUNNER_ADVANCE_META[reason];
+    if (dest === 'home') {
+        emitPlayToBackend(get, `${meta.runCode}|${meta.runText}`, 1, 0, runnerId, state.inning, state.half, state.outs);
+    } else {
+        emitPlayToBackend(
+            get,
+            `ADV|Avanza a ${BASE_ADVANCE_LABELS[dest]} por ${meta.advanceText}`,
+            0,
+            0,
+            runnerId,
+            state.inning,
+            state.half,
+            state.outs
+        );
     }
 };
 
@@ -549,7 +635,7 @@ export const useGameStore = create<GameState>()(
                         if (gameData.plays && gameData.plays.length > 0) {
                             const plays = gameData.plays.sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
                             // Solo contar plays que son turno al bate real (excluir ADV, RUN_SCORED, SB, etc.)
-                            const NON_PA_CODES = ['SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED', 'RUNNER_OUT', 'UNDO'];
+                            const NON_PA_CODES = ['SB', 'CS', 'ADV', 'WP_RUN', 'PB_RUN', 'BK_RUN', 'RUN_SCORED', 'RUNNER_OUT', 'UNDO', 'SUB', 'POS', 'REENTRY'];
                             const isPAPlay = (p: any) => {
                                 const code = (p.result || '').split('|')[0].toUpperCase().trim();
                                 return !NON_PA_CODES.some(x => code.startsWith(x));
@@ -569,6 +655,24 @@ export const useGameStore = create<GameState>()(
                             const pitcher = defensiveFullLineup.find((p: any) => p.position === 'P' || p.position === '1');
                             const pName = pitcher?.player ? `${pitcher.player.firstName} ${pitcher.player.lastName}` : 'Esperando Pitcher...';
 
+                            const buildPlayLogs = (gamePlays: any[]) => {
+                                const outsByHalf = new Map<string, number>();
+                                return gamePlays.map((p: any) => {
+                                    const halfKey = `${p.inning}-${p.half}`;
+                                    const previousOuts = outsByHalf.get(halfKey) ?? 0;
+                                    const outsOnPlay = p.outsRecorded ?? 0;
+                                    const totalOuts = Math.min(3, previousOuts + outsOnPlay);
+                                    outsByHalf.set(halfKey, totalOuts >= 3 ? 0 : totalOuts);
+
+                                    const logText = p.description || ((p.result || '').includes('|') ? p.result.split('|')[1] : p.result);
+                                    return {
+                                        text: `Inning ${p.inning}: ${logText}`,
+                                        outs: outsOnPlay,
+                                        totalOuts: outsOnPlay > 0 ? totalOuts : undefined,
+                                    };
+                                }).reverse();
+                            };
+
                             set({
                                 inning: gameData.current_inning || 1, half: activeHalf,
                                 homeScore: gameData.home_score || 0, awayScore: gameData.away_score || 0,
@@ -582,10 +686,7 @@ export const useGameStore = create<GameState>()(
                                 mvpBatter1: gameData.mvpBatter1,
                                 mvpBatter2: gameData.mvpBatter2,
                                 status: gameData.status,
-                                playLogs: plays.map((p: any) => {
-                                    const logText = p.description || ((p.result || '').includes('|') ? p.result.split('|')[1] : p.result);
-                                    return { text: `Inning ${p.inning}: ${logText}` };
-                                }).reverse()
+                                playLogs: buildPlayLogs(plays)
                             });
                         } else {
                             // No hay jugadas aún, inicializar con el primer bateador
@@ -1073,13 +1174,58 @@ export const useGameStore = create<GameState>()(
                 // 2. Emitir la jugada del bateador (o la principal)
                 const mainOuts = Math.max(0, outs - additionalRunnerOutIds.length);
                 await emitPlayToBackend(get, desc, runs, mainOuts, activeId, state.inning, state.half, currentOutsInPlay);
+                const destinationByRunnerId = new Map<string, BaseKey>();
+                (Object.entries(newBaseIds) as [BaseKey, string | null][]).forEach(([base, runnerId]) => {
+                    if (runnerId) destinationByRunnerId.set(runnerId, base);
+                });
+                const outRunnerIdSet = new Set(additionalRunnerOutIds);
+                const scoredRunnerIds: string[] = [];
+                const advancedRunnerEvents: Array<{ runnerId: string; destination: BaseKey }> = [];
+
+                (['third', 'second', 'first'] as BaseKey[]).forEach((originBase) => {
+                    const runnerId = state.baseIds[originBase];
+                    if (!runnerId || outRunnerIdSet.has(runnerId)) return;
+
+                    const destination = destinationByRunnerId.get(runnerId);
+                    if (!destination) {
+                        scoredRunnerIds.push(runnerId);
+                    } else if (destination !== originBase) {
+                        advancedRunnerEvents.push({ runnerId, destination });
+                    }
+                });
+
+                const postPlayOuts = currentOutsInPlay + mainOuts;
+                for (const runnerId of scoredRunnerIds) {
+                    await emitPlayToBackend(get, 'RUN_SCORED|Corredor anota', 1, 0, runnerId, state.inning, state.half, postPlayOuts, true);
+                }
+                for (const { runnerId, destination } of advancedRunnerEvents) {
+                    await emitPlayToBackend(
+                        get,
+                        `ADV|Corredor avanza a ${BASE_ADVANCE_LABELS[destination]}`,
+                        0,
+                        0,
+                        runnerId,
+                        state.inning,
+                        state.half,
+                        postPlayOuts,
+                        true
+                    );
+                }
                 
                 if (totalOuts >= 3) {
                     get().cycleBatter();
                     get().nextHalfInning();
                     syncStateToBackend(get);
                 } else {
-                    set({ outs: totalOuts, bases: newBases, baseIds: newBaseIds, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore });
+                    set({
+                        outs: totalOuts,
+                        balls: 0,
+                        strikes: 0,
+                        bases: newBases,
+                        baseIds: newBaseIds,
+                        homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore,
+                        awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore
+                    });
                     get().cycleBatter();
                     syncStateToBackend(get);
                 }
@@ -1108,8 +1254,9 @@ export const useGameStore = create<GameState>()(
                 }
             },
 
-            executeWildPitchOrPassedBall: (desc) => {
-                get().executeWildPitch();
+            executeRunnerAdvanceByEvent: (origin, reason) => {
+                get().saveHistory();
+                advanceSingleRunnerByReason(set, get, origin, reason);
             },
 
             executeWildPitch: () => {
@@ -1182,7 +1329,7 @@ export const useGameStore = create<GameState>()(
                     get().nextHalfInning();
                     syncStateToBackend(get);
                 } else { 
-                    set({ outs: totalOuts, bases: newBases, baseIds: newBaseIds }); 
+                    set({ outs: totalOuts, balls: 0, strikes: 0, bases: newBases, baseIds: newBaseIds }); 
                     get().cycleBatter(); 
                     syncStateToBackend(get);
                 }
@@ -1198,9 +1345,9 @@ export const useGameStore = create<GameState>()(
                 let runs = 0;
                 let outsOnPlay = 1; // Batter is definitely OUT on a valid sacrifice
                 
-                let scoredRunnerIds: string[] = [];
-                let outRunnerIds: string[] = [];
-                let advRunnerIds: string[] = [];
+                const scoredRunnerIds: string[] = [];
+                const outRunnerIds: string[] = [];
+                const advRunnerIds: string[] = [];
                 let descSuffix = '';
 
                 // If dests provided (from modal)
@@ -1283,15 +1430,27 @@ export const useGameStore = create<GameState>()(
                     get().nextHalfInning();
                     syncStateToBackend(get);
                 } else { 
-                    set({ outs: totalOuts, bases: newBases, baseIds: newBaseIds, homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore, awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore }); 
+                    set({
+                        outs: totalOuts,
+                        balls: 0,
+                        strikes: 0,
+                        bases: newBases,
+                        baseIds: newBaseIds,
+                        homeScore: state.half === 'bottom' ? state.homeScore + runs : state.homeScore,
+                        awayScore: state.half === 'top' ? state.awayScore + runs : state.awayScore
+                    }); 
                     get().cycleBatter(); 
                     syncStateToBackend(get);
                 }
             },
 
-            registerCustomPlay: (desc) => {
+            registerCustomPlay: async (desc) => {
                 get().saveHistory();
-                emitPlayToBackend(get, desc, 0, 0, get().currentBatterId);
+                const state = get();
+                const battingOrder = state.half === 'top' ? state.awayBattingOrder : state.homeBattingOrder;
+                const currentIndex = state.half === 'top' ? state.awayBatterIndex : state.homeBatterIndex;
+                const fallbackBatterId = battingOrder[currentIndex]?.playerId || battingOrder[0]?.playerId || null;
+                await emitPlayToBackend(get, desc, 0, 0, state.currentBatterId || fallbackBatterId);
             },
 
             // ─── HBP: Hit By Pitch ──────────────────────────────────────

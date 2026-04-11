@@ -29,13 +29,52 @@ export default function ImageUploader({
 
     const radiusClass = shape === 'circle' ? 'rounded-full' : 'rounded-xl';
 
+    const compressImage = (file: File, maxSizeMB = 8): Promise<File> =>
+        new Promise((resolve) => {
+            const img = new Image();
+            const objectUrl = URL.createObjectURL(file);
+            img.onload = () => {
+                URL.revokeObjectURL(objectUrl);
+                const MAX_BYTES = maxSizeMB * 1024 * 1024;
+                // Calcular escala para reducir tamaño de píxeles si la imagen es muy grande
+                let { width, height } = img;
+                const MAX_DIM = 2400;
+                if (width > MAX_DIM || height > MAX_DIM) {
+                    const ratio = Math.min(MAX_DIM / width, MAX_DIM / height);
+                    width = Math.round(width * ratio);
+                    height = Math.round(height * ratio);
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+                // Reducir calidad hasta que quepa en maxSizeMB
+                let quality = 0.85;
+                const tryEncode = () => {
+                    canvas.toBlob((blob) => {
+                        if (!blob) { resolve(file); return; }
+                        if (blob.size <= MAX_BYTES || quality <= 0.3) {
+                            resolve(new File([blob], file.name, { type: 'image/jpeg' }));
+                        } else {
+                            quality -= 0.1;
+                            tryEncode();
+                        }
+                    }, 'image/jpeg', quality);
+                };
+                tryEncode();
+            };
+            img.onerror = () => resolve(file);
+            img.src = objectUrl;
+        });
+
     const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
         setUploading(true);
         try {
-            const url = await uploadToCloudinary(file);
+            const toUpload = file.size > 8 * 1024 * 1024 ? await compressImage(file) : file;
+            const url = await uploadToCloudinary(toUpload);
             onChange(url);
         } catch (err) {
             console.error(err);

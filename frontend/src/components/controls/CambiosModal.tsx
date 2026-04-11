@@ -43,6 +43,13 @@ const POS_NUM: Record<string, string> = {
     SS: '6', LF: '7', CF: '8', RF: '9',
 };
 
+const normalizeDefensivePosition = (position?: string | null) => {
+    const raw = (position || '').trim().toUpperCase();
+    if (!raw) return null;
+    if (raw === '1') return 'P';
+    return DEFENSIVE_POSITIONS.includes(raw) ? raw : null;
+};
+
 // Field grid layout: [position, col, row] (CSS grid 3×3 conceptual)
 const FIELD_POSITIONS = [
     { pos: 'LF', label: 'LF', col: 1, row: 1 },
@@ -82,7 +89,7 @@ function StepDots({ total, current }: { total: number; current: number }) {
 interface Props { isOpen: boolean; onClose: () => void; }
 
 export default function CambiosModal({ isOpen, onClose }: Props) {
-    const { gameId, homeTeamId, awayTeamId, homeTeamName, awayTeamName, fetchGameConfig, syncStateToBackend } = useGameStore();
+    const { gameId, homeTeamId, awayTeamId, homeTeamName, awayTeamName, fetchGameConfig, syncStateToBackend, registerCustomPlay } = useGameStore();
 
     // wizard state
     const [step, setStep] = useState(0);   // 0=equipo, 1=tipo, 2=detalle, 3=review
@@ -147,22 +154,7 @@ export default function CambiosModal({ isOpen, onClose }: Props) {
     }, [gameId]);
 
     // ── Position swap helpers ─────────────────────────────────────────────────
-    const currentPosLineup = elegibles?.puedenSalir ?? [];
-
-    // Build a map of what position each player currently occupies (after applying posSwaps)
-    const currentPosMap = useMemo(() => {
-        const map: Record<string, string> = {};
-        for (const p of currentPosLineup) {
-            if (p.position && DEFENSIVE_POSITIONS.includes(p.position)) {
-                map[p.position] = p.position;
-            }
-        }
-        for (const sw of posSwaps) {
-            map[sw.toPosition] = sw.toPosition;
-            delete map[sw.fromPosition];
-        }
-        return map;
-    }, [currentPosLineup, posSwaps]);
+    const currentPosLineup = useMemo(() => elegibles?.puedenSalir ?? [], [elegibles]);
 
     // Get player at a position (considering swaps already applied)
     const playerAtPos = (pos: string): EligiblePlayer | undefined => {
@@ -242,6 +234,63 @@ export default function CambiosModal({ isOpen, onClose }: Props) {
     // ── Review summary ────────────────────────────────────────────────────────
     const teamName = teamId === homeTeamId ? homeTeamName : awayTeamName;
 
+    const buildChangeLogMessages = useCallback(() => {
+        const teamLabel = teamId === homeTeamId ? homeTeamName : awayTeamName;
+        if (!teamLabel) return [] as string[];
+
+        if (changeType === 'SUSTITUCION') {
+            const out = elegibles?.puedenSalir.find(p => p.playerId === subPlayerOutId);
+            const incoming = elegibles?.puedenEntrar.find(p => p.playerId === subPlayerInId);
+            if (!out || !incoming) return [] as string[];
+
+            const posLabel = subPosition === 'DH' && subDhFor ? `DH por ${subDhFor}` : subPosition;
+            const isPitcherChange = normalizeDefensivePosition(subPosition) === 'P';
+            const text = isPitcherChange
+                ? `Cambio de pitcher ${teamLabel}: entra ${incoming.firstName} ${incoming.lastName}, sale ${out.firstName} ${out.lastName}.`
+                : `Sustitucion ${teamLabel}: entra ${incoming.firstName} ${incoming.lastName} por ${out.firstName} ${out.lastName} como ${posLabel}.`;
+            return [`SUB|${text}`];
+        }
+
+        if (changeType === 'POSICION' && posSwaps.length > 0) {
+            const moves = posSwaps
+                .map((sw) => {
+                    const fromPlayer = currentPosLineup.find(p => p.position === sw.fromPosition);
+                    if (!fromPlayer) return null;
+                    return `${fromPlayer.firstName} ${fromPlayer.lastName} de ${sw.fromPosition} a ${sw.toPosition}`;
+                })
+                .filter((value): value is string => Boolean(value));
+            if (!moves.length) return [] as string[];
+            return [`POS|Cambio defensivo ${teamLabel}: ${moves.join('; ')}.`];
+        }
+
+        if (changeType === 'REINGRESO') {
+            const starter = elegibles?.puedenReingresar.find(p => p.playerId === reingresoPId);
+            const subOut = starter?.sustitutoActual;
+            if (!starter || !subOut) return [] as string[];
+            const isPitcherChange = normalizeDefensivePosition(starter.position) === 'P';
+            const text = isPitcherChange
+                ? `Reingreso en pitcher ${teamLabel}: vuelve ${starter.firstName} ${starter.lastName}, sale ${subOut.firstName} ${subOut.lastName}.`
+                : `Reingreso ${teamLabel}: vuelve ${starter.firstName} ${starter.lastName} por ${subOut.firstName} ${subOut.lastName} en ${starter.position}.`;
+            return [`REENTRY|${text}`];
+        }
+
+        return [] as string[];
+    }, [
+        awayTeamName,
+        changeType,
+        currentPosLineup,
+        elegibles,
+        homeTeamName,
+        homeTeamId,
+        posSwaps,
+        reingresoPId,
+        subDhFor,
+        subPlayerInId,
+        subPlayerOutId,
+        subPosition,
+        teamId,
+    ]);
+
     const reviewLines = useMemo(() => {
         if (changeType === 'SUSTITUCION') {
             const out = elegibles?.puedenSalir.find(p => p.playerId === subPlayerOutId);
@@ -307,6 +356,7 @@ export default function CambiosModal({ isOpen, onClose }: Props) {
         setError(null);
         setLoading(true);
         try {
+            const changeLogMessages = buildChangeLogMessages();
             if (changeType === 'SUSTITUCION') {
                 await api.post(`/games/${gameId}/cambios/sustitucion`, {
                     teamId,
@@ -348,6 +398,9 @@ export default function CambiosModal({ isOpen, onClose }: Props) {
                 }
             }
             await fetchGameConfig();
+            for (const message of changeLogMessages) {
+                await registerCustomPlay(message);
+            }
             syncStateToBackend();
             onClose();
         } catch (err: any) {

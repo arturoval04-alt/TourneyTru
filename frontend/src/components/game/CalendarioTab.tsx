@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Clock, MapPin, RefreshCw, Calendar, Settings, X, Check, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Clock, MapPin, RefreshCw, Calendar, Settings, X, Check, AlertTriangle, Radio, Users } from 'lucide-react';
 import api from '@/lib/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -56,12 +56,34 @@ interface Props {
     canEdit: boolean;
     games: GameSlot[];
     rounds?: string[];
+    tournamentName?: string;
     onOpenCreateWizard?: (prefill?: { fieldId?: string; scheduledDate?: string; startTime?: string }) => void;
     onGameClick?: (gameId: string) => void;
+    onConfigureLineup?: (gameId: string) => void;
+    onOpenStreamPanel?: (gameId: string) => void;
     onRefresh?: () => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function buildTeamRecords(games: GameSlot[]): Record<string, { wins: number; losses: number }> {
+    const records: Record<string, { wins: number; losses: number }> = {};
+    for (const g of games) {
+        if (g.status !== 'finished') continue;
+        const hId = g.homeTeam.id;
+        const aId = g.awayTeam.id;
+        if (!records[hId]) records[hId] = { wins: 0, losses: 0 };
+        if (!records[aId]) records[aId] = { wins: 0, losses: 0 };
+        if (g.homeScore > g.awayScore) {
+            records[hId].wins++;
+            records[aId].losses++;
+        } else if (g.awayScore > g.homeScore) {
+            records[aId].wins++;
+            records[hId].losses++;
+        }
+    }
+    return records;
+}
 
 const DAYS_ES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
@@ -89,11 +111,17 @@ function isSameDate(isoDate: string | null | undefined, ymd: string): boolean {
 
 function gameStatusStyle(status: string): string {
     switch (status) {
-        case 'live': return 'bg-red-600/90 border-red-500 text-white';
+        case 'live':
+        case 'in_progress':
+            return 'bg-red-600/90 border-red-500 text-white';
         case 'finished': return 'bg-zinc-700/80 border-zinc-600 text-zinc-300';
         case 'draft': return 'bg-amber-600/70 border-amber-500 text-white';
         default: return 'bg-blue-700/80 border-blue-500 text-white';
     }
+}
+
+function getGameSlotTime(game: GameSlot): string {
+    return formatTime(game.startTime ?? game.scheduledDate).slice(0, 5);
 }
 
 // ─── Panel de configuración de slots ─────────────────────────────────────────
@@ -287,13 +315,16 @@ function ScheduleConfigPanel({
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export default function CalendarioTab({ tournamentId, leagueId, canEdit, games, rounds, onOpenCreateWizard, onGameClick, onRefresh }: Props) {
+export default function CalendarioTab({ tournamentId, leagueId, canEdit, games, rounds, tournamentName, onOpenCreateWizard, onGameClick, onConfigureLineup, onOpenStreamPanel, onRefresh }: Props) {
 
     const [selectedDate, setSelectedDate] = useState<string>(toYMD(new Date()));
     const [selectedRound, setSelectedRound] = useState<string>('');
     const [sportsUnits, setSportsUnits] = useState<SportsUnit[]>([]);
     const [loading, setLoading] = useState(true);
     const [configuringUnit, setConfiguringUnit] = useState<SportsUnit | null>(null);
+
+    const teamRecords = React.useMemo(() => buildTeamRecords(games), [games]);
+    const rec = (teamId: string) => teamRecords[teamId] ?? { wins: 0, losses: 0 };
 
     const roundDates = React.useMemo(() => {
         if (!selectedRound) return [];
@@ -356,8 +387,7 @@ export default function CalendarioTab({ tournamentId, leagueId, canEdit, games, 
     const getGameForCell = useCallback((fieldId: string, slot: string): GameSlot | null => {
         return gamesOnDate.find(g => {
             if (g.fieldId !== fieldId) return false;
-            const gameHour = g.startTime ? formatTime(g.startTime).slice(0, 5) : formatTime(g.scheduledDate).slice(11, 16);
-            return gameHour === slot;
+            return getGameSlotTime(g) === slot;
         }) ?? null;
     }, [gamesOnDate]);
 
@@ -494,7 +524,7 @@ export default function CalendarioTab({ tournamentId, leagueId, canEdit, games, 
                             const slotSet = new Set<string>(cfg.slots);
                             gamesOnDate.forEach(g => {
                                 if (unit.fields.some(f => f.id === g.fieldId)) {
-                                    const t = formatTime(g.startTime);
+                                    const t = getGameSlotTime(g);
                                     if (t) slotSet.add(t.slice(0, 5));
                                 }
                             });
@@ -562,25 +592,57 @@ export default function CalendarioTab({ tournamentId, leagueId, canEdit, games, 
                                                         className={`p-2 min-h-[90px] flex items-stretch ${!isLastSlot ? 'border-b border-muted/10' : ''} ${fi < unit.fields.length - 1 ? 'border-r border-muted/10' : ''}`}
                                                     >
                                                         {game ? (
-                                                            <button
-                                                                onClick={() => onGameClick?.(game.id)}
-                                                                className={`w-full rounded-xl border px-2 py-2 text-left transition-all duration-200 hover:scale-[1.02] hover:shadow-lg ${gameStatusStyle(game.status)}`}
-                                                            >
-                                                                <div className="flex items-center justify-between mb-1.5">
-                                                                    <span className="text-[9px] font-black opacity-70 tabular-nums">
-                                                                        {game.startTime ? formatTime(game.startTime) : formatTime(game.scheduledDate)}
-                                                                    </span>
-                                                                    {game.status === 'live' && <span className="text-[8px] font-black bg-white/20 rounded px-1 py-0.5 animate-pulse">EN VIVO</span>}
-                                                                    {game.status === 'draft' && <span className="text-[8px] font-black bg-white/20 rounded px-1 py-0.5">BORRADOR</span>}
-                                                                    {game.status === 'finished' && <span className="text-[8px] font-black tabular-nums opacity-70">{game.awayScore}-{game.homeScore}</span>}
-                                                                </div>
-                                                                {game.round && <div className="text-[9px] font-bold opacity-60 mb-1 uppercase tracking-wider truncate">{game.round}</div>}
-                                                                <div className="space-y-0.5">
-                                                                    <p className="text-[11px] font-black leading-tight truncate">{game.awayTeam.shortName || game.awayTeam.name}</p>
-                                                                    <p className="text-[9px] font-bold opacity-50 leading-none">vs</p>
-                                                                    <p className="text-[11px] font-black leading-tight truncate">{game.homeTeam.shortName || game.homeTeam.name}</p>
-                                                                </div>
-                                                            </button>
+                                                            <div className="w-full flex flex-col gap-1.5">
+                                                                <button
+                                                                    onClick={() => onGameClick?.(game.id)}
+                                                                    className={`w-full rounded-xl border px-2 py-2 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg ${gameStatusStyle(game.status)}`}
+                                                                >
+                                                                    {/* Fila superior: jornada + badge de estado */}
+                                                                    <div className="flex items-center justify-between mb-1.5">
+                                                                        {game.round
+                                                                            ? <span className="text-[8px] font-black opacity-80 uppercase tracking-widest bg-white/10 px-1.5 py-0.5 rounded truncate max-w-[70%]">{game.round}</span>
+                                                                            : <span />
+                                                                        }
+                                                                        {(game.status === 'live' || game.status === 'in_progress') && <span className="text-[8px] font-black bg-white/20 rounded px-1 py-0.5 animate-pulse shrink-0">EN VIVO</span>}
+                                                                        {game.status === 'draft' && <span className="text-[8px] font-black bg-white/20 rounded px-1 py-0.5 shrink-0">BORRADOR</span>}
+                                                                        {game.status === 'finished' && <span className="text-[8px] font-black tabular-nums opacity-70 shrink-0">{game.awayScore}-{game.homeScore}</span>}
+                                                                    </div>
+                                                                    {/* Equipos con récord */}
+                                                                    <div className="space-y-0.5 text-center">
+                                                                        <p className="text-[10px] font-black leading-tight truncate">{game.awayTeam.name}</p>
+                                                                        <p className="text-[9px] font-bold opacity-50 tabular-nums leading-none">({rec(game.awayTeam.id).wins}-{rec(game.awayTeam.id).losses})</p>
+                                                                        <p className="text-[8px] font-bold opacity-40 leading-none py-0.5">vs</p>
+                                                                        <p className="text-[9px] font-bold opacity-50 tabular-nums leading-none">({rec(game.homeTeam.id).wins}-{rec(game.homeTeam.id).losses})</p>
+                                                                        <p className="text-[10px] font-black leading-tight truncate">{game.homeTeam.name}</p>
+                                                                    </div>
+                                                                    {/* Torneo */}
+                                                                    {tournamentName && (
+                                                                        <p className="text-[8px] font-bold opacity-40 mt-1.5 truncate leading-none text-center">{tournamentName}</p>
+                                                                    )}
+                                                                </button>
+                                                                {game.status === 'scheduled' && (onConfigureLineup || onOpenStreamPanel) && (
+                                                                    <div className="grid grid-cols-2 gap-1.5">
+                                                                        {onConfigureLineup && (
+                                                                            <button
+                                                                                onClick={() => onConfigureLineup(game.id)}
+                                                                                className="flex items-center justify-center gap-1 rounded-lg border border-blue-500/30 bg-blue-500/10 px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-blue-300 transition hover:bg-blue-500/20"
+                                                                            >
+                                                                                <Users className="w-3 h-3" />
+                                                                                Lineup
+                                                                            </button>
+                                                                        )}
+                                                                        {onOpenStreamPanel && (
+                                                                            <button
+                                                                                onClick={() => onOpenStreamPanel(game.id)}
+                                                                                className="flex items-center justify-center gap-1 rounded-lg border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-fuchsia-300 transition hover:bg-fuchsia-500/20"
+                                                                            >
+                                                                                <Radio className="w-3 h-3" />
+                                                                                Stream
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         ) : (
                                                             canEdit ? (
                                                                 <button
@@ -619,13 +681,38 @@ export default function CalendarioTab({ tournamentId, leagueId, canEdit, games, 
                             {gamesOnDate.length} juego{gamesOnDate.length !== 1 ? 's' : ''} · {selectedDate}
                         </p>
                         <div className="flex flex-wrap gap-2">
-                            {gamesOnDate.map(g => (
-                                <button key={g.id} onClick={() => onGameClick?.(g.id)} className="flex items-center gap-2 bg-muted/10 hover:bg-muted/20 border border-muted/20 rounded-xl px-3 py-1.5 transition-all">
-                                    <div className={`w-2 h-2 rounded-full ${g.status === 'live' ? 'bg-red-500 animate-pulse' : g.status === 'finished' ? 'bg-zinc-500' : g.status === 'draft' ? 'bg-amber-500' : 'bg-blue-500'}`} />
-                                    <span className="text-xs font-black">{g.awayTeam.shortName || g.awayTeam.name} vs {g.homeTeam.shortName || g.homeTeam.name}</span>
-                                    {g.startTime && <span className="text-[10px] text-muted-foreground tabular-nums">{formatTime(g.startTime)}</span>}
-                                </button>
-                            ))}
+                            {gamesOnDate.map(g => {
+                                const showQuickActions = g.status === 'scheduled' && (onConfigureLineup || onOpenStreamPanel);
+                                return (
+                                    <div key={g.id} className="flex items-center gap-2 bg-muted/10 border border-muted/20 rounded-xl px-3 py-1.5 transition-all hover:bg-muted/20">
+                                        <button onClick={() => onGameClick?.(g.id)} className="flex items-center gap-2 min-w-0">
+                                            <div className={`w-2 h-2 rounded-full ${(g.status === 'live' || g.status === 'in_progress') ? 'bg-red-500 animate-pulse' : g.status === 'finished' ? 'bg-zinc-500' : g.status === 'draft' ? 'bg-amber-500' : 'bg-blue-500'}`} />
+                                            <span className="text-xs font-black truncate">{g.awayTeam.shortName || g.awayTeam.name} vs {g.homeTeam.shortName || g.homeTeam.name}</span>
+                                            <span className="text-[10px] text-muted-foreground tabular-nums">{getGameSlotTime(g)}</span>
+                                        </button>
+                                        {showQuickActions && (
+                                            <div className="flex items-center gap-1 border-l border-muted/20 pl-2">
+                                                {onConfigureLineup && (
+                                                    <button
+                                                        onClick={() => onConfigureLineup(g.id)}
+                                                        className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-blue-300 transition hover:bg-blue-500/20"
+                                                    >
+                                                        Lineup
+                                                    </button>
+                                                )}
+                                                {onOpenStreamPanel && (
+                                                    <button
+                                                        onClick={() => onOpenStreamPanel(g.id)}
+                                                        className="rounded-lg border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-fuchsia-300 transition hover:bg-fuchsia-500/20"
+                                                    >
+                                                        Stream
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 )}

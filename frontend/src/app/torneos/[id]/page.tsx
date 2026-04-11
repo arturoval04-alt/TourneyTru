@@ -42,20 +42,23 @@ export default function TournamentProfilePage() {
     const [loadingTournament, setLoadingTournament] = useState(true);
     const [accessDenied, setAccessDenied] = useState(false);
 
-    useEffect(() => {
-        const fetchTournament = async () => {
-            try {
-                const { data } = await api.get(`/torneos/${tournamentId}`);
-                setTournament(data);
-                setLoadingTournament(false);
-            } catch (err: any) {
-                if (err?.response?.status === 403) setAccessDenied(true);
-                console.error("Error fetching tournament:", err);
-                setLoadingTournament(false);
-            }
-        };
-        fetchTournament();
+    const fetchTournament = useCallback(async (showLoader = true) => {
+        if (showLoader) setLoadingTournament(true);
+        try {
+            const { data } = await api.get(`/torneos/${tournamentId}`);
+            setTournament(data);
+            setAccessDenied(false);
+        } catch (err: any) {
+            if (err?.response?.status === 403) setAccessDenied(true);
+            console.error("Error fetching tournament:", err);
+        } finally {
+            setLoadingTournament(false);
+        }
     }, [tournamentId]);
+
+    useEffect(() => {
+        void fetchTournament();
+    }, [fetchTournament]);
 
     // Actions & Modal State
     const [isCreatingGame, setIsCreatingGame] = useState(false);
@@ -389,10 +392,12 @@ export default function TournamentProfilePage() {
         try {
             const html2canvas = (await import('html2canvas')).default;
             const canvas = await html2canvas(calendarExportRef.current, {
-                backgroundColor: '#09090b',
-                scale: 2,
+                backgroundColor: '#0a0f1a',
+                scale: 1,
                 useCORS: true,
                 logging: false,
+                width: 1920,
+                height: 1080,
             });
             const link = document.createElement('a');
             link.download = `${tournament?.name || 'torneo'}-${selectedRound || 'calendario'}.jpg`;
@@ -515,6 +520,8 @@ export default function TournamentProfilePage() {
             return numA - numB || a.localeCompare(b);
         });
     }, [tournament]);
+
+    const canUseScheduledQuickActions = userRole === 'organizer' || userRole === 'presi';
 
     const tabs = [
         { id: "informacion", label: "Información" },
@@ -993,94 +1000,188 @@ export default function TournamentProfilePage() {
                                                     </button>
                                                 </div>
 
-                                                {/* ── Export Template (hidden, captured by html2canvas) ── */}
+                                                {/* ── Export Template ESPN-style 16:9 (hidden, captured by html2canvas) ── */}
                                                 <div
                                                     ref={calendarExportRef}
                                                     style={{
                                                         position: 'fixed', top: '-9999px', left: '-9999px',
-                                                        width: '1080px',
-                                                        minHeight: '1920px',
-                                                        backgroundColor: '#09090b',
-                                                        backgroundImage: tournament?.scheduleBgUrl ? `url(${tournament.scheduleBgUrl})` : 'none',
-                                                        backgroundSize: 'cover',
-                                                        backgroundPosition: 'center',
+                                                        width: '1920px',
+                                                        height: '1080px',
                                                         overflow: 'hidden',
-                                                        fontFamily: 'system-ui, sans-serif',
+                                                        fontFamily: '"Segoe UI", system-ui, sans-serif',
                                                         display: 'flex',
-                                                        flexDirection: 'column',
-                                                        alignItems: 'center',
-                                                        boxSizing: 'border-box'
+                                                        boxSizing: 'border-box',
+                                                        backgroundColor: '#0a0f1a',
                                                     }}
                                                     aria-hidden
                                                 >
-                                                    {/* Dark overlay for readability if custom bg is used */}
+                                                    {/* ── Fondo completo con la imagen del torneo ── */}
                                                     {tournament?.scheduleBgUrl && (
-                                                        <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 0 }} />
+                                                        <div style={{
+                                                            position: 'absolute', inset: 0, zIndex: 0,
+                                                            backgroundImage: `url(${tournament.scheduleBgUrl})`,
+                                                            backgroundSize: 'cover',
+                                                            backgroundPosition: 'center',
+                                                        }} />
                                                     )}
+                                                    {/* Overlay oscuro para legibilidad */}
+                                                    <div style={{
+                                                        position: 'absolute', inset: 0, zIndex: 1,
+                                                        background: tournament?.scheduleBgUrl
+                                                            ? 'linear-gradient(to right, rgba(0,0,0,0.82) 38%, rgba(0,0,0,0.60) 60%, rgba(0,0,0,0.75) 100%)'
+                                                            : 'linear-gradient(135deg, #0a0f1a 0%, #0f2040 50%, #0a0f1a 100%)',
+                                                    }} />
 
-                                                    {/* Background Stripes Decorations (Only if no custom bg) */}
-                                                    {!tournament?.scheduleBgUrl && (
-                                                        <>
-                                                            <div style={{ position: 'absolute', top: '-150px', left: '-150px', width: '600px', height: '300px', background: 'repeating-linear-gradient(90deg, #f59e0b, #f59e0b 50px, #09090b 50px, #09090b 100px)', transform: 'rotate(-45deg)', zIndex: 0 }} />
-                                                            <div style={{ position: 'absolute', top: '-150px', right: '-150px', width: '600px', height: '300px', background: 'repeating-linear-gradient(90deg, #f59e0b, #f59e0b 50px, #09090b 50px, #09090b 100px)', transform: 'rotate(45deg)', zIndex: 0 }} />
-                                                            <div style={{ position: 'absolute', bottom: '-150px', left: '-150px', width: '600px', height: '300px', background: 'repeating-linear-gradient(90deg, #f59e0b, #f59e0b 50px, #09090b 50px, #09090b 100px)', transform: 'rotate(45deg)', zIndex: 0 }} />
-                                                            <div style={{ position: 'absolute', bottom: '-150px', right: '-150px', width: '600px', height: '300px', background: 'repeating-linear-gradient(90deg, #f59e0b, #f59e0b 50px, #09090b 50px, #09090b 100px)', transform: 'rotate(-45deg)', zIndex: 0 }} />
-                                                        </>
-                                                    )}
-
-                                                    {/* Main Content container */}
-                                                    <div style={{ position: 'relative', zIndex: 10, width: '100%', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '140px 80px 80px' }}>
-                                                        
-                                                        {/* Logo */}
+                                                    {/* ══ PANEL IZQUIERDO (38%) — Identidad Visual ══ */}
+                                                    <div style={{
+                                                        position: 'relative', zIndex: 2,
+                                                        width: '730px', flexShrink: 0,
+                                                        display: 'flex', flexDirection: 'column',
+                                                        alignItems: 'center', justifyContent: 'center',
+                                                        padding: '60px 50px',
+                                                        borderRight: '2px solid rgba(255,255,255,0.12)',
+                                                    }}>
+                                                        {/* Logo grande */}
                                                         {tournament?.logoUrl ? (
-                                                            <div style={{ width: '120px', height: '120px', backgroundColor: 'white', borderRadius: '15px', padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '15px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+                                                            <div style={{
+                                                                width: '280px', height: '280px',
+                                                                backgroundColor: 'rgba(255,255,255,0.08)',
+                                                                borderRadius: '28px',
+                                                                padding: '20px',
+                                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                marginBottom: '32px',
+                                                                boxShadow: '0 20px 60px rgba(0,0,0,0.7)',
+                                                                border: '2px solid rgba(255,255,255,0.15)',
+                                                            }}>
                                                                 <img src={tournament.logoUrl} alt="Logo" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
                                                             </div>
                                                         ) : (
-                                                            <Trophy style={{ width: '120px', height: '120px', color: '#ffffff', marginBottom: '15px' }} />
+                                                            <div style={{
+                                                                width: '280px', height: '280px',
+                                                                backgroundColor: 'rgba(255,255,255,0.06)',
+                                                                borderRadius: '28px', marginBottom: '32px',
+                                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                border: '2px solid rgba(255,255,255,0.12)',
+                                                            }}>
+                                                                <span style={{ fontSize: '120px' }}>⚾</span>
+                                                            </div>
                                                         )}
-
-                                                        {/* LEAGUE NAME */}
-                                                        <p style={{ fontSize: '24px', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#ffffff', margin: '0 0 25px 0', textAlign: 'center', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>
-                                                            {tournament?.league?.name || tournament?.name}
+                                                        {/* Nombre del torneo */}
+                                                        <p style={{
+                                                            fontSize: '32px', fontWeight: 900, textTransform: 'uppercase',
+                                                            color: '#ffffff', margin: '0 0 10px 0',
+                                                            textAlign: 'center', letterSpacing: '2px',
+                                                            textShadow: '0 2px 12px rgba(0,0,0,0.8)',
+                                                            lineHeight: 1.15,
+                                                        }}>
+                                                            {tournament?.name}
                                                         </p>
+                                                        {/* Nombre de la liga */}
+                                                        {tournament?.league?.name && (
+                                                            <p style={{
+                                                                fontSize: '20px', fontWeight: 600, textTransform: 'uppercase',
+                                                                color: 'rgba(255,255,255,0.55)', margin: 0,
+                                                                textAlign: 'center', letterSpacing: '3px',
+                                                            }}>
+                                                                {tournament.league.name}
+                                                            </p>
+                                                        )}
+                                                        {/* Línea decorativa */}
+                                                        <div style={{
+                                                            width: '120px', height: '3px',
+                                                            background: 'linear-gradient(to right, transparent, #f59e0b, transparent)',
+                                                            marginTop: '28px',
+                                                        }} />
+                                                    </div>
 
-                                                        {/* MATCH SCHEDULE TEXT */}
-                                                        <h1 style={{ fontSize: '90px', fontWeight: 900, textTransform: 'uppercase', color: '#ffffff', margin: '0 0 60px 0', lineHeight: 1, textAlign: 'center', letterSpacing: '-2px', textShadow: '0 4px 20px rgba(0,0,0,0.6)' }}>
-                                                            {activeRound || 'MATCH SCHEDULE'}
-                                                        </h1>
+                                                    {/* ══ PANEL DERECHO (62%) — Encabezado + Juegos ══ */}
+                                                    <div style={{
+                                                        position: 'relative', zIndex: 2,
+                                                        flex: 1,
+                                                        display: 'flex', flexDirection: 'column',
+                                                        padding: '50px 70px',
+                                                    }}>
+                                                        {/* A. Encabezado */}
+                                                        <div style={{ marginBottom: '32px' }}>
+                                                            <p style={{
+                                                                fontSize: '16px', fontWeight: 700, letterSpacing: '5px',
+                                                                textTransform: 'uppercase', color: '#f59e0b', margin: '0 0 8px 0',
+                                                            }}>
+                                                                {tournament?.rulesType?.toLowerCase().includes('softball') ? 'SOFTBOL' : tournament?.rulesType?.toLowerCase().includes('baseball') ? 'BÉISBOL' : (tournament?.category || tournament?.rulesType || 'DEPORTES')}
+                                                            </p>
+                                                            <h1 style={{
+                                                                fontSize: '72px', fontWeight: 900, textTransform: 'uppercase',
+                                                                color: '#ffffff', margin: 0, lineHeight: 0.95,
+                                                                letterSpacing: '-1px', fontStyle: 'italic',
+                                                                textShadow: '0 4px 24px rgba(0,0,0,0.7)',
+                                                            }}>
+                                                                {activeRound || 'ROL DE JUEGOS'}
+                                                            </h1>
+                                                            <div style={{ width: '80px', height: '4px', background: '#f59e0b', marginTop: '16px', borderRadius: '2px' }} />
+                                                        </div>
 
-                                                        {/* Games List (Table-like grid without borders) */}
-                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '35px', width: '100%' }}>
-                                                            {visibleGames.slice(0, 10).map(game => {
-                                                                const fn = tournament?.fields?.find(f => f.id === game.field)?.name || game.field || 'Estadio Por Definir';
+                                                        {/* B. Lista de partidos */}
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', flex: 1 }}>
+                                                            {visibleGames.slice(0, 8).map(game => {
+                                                                // Buscar campo por fieldId o field
+                                                                const fieldId = game.fieldId ?? game.field;
+                                                                const fieldObj = tournament?.fields?.find((f: any) => f.id === fieldId);
+                                                                const fieldName = fieldObj?.name || '';
+                                                                const unitName = (fieldObj as any)?.sportsUnit?.name || '';
+                                                                // Fecha: tomar solo YYYY-MM-DD para evitar doble zona horaria
+                                                                const datePart = game.scheduledDate.slice(0, 10);
+                                                                const gameDate = new Date(datePart + 'T12:00:00');
+                                                                const day = gameDate.toLocaleDateString('es-MX', { day: '2-digit' });
+                                                                const month = gameDate.toLocaleDateString('es-MX', { month: 'short' }).toUpperCase().replace('.', '');
+                                                                // Hora: startTime puede ser "HH:mm", "HH:mm:ss" o ISO completo
+                                                                const time = (() => {
+                                                                    const t = game.startTime;
+                                                                    if (!t) return '';
+                                                                    if (/^\d{2}:\d{2}/.test(t)) return t.slice(0, 5);
+                                                                    const d = new Date(t);
+                                                                    if (!isNaN(d.getTime())) return d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false });
+                                                                    return '';
+                                                                })();
                                                                 return (
-                                                                    <div key={game.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                                                                        {/* Teams Row */}
-                                                                        <div style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'center', gap: '15px' }}>
-                                                                            {/* Away Team */}
-                                                                            <div style={{ flex: 1, backgroundColor: '#f59e0b', padding: '12px 16px', display: 'flex', justifyContent: 'center', alignItems: 'center', borderRadius: '6px', boxShadow: '0 4px 15px rgba(0,0,0,0.4)', minHeight: '60px' }}>
-                                                                                <span style={{ fontSize: '24px', fontWeight: 900, color: '#09090b', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                                    {game.awayTeam.name}
-                                                                                </span>
-                                                                            </div>
-                                                                            
-                                                                            {/* VS */}
-                                                                            <span style={{ fontSize: '28px', fontWeight: 900, color: '#ffffff', flexShrink: 0, userSelect: 'none', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>VS</span>
-                                                                            
-                                                                            {/* Home Team */}
-                                                                            <div style={{ flex: 1, backgroundColor: '#f59e0b', padding: '12px 16px', display: 'flex', justifyContent: 'center', alignItems: 'center', borderRadius: '6px', boxShadow: '0 4px 15px rgba(0,0,0,0.4)', minHeight: '60px' }}>
-                                                                                <span style={{ fontSize: '24px', fontWeight: 900, color: '#09090b', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                                    {game.homeTeam.name}
-                                                                                </span>
-                                                                            </div>
+                                                                    <div key={game.id} style={{
+                                                                        display: 'flex', alignItems: 'center', gap: '16px',
+                                                                        background: 'rgba(255,255,255,0.06)',
+                                                                        borderRadius: '12px',
+                                                                        padding: '0',
+                                                                        backdropFilter: 'blur(6px)',
+                                                                        border: '1px solid rgba(255,255,255,0.10)',
+                                                                        overflow: 'hidden',
+                                                                    }}>
+                                                                        {/* Bloque de fecha */}
+                                                                        <div style={{
+                                                                            width: '72px', flexShrink: 0,
+                                                                            background: 'rgba(245,158,11,0.90)',
+                                                                            display: 'flex', flexDirection: 'column',
+                                                                            alignItems: 'center', justifyContent: 'center',
+                                                                            padding: '12px 6px',
+                                                                            alignSelf: 'stretch',
+                                                                        }}>
+                                                                            <span style={{ fontSize: '28px', fontWeight: 900, color: '#0a0f1a', lineHeight: 1 }}>{day}</span>
+                                                                            <span style={{ fontSize: '13px', fontWeight: 800, color: '#0a0f1a', letterSpacing: '1px' }}>{month}</span>
                                                                         </div>
-                                                                        
-                                                                        {/* Stadium & Date */}
-                                                                        <div style={{ textAlign: 'center', color: '#e4e4e7', textShadow: '0 2px 5px rgba(0,0,0,0.8)' }}>
-                                                                            <p style={{ fontSize: '14px', fontWeight: 700, margin: '0 0 2px 0', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{fn}</p>
-                                                                            <p style={{ fontSize: '13px', fontWeight: 700, margin: 0, textTransform: 'uppercase', letterSpacing: '0.1em', opacity: 0.8 }}>
-                                                                                {new Date(game.scheduledDate).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })} <span style={{opacity:0.5}}>•</span> {new Date(game.scheduledDate).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                                                                        {/* Info del partido */}
+                                                                        <div style={{ flex: 1, padding: '12px 16px 12px 0' }}>
+                                                                            {/* Equipos */}
+                                                                            <p style={{
+                                                                                fontSize: '22px', fontWeight: 900, color: '#ffffff',
+                                                                                textTransform: 'uppercase', fontStyle: 'italic',
+                                                                                margin: '0 0 4px 0', lineHeight: 1.1,
+                                                                                letterSpacing: '0.5px',
+                                                                            }}>
+                                                                                {game.awayTeam.name} <span style={{ color: '#f59e0b', fontStyle: 'normal' }}>VS</span> {game.homeTeam.name}
+                                                                            </p>
+                                                                            {/* Detalles: unidad · campo · hora */}
+                                                                            <p style={{
+                                                                                fontSize: '14px', fontWeight: 600, color: 'rgba(255,255,255,0.55)',
+                                                                                textTransform: 'uppercase', letterSpacing: '1px',
+                                                                                margin: 0,
+                                                                            }}>
+                                                                                {[unitName, fieldName, time].filter(Boolean).join('  ·  ')}
                                                                             </p>
                                                                         </div>
                                                                     </div>
@@ -1088,12 +1189,12 @@ export default function TournamentProfilePage() {
                                                             })}
                                                         </div>
 
-                                                        {/* Force Footer to bottom */}
-                                                        <div style={{ flex: 1 }}></div>
-
                                                         {/* Footer */}
-                                                        <p style={{ fontSize: '24px', fontWeight: 600, color: '#ffffff', marginTop: '60px', letterSpacing: '0.05em', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>
-                                                            www.tourneytru.com
+                                                        <p style={{
+                                                            fontSize: '14px', fontWeight: 600, color: 'rgba(255,255,255,0.25)',
+                                                            marginTop: '20px', letterSpacing: '2px', textTransform: 'uppercase',
+                                                        }}>
+                                                            scorekeeper.app
                                                         </p>
                                                     </div>
                                                 </div>
@@ -1663,18 +1764,21 @@ export default function TournamentProfilePage() {
                                         canEdit={canEdit}
                                         games={tournament.games as any}
                                         rounds={tournamentRounds}
+                                        tournamentName={tournament.name}
                                         onOpenCreateWizard={(prefill) => {
                                             setCalendarPrefill(prefill);
                                             setIsCreatingGame(true);
                                         }}
+                                        onConfigureLineup={canUseScheduledQuickActions ? ((gameId) => setLineupGameId(gameId)) : undefined}
+                                        onOpenStreamPanel={canUseScheduledQuickActions ? ((gameId) => router.push(`/gamescheduled/${gameId}?tab=stream`)) : undefined}
                                         onGameClick={(gameId) => {
                                             const game = tournament.games.find(g => g.id === gameId);
                                             if (!game) return;
                                             if (game.status === 'scheduled') router.push(`/gamescheduled/${gameId}`);
-                                            else if (game.status === 'live') router.push(`/gamecast/${gameId}`);
+                                            else if (game.status === 'live' || game.status === 'in_progress') router.push(`/gamecast/${gameId}`);
                                             else if (game.status === 'finished') router.push(`/gamefinalizado/${gameId}`);
                                         }}
-                                        onRefresh={() => window.location.reload()}
+                                        onRefresh={() => { void fetchTournament(false); }}
                                     />
                                 )}
 
@@ -1684,6 +1788,8 @@ export default function TournamentProfilePage() {
                                         tournamentId={tournamentId}
                                         tournamentName={tournament.name}
                                         leagueName={tournament.league?.name}
+                                        logoUrl={tournament.logoUrl || undefined}
+                                        scheduleBgUrl={tournament.scheduleBgUrl || undefined}
                                         rounds={tournamentRounds}
                                     />
                                 )}
@@ -2140,8 +2246,13 @@ export default function TournamentProfilePage() {
                     tournamentId={tournamentId}
                     leagueId={tournament?.leagueId}
                     calendarPrefill={calendarPrefill}
+                    onGameScheduled={() => { void fetchTournament(false); }}
                     onClose={() => { setIsCreatingGame(false); setCalendarPrefill(undefined); }}
-                    onGameCreated={() => { setIsCreatingGame(false); setCalendarPrefill(undefined); window.location.reload(); }}
+                    onGameCreated={() => {
+                        setIsCreatingGame(false);
+                        setCalendarPrefill(undefined);
+                        void fetchTournament(false);
+                    }}
                 />
             )}
 
@@ -2151,7 +2262,10 @@ export default function TournamentProfilePage() {
                     context="torneo"
                     tournamentId={tournamentId}
                     existingGameId={lineupGameId}
-                    onClose={() => setLineupGameId(null)}
+                    onClose={() => {
+                        setLineupGameId(null);
+                        void fetchTournament(false);
+                    }}
                 />
             )}
 

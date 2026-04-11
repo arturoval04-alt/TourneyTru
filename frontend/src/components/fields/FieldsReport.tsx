@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from '@/lib/api';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -10,6 +10,8 @@ interface FieldsReportProps {
     tournamentId?: string;
     tournamentName?: string;
     leagueName?: string;
+    logoUrl?: string;
+    scheduleBgUrl?: string;
     rounds?: string[]
 }
 
@@ -59,6 +61,7 @@ interface OccupancyReport {
 const STATUS_LABEL: Record<string, string> = {
     scheduled: 'Programado',
     'in-progress': 'En juego',
+    in_progress: 'En juego',
     completed: 'Final',
     finished: 'Final',
     postponed: 'Pospuesto',
@@ -68,6 +71,7 @@ const STATUS_LABEL: Record<string, string> = {
 const STATUS_BG: Record<string, string> = {
     scheduled: '#1d4ed8',
     'in-progress': '#15803d',
+    in_progress: '#15803d',
     completed: '#374151',
     finished: '#374151',
     postponed: '#b45309',
@@ -75,13 +79,24 @@ const STATUS_BG: Record<string, string> = {
 };
 
 function fmtDate(dateStr: string) {
-    const d = new Date(dateStr + 'T00:00:00');
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(dateStr)
+        ? new Date(`${dateStr}T12:00:00`)
+        : new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return 'Fecha inválida';
     return d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function fmtTime(t: string | null) {
     if (!t) return '—';
     return t.slice(0, 5);
+}
+
+function fmtGameTime(t: string | null) {
+    if (!t) return '—';
+    if (/^\d{2}:\d{2}/.test(t)) return fmtTime(t);
+    const d = new Date(t);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 function barColor(pct: number) {
@@ -245,7 +260,7 @@ function ReportTemplate({
                                                     alignItems: 'center',
                                                 }}>
                                                     <div style={{ fontSize: '11px', color: '#94a3b8' }}>{fmtDate(g.scheduledDate)}</div>
-                                                    <div style={{ fontSize: '11px', color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>{fmtTime(g.startTime)}</div>
+                                                    <div style={{ fontSize: '11px', color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>{fmtGameTime(g.startTime ?? g.scheduledDate)}</div>
                                                     <div style={{ fontSize: '12px', fontWeight: 700, color: '#f1f5f9' }}>
                                                         {g.homeTeam?.name ?? '?'} vs {g.awayTeam?.name ?? '?'}
                                                     </div>
@@ -291,139 +306,221 @@ function ScheduleMatrixTemplate({
     scope,
     tournamentName,
     leagueName,
+    logoUrl,
+    scheduleBgUrl,
     printRef,
 }: {
     report: OccupancyReport;
     scope: 'league' | 'tournament';
     tournamentName?: string;
     leagueName?: string;
+    logoUrl?: string;
+    scheduleBgUrl?: string;
     printRef: React.RefObject<HTMLDivElement>;
 }) {
-    const allGames = report.fields.flatMap(f => 
+    const allGames = report.fields.flatMap(f =>
         f.games.map(g => ({ ...g, fieldName: f.fieldName, location: f.location, unitName: f.unitName, fieldId: f.fieldId }))
     );
 
     const datesSet = new Set(allGames.map(g => g.scheduledDate.slice(0, 10)));
     const uniqueDates = Array.from(datesSet).sort();
 
-    const rowKeysSet = new Set(allGames.map(g => `${g.fieldId}|${g.fieldName}|${fmtTime(g.startTime)}`));
-    
+    // Include unitName in row key so we can display it
+    const SEP = '|||';
+    const rowKeysSet = new Set(allGames.map(g =>
+        [g.unitName, g.fieldId, g.fieldName, fmtGameTime(g.startTime ?? g.scheduledDate)].join(SEP)
+    ));
+
     const rows = Array.from(rowKeysSet).map(key => {
-        const [fieldId, fieldName, time] = key.split('|');
-        return { fieldId, fieldName, time };
+        const [unitName, fieldId, fieldName, time] = key.split(SEP);
+        return { unitName, fieldId, fieldName, time };
     }).sort((a, b) => {
+        if (a.unitName !== b.unitName) return a.unitName.localeCompare(b.unitName);
         if (a.fieldName !== b.fieldName) return a.fieldName.localeCompare(b.fieldName);
         return a.time.localeCompare(b.time);
     });
 
-    const getGamesForCell = (rowKey: string, date: string) => {
-        const [fId, fName, time] = rowKey.split('|');
-        return allGames.filter(g => g.fieldId === fId && fmtTime(g.startTime) === time && g.scheduledDate.slice(0, 10) === date);
-    };
+    const getGamesForCell = (unitName: string, fieldId: string, time: string, date: string) =>
+        allGames.filter(g =>
+            g.fieldId === fieldId &&
+            g.unitName === unitName &&
+            fmtGameTime(g.startTime ?? g.scheduledDate) === time &&
+            g.scheduledDate.slice(0, 10) === date
+        );
+
+    // Group rows by unit for section separators
+    const unitGroups: { unitName: string; rows: typeof rows }[] = [];
+    for (const row of rows) {
+        const last = unitGroups[unitGroups.length - 1];
+        if (!last || last.unitName !== row.unitName) {
+            unitGroups.push({ unitName: row.unitName, rows: [row] });
+        } else {
+            last.rows.push(row);
+        }
+    }
+
+    // Tamaño fijo estándar 3800×2160 (4K UHD landscape)
+    const EXPORT_WIDTH = 3800;
 
     return (
         <div
             ref={printRef}
             style={{
                 position: 'absolute', left: '-9999px', top: 0,
-                width: uniqueDates.length > 5 ? `${180 + uniqueDates.length * 160}px` : '1000px', // expand implicitly if many days
+                width: `${EXPORT_WIDTH}px`,
                 fontFamily: 'system-ui, -apple-system, sans-serif',
-                background: '#0f1117',
+                background: '#0a0f1a',
                 color: '#f1f5f9',
-                padding: '40px',
                 boxSizing: 'border-box',
+                overflow: 'hidden',
             }}
         >
-            {/* ── Encabezado ── */}
-            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                <div style={{ fontSize: '24px', fontWeight: 900, color: '#f8fafc', marginBottom: '4px' }}>
-                    {leagueName ?? 'Liga Local'}
-                </div>
-                <div style={{ fontSize: '18px', fontWeight: 400, letterSpacing: '1px', textTransform: 'uppercase', color: '#cbd5e1' }}>
-                    {scope === 'tournament' && tournamentName ? `PROGRAMACIÓN: ${tournamentName}` : 'PROGRAMACIÓN SEMANAL DE CAMPOS'}
-                </div>
-                <div style={{ fontSize: '14px', color: '#94a3b8', marginTop: '8px' }}>
-                    {scope !== 'tournament' ? 'Todas las Ligas / Categorías' : 'Rol Oficial'}
-                </div>
-                <div style={{ fontSize: '16px', fontWeight: 700, color: '#f8fafc', marginTop: '8px' }}>
-                    Semana del {uniqueDates.length > 0 ? fmtDate(uniqueDates[0]) : fmtDate(report.from)} al {uniqueDates.length > 0 ? fmtDate(uniqueDates[uniqueDates.length - 1]) : fmtDate(report.to)}
+            {/* ── Encabezado con fondo difuminado ── */}
+            <div style={{ position: 'relative', padding: '80px 80px 64px', overflow: 'hidden' }}>
+                {/* Fondo difuminado — usa scheduleBgUrl (imagen de jornada) o logoUrl como fallback */}
+                {(scheduleBgUrl || logoUrl) && (
+                    <div style={{
+                        position: 'absolute', inset: 0, zIndex: 0,
+                        backgroundImage: `url(${scheduleBgUrl || logoUrl})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                        filter: 'blur(24px)',
+                        opacity: 0.18,
+                        transform: 'scale(1.15)',
+                    }} />
+                )}
+                {/* Gradiente oscuro encima */}
+                <div style={{
+                    position: 'absolute', inset: 0, zIndex: 1,
+                    background: 'linear-gradient(to bottom, rgba(10,15,26,0.55) 0%, rgba(10,15,26,0.85) 100%)',
+                }} />
+
+                {/* Contenido del encabezado */}
+                <div style={{ position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', gap: '60px' }}>
+                    {/* Logo torneo */}
+                    {logoUrl && (
+                        <div style={{
+                            width: '200px', height: '200px', borderRadius: '32px', overflow: 'hidden',
+                            border: '4px solid rgba(255,255,255,0.15)', flexShrink: 0,
+                            background: 'rgba(255,255,255,0.05)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                            <img src={logoUrl} alt="logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                        </div>
+                    )}
+                    {/* Textos */}
+                    <div style={{ flex: 1, textAlign: logoUrl ? 'left' : 'center' }}>
+                        <div style={{ fontSize: '64px', fontWeight: 900, color: '#f8fafc', marginBottom: '10px', lineHeight: 1.05 }}>
+                            {leagueName ?? 'Liga Local'}
+                        </div>
+                        <div style={{ fontSize: '40px', fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase', color: '#cbd5e1', marginBottom: '12px' }}>
+                            {scope === 'tournament' && tournamentName ? `PROGRAMACIÓN: ${tournamentName}` : 'PROGRAMACIÓN SEMANAL DE CAMPOS'}
+                        </div>
+                        <div style={{ fontSize: '28px', color: '#94a3b8' }}>
+                            {scope !== 'tournament' ? 'Todas las Ligas / Categorías' : 'Rol Oficial'}
+                        </div>
+                        <div style={{ fontSize: '34px', fontWeight: 700, color: '#e2e8f0', marginTop: '14px' }}>
+                            Semana del {uniqueDates.length > 0 ? fmtDate(uniqueDates[0]) : fmtDate(report.from)} al {uniqueDates.length > 0 ? fmtDate(uniqueDates[uniqueDates.length - 1]) : fmtDate(report.to)}
+                        </div>
+                    </div>
                 </div>
             </div>
 
             {/* ── Tabla Matricial ── */}
-            <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #334155' }}>
-                <thead>
-                    <tr style={{ background: '#020617', color: '#f8fafc' }}>
-                        <th style={{ padding: '12px', border: '1px solid #334155', textAlign: 'left', fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', width: '180px' }}>
-                            CAMPO / HORARIO
-                        </th>
-                        {uniqueDates.map(date => {
-                            const d = new Date(date + 'T12:00:00');
-                            const dayName = d.toLocaleDateString('es-MX', { weekday: 'long' });
-                            const dayNum = d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' });
-                            return (
-                                <th key={date} style={{ padding: '12px', border: '1px solid #334155', textAlign: 'center', fontSize: '12px', fontWeight: 900, textTransform: 'capitalize' }}>
-                                    {dayName} {dayNum}
-                                </th>
-                            );
-                        })}
-                    </tr>
-                </thead>
-                <tbody>
-                    {rows.map(row => {
-                        const rowKey = `${row.fieldId}|${row.fieldName}|${row.time}`;
-                        return (
-                            <tr key={rowKey}>
-                                <td style={{ background: '#0f172a', border: '1px solid #334155', padding: '12px', width: '180px' }}>
-                                    <div style={{ fontSize: '12px', fontWeight: 900, color: '#f8fafc', marginBottom: '4px' }}>{row.fieldName}</div>
-                                    <div style={{ fontSize: '15px', fontWeight: 900, color: '#93c5fd' }}>{row.time}</div>
-                                </td>
+            <div style={{ padding: '0 80px 80px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', border: '2px solid #334155' }}>
+                    <thead>
+                        <tr style={{ background: '#020617', color: '#f8fafc' }}>
+                            <th style={{ padding: '28px 36px', border: '2px solid #334155', textAlign: 'left', fontSize: '26px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', width: '480px' }}>
+                                UNIDAD · CAMPO · HORARIO
+                            </th>
+                            {uniqueDates.map(date => {
+                                const d = new Date(date + 'T12:00:00');
+                                const dayName = d.toLocaleDateString('es-MX', { weekday: 'long' });
+                                const dayNum = d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' });
+                                return (
+                                    <th key={date} style={{ padding: '28px 20px', border: '2px solid #334155', textAlign: 'center', fontSize: '28px', fontWeight: 900, textTransform: 'capitalize' }}>
+                                        {dayName} {dayNum}
+                                    </th>
+                                );
+                            })}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {unitGroups.map(group => (
+                            <React.Fragment key={`group-${group.unitName}`}>
+                                {/* ── Separador de unidad ── */}
+                                <tr>
+                                    <td colSpan={uniqueDates.length + 1} style={{
+                                        background: '#1e3a5f',
+                                        padding: '16px 40px',
+                                        border: '2px solid #334155',
+                                        borderLeft: '10px solid #3b82f6',
+                                    }}>
+                                        <span style={{ fontSize: '26px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '4px', color: '#93c5fd' }}>
+                                            ⚾ {group.unitName}
+                                        </span>
+                                    </td>
+                                </tr>
 
-                                {uniqueDates.map(date => {
-                                    const gamesInCell = getGamesForCell(rowKey, date);
-                                    
+                                {/* ── Filas de campos de esta unidad ── */}
+                                {group.rows.map(row => {
                                     return (
-                                        <td key={date} style={{ border: '1px solid #334155', padding: '0', verticalAlign: 'top', background: '#1e293b' }}>
-                                            {gamesInCell.length === 0 ? (
-                                                <div style={{ height: '100%', width: '100%', minHeight: '80px', background: '#0f172a' }}></div>
-                                            ) : (
-                                                <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '80px' }}>
-                                                    {gamesInCell.map((game, gi) => (
-                                                        <div key={game.id} style={{
-                                                            background: '#a13115', // Copper/Orange rustic red
-                                                            padding: '12px 10px',
-                                                            textAlign: 'center',
-                                                            borderBottom: gi < gamesInCell.length - 1 ? '1px solid #7c2d12' : 'none',
-                                                            flex: 1,
-                                                            display: 'flex', flexDirection: 'column', justifyContent: 'center'
-                                                        }}>
-                                                            {game.tournament?.name && (
-                                                                <div style={{ fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', color: '#fed7aa', marginBottom: '4px', lineHeight: 1.1 }}>
-                                                                    {game.tournament.name}
-                                                                </div>
-                                                            )}
-                                                            <div style={{ fontSize: '13px', fontWeight: 900, color: '#ffffff', lineHeight: 1.2 }}>
-                                                                {game.homeTeam?.name ?? '?'} vs {game.awayTeam?.name ?? '?'}
+                                        <tr key={`${row.unitName}${SEP}${row.fieldId}${SEP}${row.time}`}>
+                                            <td style={{ background: '#0f172a', border: '2px solid #334155', padding: '24px 36px', width: '480px' }}>
+                                                <div style={{ fontSize: '28px', fontWeight: 900, color: '#f8fafc', marginBottom: '6px' }}>{row.fieldName}</div>
+                                                <div style={{ fontSize: '44px', fontWeight: 900, color: '#93c5fd' }}>{row.time}</div>
+                                            </td>
+
+                                            {uniqueDates.map(date => {
+                                                const gamesInCell = getGamesForCell(row.unitName, row.fieldId, row.time, date);
+                                                return (
+                                                    <td key={date} style={{ border: '2px solid #334155', padding: '0', verticalAlign: 'top', background: '#0a0f1a' }}>
+                                                        {gamesInCell.length === 0 ? (
+                                                            <div style={{ height: '100%', width: '100%', minHeight: '220px', background: '#0f172a' }} />
+                                                        ) : (
+                                                            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '220px' }}>
+                                                                {gamesInCell.map((game, gi) => {
+                                                                    const showTournament = scope === 'league' && game.tournament?.name;
+                                                                    return (
+                                                                        <div key={game.id} style={{
+                                                                            background: '#a13115',
+                                                                            padding: '36px 28px',
+                                                                            textAlign: 'center',
+                                                                            borderBottom: gi < gamesInCell.length - 1 ? '2px solid #7c2d12' : 'none',
+                                                                            flex: 1,
+                                                                            display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '10px',
+                                                                        }}>
+                                                                            {showTournament && (
+                                                                                <div style={{ fontSize: '22px', fontWeight: 900, textTransform: 'uppercase', color: '#fed7aa', lineHeight: 1.1 }}>
+                                                                                    {game.tournament!.name}
+                                                                                </div>
+                                                                            )}
+                                                                            <div style={{ fontSize: '38px', fontWeight: 900, color: '#ffffff', lineHeight: 1.2 }}>
+                                                                                {game.homeTeam?.name ?? '?'}
+                                                                            </div>
+                                                                            <div style={{ fontSize: '26px', fontWeight: 700, color: '#fecaca', opacity: 0.85 }}>vs</div>
+                                                                            <div style={{ fontSize: '38px', fontWeight: 900, color: '#ffffff', lineHeight: 1.2 }}>
+                                                                                {game.awayTeam?.name ?? '?'}
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                })}
                                                             </div>
-                                                            {scope === 'league' && leagueName && (
-                                                                <div style={{ fontSize: '9px', fontStyle: 'italic', fontWeight: 600, color: '#ffedd5', marginTop: '4px' }}>
-                                                                    {leagueName}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </td>
+                                                        )}
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
                                     );
                                 })}
-                            </tr>
-                        );
-                    })}
-                </tbody>
-            </table>
-            <div style={{ marginTop: '16px', textAlign: 'right', fontSize: '10px', color: '#475569' }}>
-                ScoreKeeper — Generado el {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                            </React.Fragment>
+                        ))}
+                    </tbody>
+                </table>
+                <div style={{ marginTop: '32px', textAlign: 'right', fontSize: '26px', color: '#475569' }}>
+                    ScoreKeeper — Generado el {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                </div>
             </div>
         </div>
     );
@@ -434,6 +531,7 @@ function ScheduleMatrixTemplate({
 const STATUS_BADGE: Record<string, string> = {
     scheduled: 'bg-blue-500/20 text-blue-300 border border-blue-500/30',
     'in-progress': 'bg-green-500/20 text-green-300 border border-green-500/30',
+    in_progress: 'bg-green-500/20 text-green-300 border border-green-500/30',
     completed: 'bg-muted/30 text-muted-foreground border border-muted/20',
     finished: 'bg-muted/30 text-muted-foreground border border-muted/20',
     postponed: 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30',
@@ -488,7 +586,7 @@ function FieldRow({ field, expanded, onToggle, showUnit = false }: {
                                 {field.games.map(g => (
                                     <tr key={g.id} className="border-b border-muted/10 hover:bg-muted/5">
                                         <td className="py-2 text-muted-foreground">{fmtDate(g.scheduledDate)}</td>
-                                        <td className="py-2 text-muted-foreground">{fmtTime(g.startTime)}</td>
+                                        <td className="py-2 text-muted-foreground">{fmtGameTime(g.startTime ?? g.scheduledDate)}</td>
                                         <td className="py-2 text-foreground font-semibold">{g.homeTeam?.name ?? '?'} vs {g.awayTeam?.name ?? '?'}</td>
                                         <td className="py-2 text-muted-foreground">{g.tournament?.name ?? '—'}</td>
                                         <td className="py-2">
@@ -513,7 +611,7 @@ function FieldRow({ field, expanded, onToggle, showUnit = false }: {
     );
 }
 
-export default function FieldsReport({ leagueId, tournamentId, tournamentName, leagueName, rounds }: FieldsReportProps) {
+export default function FieldsReport({ leagueId, tournamentId, tournamentName, leagueName, logoUrl, scheduleBgUrl, rounds }: FieldsReportProps) {
     const today = new Date().toISOString().slice(0, 10);
     const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
@@ -617,6 +715,8 @@ export default function FieldsReport({ leagueId, tournamentId, tournamentName, l
                         scope={scope}
                         tournamentName={tournamentName}
                         leagueName={leagueName}
+                        logoUrl={logoUrl}
+                        scheduleBgUrl={scheduleBgUrl}
                         printRef={printRefMatrix}
                     />
                 </div>

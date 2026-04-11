@@ -16,6 +16,14 @@ export class CreateGameDto {
     scheduledDate?: string;
 
     @IsOptional()
+    @IsString()
+    startTime?: string;  // 'HH:mm'
+
+    @IsOptional()
+    @IsString()
+    endTime?: string;    // 'HH:mm'
+
+    @IsOptional()
     @IsIn(['draft', 'scheduled', 'in_progress', 'finished', 'cancelled'])
     status?: string;
 

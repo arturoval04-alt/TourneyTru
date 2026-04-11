@@ -39,10 +39,15 @@ export default function PlayByPlayLog({ forceStoreData }: PlayByPlayProps) {
                                 <span className="flex-1">{log.text}</span>
 
                                 {/* Puntos rojos de Outs — solo si esta jugada registró outs */}
-                                {log.outs !== undefined && log.outs > 0 ? (
+                                {((log.totalOuts ?? log.outs) !== undefined && (log.totalOuts ?? log.outs ?? 0) > 0) ? (
                                     <div className="flex gap-0.5 ml-2 mt-0.5 shrink-0">
                                         {Array.from({ length: 3 }).map((_, idx) => (
-                                            <div key={idx} className={`w-2 h-2 rounded-full border border-red-500 transition-all ${idx < log.outs! ? 'bg-red-500' : 'bg-transparent'}`} />
+                                            <div
+                                                key={idx}
+                                                className={`w-2 h-2 rounded-full border border-red-500 transition-all ${
+                                                    idx < (log.totalOuts ?? log.outs ?? 0) ? 'bg-red-500' : 'bg-transparent'
+                                                }`}
+                                            />
                                         ))}
                                     </div>
                                 ) : null}

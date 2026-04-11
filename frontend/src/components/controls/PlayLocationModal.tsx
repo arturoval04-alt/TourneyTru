@@ -36,6 +36,17 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
     const [dpStep2, setDpStep2]   = useState(false);
     const [dpCode,  setDpCode]    = useState('');
     const [dpDests, setDpDests]   = useState<Record<string, string>>({});
+    const [runnerStep, setRunnerStep] = useState(false);
+    const [runnerDests, setRunnerDests] = useState<Record<string, string>>({});
+    const [runnerError, setRunnerError] = useState('');
+    const [pendingErrorPlay, setPendingErrorPlay] = useState<{
+        newBases: { first: string | null; second: string | null; third: string | null };
+        newBaseIds: { first: string | null; second: string | null; third: string | null };
+        runs: number;
+        outs: number;
+        desc: string;
+        runnerOutIds: string[];
+    } | null>(null);
 
     // Phantom out step (after confirming an error)
     const [phantomOutStep, setPhantomOutStep] = useState(false);
@@ -49,6 +60,10 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
             setDpStep2(false);
             setDpCode('');
             setDpDests({});
+            setRunnerStep(false);
+            setRunnerDests({});
+            setRunnerError('');
+            setPendingErrorPlay(null);
             setSelectedPositions([]);
             setPhantomOutStep(false);
             setPendingErrorRunnerIds([]);
@@ -64,6 +79,11 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
         ...(bases.second ? [{ key: 'second', name: bases.second, id: baseIds.second, baseLabel: '2da Base' }] : []),
         ...(bases.third  ? [{ key: 'third',  name: bases.third,  id: baseIds.third,  baseLabel: '3ra Base' }] : []),
     ];
+    const activeBaseRunners = [
+        ...(bases.third ? [{ key: 'third', name: bases.third, id: baseIds.third, startBase: '3B' }] : []),
+        ...(bases.second ? [{ key: 'second', name: bases.second, id: baseIds.second, startBase: '2B' }] : []),
+        ...(bases.first ? [{ key: 'first', name: bases.first, id: baseIds.first, startBase: '1B' }] : []),
+    ];
 
     const buildDpDefaults = (): Record<string, string> => {
         const d: Record<string, string> = {};
@@ -78,6 +98,47 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
         return d;
     };
 
+    const buildHitDefaults = (basesTaken: number): Record<string, string> => {
+        const defaults: Record<string, string> = {};
+        activeBaseRunners.forEach((runner) => {
+            if (runner.key === 'third') {
+                defaults[runner.key] = 'home';
+            } else if (runner.key === 'second') {
+                defaults[runner.key] = basesTaken >= 2 ? 'home' : '3B';
+            } else {
+                defaults[runner.key] = basesTaken >= 3 ? 'home' : (basesTaken === 2 ? '3B' : '2B');
+            }
+        });
+        return defaults;
+    };
+
+    const getHitRunnerOptions = (runnerKey: 'first' | 'second' | 'third') => {
+        if (runnerKey === 'first') {
+            return [
+                { value: '1B', label: 'Se queda en 1ra' },
+                { value: '2B', label: '2da Base' },
+                { value: '3B', label: '3ra Base' },
+                { value: 'home', label: 'Home / Anota' },
+                { value: 'out', label: 'Out en bases' },
+            ];
+        }
+
+        if (runnerKey === 'second') {
+            return [
+                { value: '2B', label: 'Se queda en 2da' },
+                { value: '3B', label: '3ra Base' },
+                { value: 'home', label: 'Home / Anota' },
+                { value: 'out', label: 'Out en bases' },
+            ];
+        }
+
+        return [
+            { value: '3B', label: 'Se queda en 3ra' },
+            { value: 'home', label: 'Home / Anota' },
+            { value: 'out', label: 'Out en home / bases' },
+        ];
+    };
+
     const positions = [
         { id: 1, label: 'P',  top: '55%', left: '50%' },
         { id: 2, label: 'C',  top: '90%', left: '50%' },
@@ -89,6 +150,62 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
         { id: 8, label: 'CF', top: '10%', left: '50%' },
         { id: 9, label: 'RF', top: '20%', left: '85%' },
     ];
+    const posNames: Record<number, string> = {
+        1: 'Lanzador', 2: 'Receptor', 3: 'Primera Base',
+        4: 'Segunda Base', 5: 'Tercera Base', 6: 'Campo Corto',
+        7: 'Jardín Izquierdo', 8: 'Jardín Central', 9: 'Jardín Derecho',
+    };
+
+    const getBatterDestination = () => {
+        if (playType === 'Error') return '1B';
+        if (hitType === 1) return '1B';
+        if (hitType === 2) return '2B';
+        if (hitType === 3) return '3B';
+        if (hitType === 4) return 'home';
+        return '1B';
+    };
+
+    const buildHitPlayText = () => {
+        const loc = selectedPositions[0] ? ` al ${positions.find(p => p.id === selectedPositions[0])?.label}` : '';
+        return {
+            code: hitType === 4 ? 'HR' : `H${hitType}`,
+            description: `${currentBatter} pega ${playName}${loc}`,
+        };
+    };
+
+    const buildErrorPlayText = () => {
+        const posNum = selectedPositions[0] || 0;
+        const posNameError = posNames[posNum] || `E${posNum}`;
+        let prep = 'del';
+        if ([3, 4, 5].includes(posNum)) prep = 'de la';
+
+        return {
+            code: `E${posNum}`,
+            description: `${currentBatter} se embasa por Error ${prep} ${posNameError}`,
+        };
+    };
+
+    const getRunnerConflictError = () => {
+        const occupiedDestinations = new Map<string, string>();
+        const batterDestination = getBatterDestination();
+
+        if (batterDestination !== 'home') {
+            occupiedDestinations.set(batterDestination, 'bateador');
+        }
+
+        for (const runner of activeBaseRunners) {
+            const destination = runnerDests[runner.key];
+            if (!destination || destination === 'home' || destination === 'out') continue;
+
+            if (occupiedDestinations.has(destination)) {
+                return 'Dos jugadores no pueden terminar en la misma base. Ajusta los destinos antes de registrar la jugada.';
+            }
+
+            occupiedDestinations.set(destination, runner.name);
+        }
+
+        return '';
+    };
 
     const handlePosClick = (id: number) => {
         if (playType === 'Hit' || playType === 'Error') {
@@ -131,6 +248,81 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
         onClose();
     };
 
+    const handleHitRunnerConfirm = () => {
+        if (playType === 'Hit' && !hitType) return;
+
+        const conflictError = getRunnerConflictError();
+        if (conflictError) {
+            setRunnerError(conflictError);
+            return;
+        }
+
+        const resolvedPlay = playType === 'Error' ? buildErrorPlayText() : buildHitPlayText();
+        const { code, description } = resolvedPlay;
+        const batterDestination = getBatterDestination();
+        const newBases = { first: null as string | null, second: null as string | null, third: null as string | null };
+        const newBaseIds = { first: null as string | null, second: null as string | null, third: null as string | null };
+        const runnerOutIds: string[] = [];
+        let runs = batterDestination === 'home' ? 1 : 0;
+
+        activeBaseRunners.forEach((runner) => {
+            const destination = runnerDests[runner.key];
+            if (!destination || destination === 'out') {
+                if (runner.id) runnerOutIds.push(runner.id);
+                return;
+            }
+
+            if (destination === 'home') {
+                runs++;
+                return;
+            }
+
+            if (destination === '1B') {
+                newBases.first = runner.name;
+                newBaseIds.first = runner.id;
+            } else if (destination === '2B') {
+                newBases.second = runner.name;
+                newBaseIds.second = runner.id;
+            } else if (destination === '3B') {
+                newBases.third = runner.name;
+                newBaseIds.third = runner.id;
+            }
+        });
+
+        if (batterDestination === '1B') {
+            newBases.first = currentBatter;
+            newBaseIds.first = currentBatterId;
+        } else if (batterDestination === '2B') {
+            newBases.second = currentBatter;
+            newBaseIds.second = currentBatterId;
+        } else if (batterDestination === '3B') {
+            newBases.third = currentBatter;
+            newBaseIds.third = currentBatterId;
+        }
+
+        if (playType === 'Error' && pendingErrorRunnerIds.length > 0) {
+            setPendingErrorPlay({
+                newBases,
+                newBaseIds,
+                runs,
+                outs: runnerOutIds.length,
+                desc: `${code}|${description}`,
+                runnerOutIds,
+            });
+            setRunnerStep(false);
+            setRunnerError('');
+            setPhantomOutStep(true);
+            return;
+        }
+
+        executeAdvancedPlay(newBases, newBaseIds, runs, runnerOutIds.length, `${code}|${description}`, runnerOutIds);
+        setRunnerError('');
+        setRunnerDests({});
+        setRunnerStep(false);
+        setSelectedPositions([]);
+        onClose();
+    };
+
     const handleConfirm = () => {
         if (selectedPositions.length === 0 && playType !== 'Hit') return;
 
@@ -144,11 +336,16 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
         };
 
         if (playType === 'Hit') {
-            const loc = selectedPositions[0] ? ` al ${positions.find(p => p.id === selectedPositions[0])?.label}` : '';
-            const batter = useGameStore.getState().currentBatter;
-            description = `${batter} pega ${playName}${loc}`;
+            const { code, description: hitDescription } = buildHitPlayText();
+            description = hitDescription;
             if (hitType) {
-                const code = hitType === 4 ? 'HR' : `H${hitType}`;
+                if (hitType < 4 && activeBaseRunners.length > 0) {
+                    setRunnerDests(buildHitDefaults(hitType));
+                    setRunnerError('');
+                    setRunnerStep(true);
+                    return;
+                }
+
                 registerHit(hitType, `${code}|${description}`);
             }
         } else if (playType === 'Out') {
@@ -182,18 +379,20 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
             addOut(`${code}|${description}`, isGroundout);
         } else if (playType === 'Error') {
             const state = useGameStore.getState();
-            const batter = state.currentBatter;
-            const posNum = selectedPositions[0] || 0;
-            const posNameError = posNames[posNum] || `E${posNum}`;
-            let prep = 'del';
-            if ([3, 4, 5].includes(posNum)) prep = 'de la';
-
-            description = `${batter} se embasa por Error ${prep} ${posNameError}`;
-            const errorSymbol = `E${posNum}`;
-            registerHit(1, errorSymbol + '|' + description);
+            const { code, description: errorDescription } = buildErrorPlayText();
+            description = errorDescription;
 
             // Collect runner IDs currently on base — they may become unearned if this was a phantom out
             const runnerIds = [state.baseIds.first, state.baseIds.second, state.baseIds.third].filter(Boolean) as string[];
+            if (activeBaseRunners.length > 0) {
+                setPendingErrorRunnerIds(runnerIds);
+                setRunnerDests(buildHitDefaults(1));
+                setRunnerError('');
+                setRunnerStep(true);
+                return;
+            }
+
+            registerHit(1, `${code}|${description}`);
             if (runnerIds.length > 0) {
                 setPendingErrorRunnerIds(runnerIds);
                 setSelectedPositions([]);
@@ -273,6 +472,131 @@ export default function PlayLocationModal({ isOpen, onClose, playType, hitType, 
     }
 
     // ── Phantom Out question ─────────────────────────────────────────
+    if (runnerStep) {
+        const batterDestination = getBatterDestination();
+        const conflictError = getRunnerConflictError();
+
+        return createPortal(
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[200] p-2 sm:p-4">
+                <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-md w-full p-4 sm:p-6 shadow-2xl max-h-[100dvh] overflow-y-auto">
+                    <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-bold text-slate-500 bg-slate-800 px-2 py-0.5 rounded">ResoluciÃ³n</span>
+                        <h2 className="text-xl font-black text-sky-400 uppercase tracking-wide">Corredores</h2>
+                    </div>
+                    <p className="text-sm text-slate-400 mb-4">
+                        Ajusta libremente lo que pasÃ³ con cada corredor. El bateador queda en <span className="font-bold text-white">{batterDestination === 'home' ? 'Home' : batterDestination}</span>.
+                    </p>
+
+                    <div className="space-y-2 mb-4">
+                        {activeBaseRunners.map((runner) => (
+                            <div key={runner.key} className="flex items-center justify-between gap-3 bg-slate-800 rounded-lg px-3 py-2.5 border border-slate-700">
+                                <div className="min-w-0">
+                                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">{runner.startBase}</p>
+                                    <p className="text-sm font-bold text-white truncate">{runner.name}</p>
+                                </div>
+                                <select
+                                    value={runnerDests[runner.key] ?? ''}
+                                    onChange={e => {
+                                        setRunnerDests(prev => ({ ...prev, [runner.key]: e.target.value }));
+                                        setRunnerError('');
+                                    }}
+                                    className="bg-slate-700 border border-slate-600 rounded-lg text-sm text-white px-2 py-1.5 focus:outline-none focus:border-sky-500 shrink-0"
+                                >
+                                    {getHitRunnerOptions(runner.key as 'first' | 'second' | 'third').map((option) => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        ))}
+                    </div>
+
+                    {(runnerError || conflictError) && (
+                        <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                            {runnerError || conflictError}
+                        </div>
+                    )}
+
+                    <div className="flex gap-3">
+                        <button
+                            onClick={() => {
+                                setRunnerStep(false);
+                                setRunnerError('');
+                            }}
+                            className="flex-1 py-2.5 rounded-lg font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 text-sm transition"
+                        >
+                            â† Volver
+                        </button>
+                        <button
+                            onClick={handleHitRunnerConfirm}
+                            disabled={Boolean(conflictError)}
+                            className="flex-[2] py-2.5 rounded-lg font-bold text-sm transition disabled:opacity-40 disabled:cursor-not-allowed bg-sky-500 hover:bg-sky-400 text-slate-950"
+                        >
+                            Registrar Jugada
+                        </button>
+                    </div>
+                </div>
+            </div>,
+            document.body
+        );
+    }
+
+    if (phantomOutStep && pendingErrorPlay) {
+        const { markPhantomOut } = useGameStore.getState();
+        const finalizePendingError = (markAsPhantom: boolean) => {
+            if (markAsPhantom && pendingErrorRunnerIds.length > 0) {
+                markPhantomOut(pendingErrorRunnerIds);
+            }
+
+            executeAdvancedPlay(
+                pendingErrorPlay.newBases,
+                pendingErrorPlay.newBaseIds,
+                pendingErrorPlay.runs,
+                pendingErrorPlay.outs,
+                pendingErrorPlay.desc,
+                pendingErrorPlay.runnerOutIds
+            );
+
+            setPendingErrorPlay(null);
+            setPendingErrorRunnerIds([]);
+            setPhantomOutStep(false);
+            setSelectedPositions([]);
+            onClose();
+        };
+
+        return createPortal(
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[200] p-2 sm:p-4">
+                <div className="bg-slate-900 border border-yellow-500/40 rounded-xl max-w-sm w-full p-4 sm:p-6 shadow-2xl max-h-[100dvh] overflow-y-auto">
+                    <div className="flex items-center gap-2 mb-3">
+                        <AlertTriangle className="w-6 h-6 text-yellow-400 shrink-0" />
+                        <h2 className="text-lg font-black text-yellow-400 uppercase tracking-wide">Out Fantasma</h2>
+                    </div>
+                    <p className="text-sm text-slate-300 mb-2 leading-relaxed">
+                        Hay corredor(es) en base cuando ocurrio este error.
+                    </p>
+                    <p className="text-sm text-slate-400 mb-5 leading-relaxed">
+                        <strong className="text-white">Este error habria resultado en un out?</strong>{' '}
+                        Si es asi, el inning se habria terminado antes y las carreras de esos corredores deben anotarse como <span className="text-yellow-300 font-bold">sucias</span>.
+                    </p>
+                    <div className="flex gap-3">
+                        <button
+                            onClick={() => finalizePendingError(false)}
+                            className="flex-1 py-3 rounded-lg font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 text-sm transition border border-slate-700"
+                        >
+                            No, solo base extra
+                        </button>
+                        <button
+                            onClick={() => finalizePendingError(true)}
+                            className="flex-1 py-3 rounded-lg font-black text-slate-900 bg-yellow-400 hover:bg-yellow-300 text-sm transition"
+                        >
+                            Si, fue out fantasma
+                        </button>
+                    </div>
+                </div>
+            </div>,
+            document.body
+        );
+    }
+
     if (phantomOutStep) {
         const { markPhantomOut } = useGameStore.getState();
         return createPortal(

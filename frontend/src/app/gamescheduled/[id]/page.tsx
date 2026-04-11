@@ -4,7 +4,10 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import Navbar from '@/components/Navbar';
-import { Calendar, Clock, MapPin, ChevronLeft, BarChart3, TrendingUp, Navigation, Swords } from 'lucide-react';
+import CreateGameWizard from '@/components/game/CreateGameWizard';
+import StreamAdminPanel from '@/components/live/StreamAdminPanel';
+import { getUser, isLoggedIn } from '@/lib/auth';
+import { Calendar, Clock, MapPin, ChevronLeft, BarChart3, TrendingUp, Navigation, Swords, Radio, Users } from 'lucide-react';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -87,6 +90,18 @@ export default function GameScheduled() {
     const [batting, setBatting]     = useState<any[]>([]);
     const [pitching, setPitching]   = useState<any[]>([]);
     const [loading, setLoading]     = useState(true);
+    const [userRole, setUserRole]   = useState<string | null>(null);
+    const [lineupGameId, setLineupGameId] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<'previo' | 'stream'>('previo');
+
+    useEffect(() => {
+        setUserRole(getUser()?.role ?? null);
+        // Read ?tab= from URL to allow direct linking to stream tab
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('tab') === 'stream') setActiveTab('stream');
+        }
+    }, []);
 
     useEffect(() => {
         if (!gameId) return;
@@ -146,6 +161,9 @@ export default function GameScheduled() {
     const awayGames = finishedGames.filter((g: any) => g.homeTeamId === game.awayTeam.id || g.awayTeamId === game.awayTeam.id).length;
     const homeGames = finishedGames.filter((g: any) => g.homeTeamId === game.homeTeam.id || g.awayTeamId === game.homeTeam.id).length;
     const contextGames = Math.max(awayGames, homeGames);
+    const canConfigureLineup = ['admin', 'organizer', 'presi', 'scorekeeper'].includes(userRole ?? '');
+    const canOpenStreamPanel = ['admin', 'organizer', 'presi', 'scorekeeper', 'streamer'].includes(userRole ?? '');
+    const showQuickActions = isLoggedIn() && (canConfigureLineup || canOpenStreamPanel);
 
     // Head-to-head
     const h2h = finishedGames.filter((g: any) =>
@@ -168,13 +186,56 @@ export default function GameScheduled() {
 
                 {/* ═══ BACK BUTTON ═══ */}
                 <div className="w-full max-w-[1000px] mt-4 px-4">
-                    <button
-                        onClick={() => router.back()}
-                        className="text-slate-400 hover:text-white flex items-center gap-1 text-sm transition-colors mb-2"
-                    >
-                        <ChevronLeft className="w-4 h-4" /> Volver
-                    </button>
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                        <button
+                            onClick={() => router.back()}
+                            className="text-slate-400 hover:text-white flex items-center gap-1 text-sm transition-colors"
+                        >
+                            <ChevronLeft className="w-4 h-4" /> Volver
+                        </button>
+                        {showQuickActions && (
+                            <div className="flex flex-wrap items-center gap-2">
+                                {canConfigureLineup && (
+                                    <button
+                                        onClick={() => setLineupGameId(gameId)}
+                                        className="inline-flex items-center gap-2 rounded-xl border border-blue-700/60 bg-blue-900/30 px-4 py-2 text-xs font-black uppercase tracking-wider text-blue-300 transition hover:bg-blue-800/50"
+                                    >
+                                        <Users className="w-4 h-4" />
+                                        Configurar Lineup
+                                    </button>
+                                )}
+                                {canOpenStreamPanel && (
+                                    <button
+                                        onClick={() => setActiveTab('stream')}
+                                        className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-xs font-black uppercase tracking-wider transition ${activeTab === 'stream' ? 'border-fuchsia-500/60 bg-fuchsia-900/50 text-fuchsia-200' : 'border-fuchsia-700/60 bg-fuchsia-900/30 text-fuchsia-300 hover:bg-fuchsia-800/50'}`}
+                                    >
+                                        <Radio className="w-4 h-4" />
+                                        Panel Stream
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Sub-tab pills */}
+                    {canOpenStreamPanel && activeTab === 'stream' && (
+                        <button
+                            onClick={() => setActiveTab('previo')}
+                            className="text-xs text-slate-400 hover:text-white flex items-center gap-1 mt-1 transition-colors"
+                        >
+                            ← Ver previo del juego
+                        </button>
+                    )}
                 </div>
+
+                {/* ═══ STREAM PANEL TAB ═══ */}
+                {activeTab === 'stream' && canOpenStreamPanel && (
+                    <div className="w-full max-w-[1000px] px-2 md:px-4 py-4 animate-fade-in-up">
+                        <StreamAdminPanel gameId={gameId} />
+                    </div>
+                )}
+
+                {activeTab === 'previo' && <>
 
                 {/* ═══ MATCHUP HEADER ═══ */}
                 <div className="w-full max-w-[1000px] px-2 md:px-4 py-2 mt-2">
@@ -362,7 +423,17 @@ export default function GameScheduled() {
                     </div>
                 </div>
 
+                </>}
+
             </div>
+
+            {lineupGameId && (
+                <CreateGameWizard
+                    context={userRole === 'scorekeeper' ? 'scorekeeper' : 'admin'}
+                    existingGameId={lineupGameId}
+                    onClose={() => setLineupGameId(null)}
+                />
+            )}
         </>
     );
 }

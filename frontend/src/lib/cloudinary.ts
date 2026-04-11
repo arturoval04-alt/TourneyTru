@@ -12,7 +12,8 @@ export async function uploadToCloudinary(file: File): Promise<string> {
     );
 
     if (!response.ok) {
-        throw new Error('Error al subir imagen a Cloudinary');
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(`Error Cloudinary ${response.status}: ${errBody?.error?.message ?? response.statusText}`);
     }
 
     const data = await response.json();

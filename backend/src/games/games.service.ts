@@ -11,6 +11,13 @@ export class GamesService {
 
     private readonly defensivePositions = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'SF'];
 
+    private parseScheduledDate(date: string): Date {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+            return new Date(date);
+        }
+        return new Date(`${date}T12:00:00`);
+    }
+
     private normalizePosition(position?: string | null): string | null {
         if (!position) return null;
         const raw = position.trim().toUpperCase();
@@ -73,16 +80,30 @@ export class GamesService {
     }
 
     async create(data: CreateGameDto) {
-        const { fieldId, scheduledDate, status, ...rest } = data as any;
+        const { fieldId, scheduledDate, startTime, endTime, status, ...rest } = data as any;
 
         // Si no tiene fecha ni campo asignado, el juego empieza como draft
         const resolvedStatus = status ?? (scheduledDate ? 'scheduled' : 'draft');
+
+        const scheduledDateValue = scheduledDate ? this.parseScheduledDate(scheduledDate) : null;
+        const startTimeValue = scheduledDate && startTime
+            ? new Date(`${scheduledDate}T${startTime}:00`)
+            : null;
+        const endTimeValue = scheduledDate && endTime
+            ? new Date(`${scheduledDate}T${endTime}:00`)
+            : null;
+
+        if (fieldId && scheduledDateValue) {
+            await this.assertNoFieldConflict(fieldId, scheduledDateValue, startTimeValue, endTimeValue);
+        }
 
         return this.prisma.game.create({
             data: {
                 ...rest,
                 status: resolvedStatus,
-                ...(scheduledDate ? { scheduledDate: new Date(scheduledDate) } : {}),
+                ...(scheduledDateValue ? { scheduledDate: scheduledDateValue } : {}),
+                ...(startTimeValue ? { startTime: startTimeValue } : {}),
+                ...(endTimeValue ? { endTime: endTimeValue } : {}),
                 ...(fieldId ? { fieldId } : {}),
             },
         });
@@ -229,7 +250,7 @@ export class GamesService {
         const nextDay = new Date(dateOnly);
         nextDay.setDate(nextDay.getDate() + 1);
 
-        const activeStatuses = ['scheduled', 'live'];
+        const activeStatuses = ['scheduled', 'live', 'in_progress'];
         const existingGames = await this.prisma.game.findMany({
             where: {
                 fieldId,
@@ -274,7 +295,7 @@ export class GamesService {
         const game = await this.getOwnedGame(id, requestor) as any;
 
         const fieldId = dto.fieldId ?? game.fieldId ?? null;
-        const scheduledDate = dto.scheduledDate ? new Date(dto.scheduledDate) : game.scheduledDate;
+        const scheduledDate = dto.scheduledDate ? this.parseScheduledDate(dto.scheduledDate) : game.scheduledDate;
 
         if (fieldId && scheduledDate) {
             const startTime = dto.startTime
@@ -289,7 +310,7 @@ export class GamesService {
 
         const updateData: any = {};
         if (dto.fieldId !== undefined) updateData.fieldId = dto.fieldId;
-        if (dto.scheduledDate !== undefined) updateData.scheduledDate = new Date(dto.scheduledDate);
+        if (dto.scheduledDate !== undefined) updateData.scheduledDate = this.parseScheduledDate(dto.scheduledDate);
         if (dto.startTime !== undefined) {
             const baseDate = dto.scheduledDate ?? (scheduledDate ? scheduledDate.toISOString().slice(0, 10) : null);
             updateData.startTime = baseDate ? new Date(`${baseDate}T${dto.startTime}:00`) : null;
@@ -961,9 +982,10 @@ export class GamesService {
         // Process plays
         for (const playObj of game.plays) {
             const play = playObj as any; // Temporary cast until prisma generate succeeds
-            // Skip internal control plays (UNDO markers) that shouldn't affect the boxscore
+            // Skip internal/control plays that should be visible in the log
+            // but must not affect the boxscore or batting order.
             const resultCode = (play.result || '').split('|')[0].toUpperCase().trim();
-            if (resultCode.includes('UNDO')) continue;
+            if (['UNDO', 'SUB', 'POS', 'REENTRY'].some((code) => resultCode.startsWith(code))) continue;
 
             const isTop = play.half === 'top';
             const battingBox = isTop ? awayBox : homeBox;
@@ -993,7 +1015,11 @@ export class GamesService {
             // WP_RUN / RUN_SCORED / SB / CS / ADV: updates to a runner's existing play entry.
             // These should modify the runner's existing diamond, NOT create new cells.
             const resultUpper = (play.result || '').toUpperCase();
-            const isRunScore = resultUpper.startsWith('WP_RUN') || resultUpper.startsWith('RUN_SCORED');
+            const isRunScore =
+                resultUpper.startsWith('WP_RUN') ||
+                resultUpper.startsWith('PB_RUN') ||
+                resultUpper.startsWith('BK_RUN') ||
+                resultUpper.startsWith('RUN_SCORED');
             const isStolenBase = resultUpper.startsWith('SB');
             const isCaughtStealing = resultUpper.startsWith('CS');
             const isAdvance = resultUpper.startsWith('ADV');
@@ -1089,7 +1115,7 @@ export class GamesService {
                     const lastPlay = inningPlays[inningPlays.length - 1];
                     const isGeneric = ['OUT', 'GO', 'FO', 'LO', '?', 'H', 'H1', 'PO'].includes(lastPlay.result.toUpperCase());
 
-                    if (isGeneric && !['BB', 'SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED'].includes(play.result.toUpperCase())) {
+                    if (isGeneric && !['BB', 'SB', 'CS', 'ADV', 'WP_RUN', 'PB_RUN', 'BK_RUN', 'RUN_SCORED'].includes(play.result.toUpperCase())) {
                         // REVERSE previous stats if they counted
                         const oldIsAtBat = !['BB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'FC'].includes(lastPlay.result.toUpperCase()) && !lastPlay.result.toUpperCase().match(/^E\d$/);
                         if (oldIsAtBat) batter.atBats = Math.max(0, batter.atBats - 1);
@@ -1122,7 +1148,7 @@ export class GamesService {
 
                         // FORWARD new stats
                         const isError = play.result.toUpperCase().match(/^E\d$/);
-                        const isAtBat = !['BB', 'IBB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'FC', 'SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED', 'KWP'].includes(play.result.toUpperCase()) && !isError;
+                        const isAtBat = !['BB', 'IBB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'FC', 'SB', 'CS', 'ADV', 'WP_RUN', 'PB_RUN', 'BK_RUN', 'RUN_SCORED', 'KWP'].includes(play.result.toUpperCase()) && !isError;
                         if (isAtBat) batter.atBats += 1;
                         if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(play.result.toUpperCase())) {
                             batter.hits += 1;
@@ -1159,7 +1185,7 @@ export class GamesService {
 
                 // Normal At-Bat processing
                 const isError = play.result.toUpperCase().match(/^E\d$/);
-                const isAtBat = !['BB', 'IBB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'FC', 'SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED', 'RUNNER_OUT', 'KWP'].includes(play.result.toUpperCase()) && !isError;
+                const isAtBat = !['BB', 'IBB', 'HBP', 'SAC', 'WP', 'SF', 'SH', 'FC', 'SB', 'CS', 'ADV', 'WP_RUN', 'PB_RUN', 'BK_RUN', 'RUN_SCORED', 'RUNNER_OUT', 'KWP'].includes(play.result.toUpperCase()) && !isError;
                 if (isAtBat) batter.atBats += 1;
 
                 if (['H1', 'H2', 'H3', 'H4', 'HR', '1B', '2B', '3B'].includes(play.result.toUpperCase())) {
@@ -1259,19 +1285,28 @@ export class GamesService {
         }
 
         // Rebuild playLogs from DB plays
+        const outsByHalf = new Map<string, number>();
         const playLogs = game.plays.map((p) => {
             const batterName = `${p.batter.firstName} ${p.batter.lastName}`;
             const playText = (p as any).description || `${batterName}: ${p.result}`;
+            const halfKey = `${p.inning}-${p.half}`;
+            const previousOuts = outsByHalf.get(halfKey) ?? 0;
+            const outsOnPlay = p.outsRecorded ?? 0;
+            const totalOuts = Math.min(3, previousOuts + outsOnPlay);
+            outsByHalf.set(halfKey, totalOuts >= 3 ? 0 : totalOuts);
+
             return {
                 text: `${p.half === 'top' ? '▲' : '▼'}${p.inning} | ${playText}${p.runsScored > 0 ? ` (${p.runsScored} R)` : ''}`,
                 type: this.classifyPlayResult(p.result),
+                outs: outsOnPlay,
+                totalOuts: outsOnPlay > 0 ? totalOuts : undefined,
             };
         });
 
         // ── Derivar inning/half/outs DESDE las jugadas ────────────────────────
         // No confiar en game.currentInning / game.half porque pueden estar
         // desactualizados si hubo jugadas offline enviadas con fullState: null
-        const NON_PA_CODES = ['SB', 'CS', 'ADV', 'WP_RUN', 'RUN_SCORED', 'RUNNER_OUT', 'UNDO'];
+        const NON_PA_CODES = ['SB', 'CS', 'ADV', 'WP_RUN', 'PB_RUN', 'BK_RUN', 'RUN_SCORED', 'RUNNER_OUT', 'UNDO', 'SUB', 'POS', 'REENTRY'];
         const isPAPlay = (p: any) => {
             const code = (p.result || '').split('|')[0].toUpperCase().trim();
             return !NON_PA_CODES.some((x) => code.startsWith(x));

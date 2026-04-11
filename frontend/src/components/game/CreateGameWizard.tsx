@@ -34,6 +34,7 @@ export interface CreateGameWizardProps {
   /** Datos pre-llenados desde el calendario (clic en celda vacía) */
   calendarPrefill?: CalendarPrefill;
   onClose: () => void;
+  onGameScheduled?: (gameId: string) => void;
   onGameCreated?: (gameId: string) => void;
 }
 
@@ -80,6 +81,7 @@ export default function CreateGameWizard({
   existingGameId,
   calendarPrefill,
   onClose,
+  onGameScheduled,
   onGameCreated,
 }: CreateGameWizardProps) {
   // Si viene un juego existente, empieza en paso 1 (lineup visitante)
@@ -270,10 +272,6 @@ export default function CreateGameWizard({
     setSaving(true);
     setError(null);
     try {
-      const dateTime = scheduledTime
-        ? new Date(`${scheduledDate}T${scheduledTime}`).toISOString()
-        : new Date(`${scheduledDate}T12:00:00`).toISOString();
-
       const tId = propTournamentId ?? selectedTournamentId;
       const maxInnings = maxInningsFromRules(selectedTournament?.rulesType ?? 'softball_7');
 
@@ -283,7 +281,8 @@ export default function CreateGameWizard({
         tournamentId: tId,
         homeTeamId,
         awayTeamId,
-        scheduledDate: dateTime,
+        scheduledDate,
+        startTime: scheduledTime || undefined,
         fieldId: fieldId || null,
         round: gameRound || null,
         maxInnings,
@@ -304,6 +303,7 @@ export default function CreateGameWizard({
       }
 
       setGameId(newGame.id);
+      onGameScheduled?.(newGame.id);
       await loadRosters(homeTeamId, awayTeamId);
       setStep(1);
     } catch (e: any) {
