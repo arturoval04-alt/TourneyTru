@@ -94,8 +94,8 @@ export interface GameState extends BaseState {
 
     // Conexión
     setGameId: (id: string) => void;
-    fetchGameConfig: () => Promise<void>;
-    connectSocket: () => void;
+    fetchGameConfig: (overlayToken?: string) => Promise<void>;
+    connectSocket: (overlayToken?: string) => void;
     disconnectSocket: () => void;
 
     // Acciones (Play by play basics)
@@ -487,11 +487,13 @@ export const useGameStore = create<GameState>()(
 
             addLog: (log: PlayLog) => set((state) => ({ playLogs: [log, ...state.playLogs] })),
 
-            fetchGameConfig: async () => {
+            fetchGameConfig: async (overlayToken?: string) => {
                 const { gameId } = get();
                 if (!gameId) return;
                 try {
-                    const { data: gameData } = await api.get(`/games/${gameId}/state`);
+                    const { data: gameData } = await api.get(`/games/${gameId}/state`, {
+                        params: overlayToken ? { ot: overlayToken } : undefined,
+                    });
                     console.log("[fetchGameConfig] Data received:", gameData);
 
                     if (gameData) {
@@ -618,7 +620,7 @@ export const useGameStore = create<GameState>()(
                 }
             },
 
-            connectSocket: () => {
+            connectSocket: (overlayToken?: string) => {
                 const { gameId } = get();
                 if (!gameId) return;
                 if (gameSocket) gameSocket.disconnect();
@@ -642,7 +644,7 @@ export const useGameStore = create<GameState>()(
                 gameSocket.on('connect', async () => {
                     useGameStore.setState({ socketConnected: true });
                     console.log(`Socket connected: game-${gameId}`);
-                    gameSocket!.emit('joinGame', gameId);
+                    gameSocket!.emit('joinGame', overlayToken ? { gameId, overlayToken } : gameId);
                     const { gameId: gid } = get();
                     if (!gid) return;
                     // Vaciar cola de jugadas pendientes
@@ -656,7 +658,7 @@ export const useGameStore = create<GameState>()(
                     // Pedir el estado completo del backend PRIMERO.
                     // Si el backend ya tiene un estado activo (bases, outs, etc.), lo usamos.
                     // Solo si el backend no tiene nada, el handler de fullStateSync sube el estado local.
-                    gameSocket!.emit('requestFullSync', { gameId: gid });
+                    gameSocket!.emit('requestFullSync', overlayToken ? { gameId: gid, overlayToken } : { gameId: gid });
                 });
 
                 gameSocket.on('disconnect', () => {
@@ -731,6 +733,7 @@ export const useGameStore = create<GameState>()(
                 // Respuesta al requestFullSync — reemplazar estado completo incondicionalmente
                 gameSocket.on('fullStateSync', (data: any) => {
                     const fs = data?.fullState ?? data;
+                    const source = data?.source;
                     if (!fs) {
                         // El backend no tiene estado activo para este juego.
                         // Subimos el estado local (cargado vía HTTP) para que los demás clientes lo reciban.
@@ -738,6 +741,28 @@ export const useGameStore = create<GameState>()(
                         syncStateToBackend(get);
                         return;
                     }
+
+                    // El fallback del gateway solo trae inning/score/counts y puede venir
+                    // sin bateador actual ni logs. Como fetchGameConfig() ya cargó un estado
+                    // más rico desde /games/:id/state antes de conectar el socket, evitamos
+                    // que ese fallback borre lineup, bateador y play-by-play inicial.
+                    const localState = get();
+                    const hasRicherLocalState =
+                        !!localState.currentBatterId ||
+                        localState.homeLineup.length > 0 ||
+                        localState.awayLineup.length > 0 ||
+                        localState.playLogs.length > 0;
+                    const fallbackIsWeaker =
+                        source === 'db_fallback' &&
+                        !fs.currentBatterId &&
+                        (!Array.isArray(fs.playLogs) || fs.playLogs.length === 0);
+
+                    if (fallbackIsWeaker && hasRicherLocalState) {
+                        console.log('[GameStore] Ignoring weak db_fallback fullStateSync and syncing richer local state...');
+                        syncStateToBackend(get);
+                        return;
+                    }
+
                     console.log('[GameStore] fullStateSync received');
                     set({
                         inning: fs.inning ?? get().inning,

@@ -6,7 +6,6 @@ import { useGameStore, LineupItem } from '@/store/gameStore';
 import PlayerInfo from '@/components/live/PlayerInfo';
 import Field from '@/components/live/Field';
 import ScoreCard from '@/components/scorecard/ScoreCard';
-import PlayByPlayLog from '@/components/live/PlayByPlayLog';
 import api from '@/lib/api';
 import Image from 'next/image';
 
@@ -53,6 +52,7 @@ function OverlayContent() {
     const gameId = params.id as string;
     const view = (searchParams.get('view') || 'full') as string;
     const teamParam = searchParams.get('team') || 'away';
+    const overlayToken = searchParams.get('ot') || '';
 
     const isMountedRef = useRef(false);
     const [boxscore, setBoxscore] = useState<any>(null);
@@ -89,12 +89,12 @@ function OverlayContent() {
         isMountedRef.current = true;
         const store = useGameStore.getState();
         store.setGameId(gameId);
-        store.fetchGameConfig().then(() => store.connectSocket());
+        store.fetchGameConfig(overlayToken || undefined).then(() => store.connectSocket(overlayToken || undefined));
         return () => {
             isMountedRef.current = false;
             useGameStore.getState().disconnectSocket();
         };
-    }, [gameId]);
+    }, [gameId, overlayToken]);
 
     // Badge de reconexión — visible solo cuando el socket se cae (para OBS/YoloBox)
     useEffect(() => {
@@ -124,20 +124,26 @@ function OverlayContent() {
     // Boxscore para stats ricas
     useEffect(() => {
         if (!gameId) return;
-        api.get(`/games/${gameId}/boxscore`).then(({ data }) => setBoxscore(data)).catch(() => { });
-    }, [gameId]);
+        api.get(`/games/${gameId}/boxscore`, {
+            params: overlayToken ? { ot: overlayToken } : undefined,
+        }).then(({ data }) => setBoxscore(data)).catch(() => { });
+    }, [gameId, overlayToken]);
 
     useEffect(() => {
         if (!gameId || playLogs.length === 0) return;
-        const t = setTimeout(() => api.get(`/games/${gameId}/boxscore`).then(({ data }) => setBoxscore(data)).catch(() => { }), 2000);
+        const t = setTimeout(() => api.get(`/games/${gameId}/boxscore`, {
+            params: overlayToken ? { ot: overlayToken } : undefined,
+        }).then(({ data }) => setBoxscore(data)).catch(() => { }), 2000);
         return () => clearTimeout(t);
-    }, [playLogs.length, gameId]);
+    }, [playLogs.length, gameId, overlayToken]);
 
     // Fetch matchup data for matchup view
     useEffect(() => {
         if (!gameId || view !== 'matchup') return;
-        api.get(`/games/${gameId}/pitcher-matchup`).then(({ data }) => setMatchupData(data)).catch(() => { });
-    }, [gameId, view]);
+        api.get(`/games/${gameId}/pitcher-matchup`, {
+            params: overlayToken ? { ot: overlayToken } : undefined,
+        }).then(({ data }) => setMatchupData(data)).catch(() => { });
+    }, [gameId, view, overlayToken]);
 
     // ── Stats calculadas ──────────────────────────────────────────────
     const battingLineup = half === 'top' ? awayLineup : homeLineup;
@@ -212,11 +218,8 @@ function OverlayContent() {
         return result;
     }, [half, awayLineup, homeLineup, awayBatterIndex, homeBatterIndex, boxscore]);
 
-    const battingTeamName = half === 'top' ? awayTeamName : homeTeamName;
     const battingTeamShort = half === 'top' ? awayTeamShort : homeTeamShort;
     const battingTeamLogo = half === 'top' ? awayTeamLogoUrl : homeTeamLogoUrl;
-    const pitchingTeamName = half === 'top' ? homeTeamName : awayTeamName;
-    const pitchingTeamShort = half === 'top' ? homeTeamShort : awayTeamShort;
 
     // ── Renderizado por vista ──────────────────────────────────────────────────
 

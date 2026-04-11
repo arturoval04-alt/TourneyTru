@@ -29,6 +29,16 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   constructor(private prisma: PrismaService, private jwtService: JwtService) { }
 
+  private verifyOverlayAccessToken(overlayToken: string | undefined, gameId: string): boolean {
+    if (!overlayToken) return false;
+    try {
+      const payload = this.jwtService.verify(overlayToken, { secret: process.env.JWT_SECRET }) as any;
+      return payload?.type === 'overlay_access' && payload?.gameId === gameId;
+    } catch {
+      return false;
+    }
+  }
+
   private async withRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
@@ -122,9 +132,18 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('joinGame')
   handleJoinGame(
-    @MessageBody() gameId: string,
+    @MessageBody() payload: string | { gameId: string; overlayToken?: string; token?: string },
     @ConnectedSocket() client: Socket,
   ) {
+    const gameId = typeof payload === 'string' ? payload : payload?.gameId;
+    const overlayToken = typeof payload === 'string' ? undefined : payload?.overlayToken;
+    const auth = this.verifySocketAuth(client, typeof payload === 'string' ? undefined : payload?.token);
+    const hasOverlayAccess = this.verifyOverlayAccessToken(overlayToken, gameId);
+
+    if (!gameId || (!auth && !hasOverlayAccess)) {
+      throw new WsException('Unauthorized');
+    }
+
     client.join(`game:${gameId}`);
     this.logger.log(`Client ${client.id} joined game: ${gameId}`);
 
@@ -144,6 +163,13 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
   ) {
     const gameId: string = typeof payload === 'string' ? payload : payload?.gameId;
+    const overlayToken: string | undefined = typeof payload === 'string' ? undefined : payload?.overlayToken;
+    const auth = this.verifySocketAuth(client, payload?.token);
+    const hasOverlayAccess = this.verifyOverlayAccessToken(overlayToken, gameId);
+
+    if (!gameId || (!auth && !hasOverlayAccess)) {
+      throw new WsException('Unauthorized');
+    }
 
     if (this.activeGames[gameId]) {
       client.emit('fullStateSync', {

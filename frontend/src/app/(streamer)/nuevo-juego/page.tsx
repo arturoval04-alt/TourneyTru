@@ -4,7 +4,7 @@ import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { toast } from 'sonner';
-import { X, ChevronLeft, ChevronRight, CheckCircle2, Plus, Trash2, Shield, Calendar, Hash, Wand2, UploadCloud, Loader2 } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, CheckCircle2, Plus, Trash2, Shield, Calendar, Hash, Wand2, Loader2 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -135,13 +135,11 @@ function PlayerRowInput({
 
 function ReserveRowInput({
     reserve,
-    index,
     onChange,
     onRemove,
     canRemove,
 }: {
     reserve: ReserveRow;
-    index: number;
     onChange: (field: keyof ReserveRow, val: string) => void;
     onRemove: () => void;
     canRemove: boolean;
@@ -261,31 +259,40 @@ export default function NuevoJuego() {
     const [awayReserves, setAwayReserves] = useState<ReserveRow[]>([]);
 
     // ── Player helpers ─────────────────────────────────────────────────────────
-    const updatePlayer = (list: PlayerRow[], setList: (l: PlayerRow[]) => void, i: number, field: keyof PlayerRow, val: string) => {
-        const updated = [...list];
-        updated[i] = { ...updated[i], [field]: val };
-        setList(updated);
+    const updatePlayer = (
+        setList: React.Dispatch<React.SetStateAction<PlayerRow[]>>,
+        i: number,
+        field: keyof PlayerRow,
+        val: string
+    ) => {
+        setList(prev => prev.map((player, idx) => (
+            idx === i ? { ...player, [field]: val } : player
+        )));
     };
 
-    const addPlayer = (list: PlayerRow[], setList: (l: PlayerRow[]) => void) =>
-        setList([...list, emptyPlayer()]);
+    const addPlayer = (setList: React.Dispatch<React.SetStateAction<PlayerRow[]>>) =>
+        setList(prev => [...prev, emptyPlayer()]);
 
-    const removePlayer = (list: PlayerRow[], setList: (l: PlayerRow[]) => void, i: number) => {
-        if (list.length <= 1) return;
-        setList(list.filter((_, idx) => idx !== i));
+    const removePlayer = (setList: React.Dispatch<React.SetStateAction<PlayerRow[]>>, i: number) => {
+        setList(prev => (prev.length <= 1 ? prev : prev.filter((_, idx) => idx !== i)));
     };
 
-    const updateReserve = (list: ReserveRow[], setList: (l: ReserveRow[]) => void, i: number, field: keyof ReserveRow, val: string) => {
-        const updated = [...list];
-        updated[i] = { ...updated[i], [field]: val };
-        setList(updated);
+    const updateReserve = (
+        setList: React.Dispatch<React.SetStateAction<ReserveRow[]>>,
+        i: number,
+        field: keyof ReserveRow,
+        val: string
+    ) => {
+        setList(prev => prev.map((reserve, idx) => (
+            idx === i ? { ...reserve, [field]: val } : reserve
+        )));
     };
 
-    const addReserve = (list: ReserveRow[], setList: (l: ReserveRow[]) => void) =>
-        setList([...list, emptyReserve()]);
+    const addReserve = (setList: React.Dispatch<React.SetStateAction<ReserveRow[]>>) =>
+        setList(prev => [...prev, emptyReserve()]);
 
-    const removeReserve = (list: ReserveRow[], setList: (l: ReserveRow[]) => void, i: number) =>
-        setList(list.filter((_, idx) => idx !== i));
+    const removeReserve = (setList: React.Dispatch<React.SetStateAction<ReserveRow[]>>, i: number) =>
+        setList(prev => prev.filter((_, idx) => idx !== i));
 
     // ── Navigation ─────────────────────────────────────────────────────────────
     const canNext = () => {
@@ -469,8 +476,8 @@ export default function NuevoJuego() {
                                         key={i}
                                         player={p}
                                         index={i}
-                                        onChange={(f, v) => updatePlayer(homePlayers, setHomePlayers, i, f, v)}
-                                        onRemove={() => removePlayer(homePlayers, setHomePlayers, i)}
+                                        onChange={(f, v) => updatePlayer(setHomePlayers, i, f, v)}
+                                        onRemove={() => removePlayer(setHomePlayers, i)}
                                         canRemove={homePlayers.length > 1}
                                     />
                                 ))}
@@ -478,7 +485,7 @@ export default function NuevoJuego() {
                                 <div className="flex items-center gap-4 mt-1">
                                     <button
                                         type="button"
-                                        onClick={() => addPlayer(homePlayers, setHomePlayers)}
+                                        onClick={() => addPlayer(setHomePlayers)}
                                         className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 font-semibold transition-colors"
                                     >
                                         <Plus size={13} /> Añadir jugador
@@ -495,7 +502,7 @@ export default function NuevoJuego() {
                                     </label>
                                     <button
                                         type="button"
-                                        onClick={() => addReserve(homeReserves, setHomeReserves)}
+                                        onClick={() => addReserve(setHomeReserves)}
                                         className="flex items-center gap-1 text-xs text-amber-500 hover:text-amber-400 font-semibold transition-colors"
                                     >
                                         <Plus size={12} /> Añadir
@@ -510,9 +517,8 @@ export default function NuevoJuego() {
                                     <ReserveRowInput
                                         key={i}
                                         reserve={r}
-                                        index={i}
-                                        onChange={(f, v) => updateReserve(homeReserves, setHomeReserves, i, f, v)}
-                                        onRemove={() => removeReserve(homeReserves, setHomeReserves, i)}
+                                        onChange={(f, v) => updateReserve(setHomeReserves, i, f, v)}
+                                        onRemove={() => removeReserve(setHomeReserves, i)}
                                         canRemove={true}
                                     />
                                 ))}
@@ -555,8 +561,8 @@ export default function NuevoJuego() {
                                         key={i}
                                         player={p}
                                         index={i}
-                                        onChange={(f, v) => updatePlayer(awayPlayers, setAwayPlayers, i, f, v)}
-                                        onRemove={() => removePlayer(awayPlayers, setAwayPlayers, i)}
+                                        onChange={(f, v) => updatePlayer(setAwayPlayers, i, f, v)}
+                                        onRemove={() => removePlayer(setAwayPlayers, i)}
                                         canRemove={awayPlayers.length > 1}
                                     />
                                 ))}
@@ -564,7 +570,7 @@ export default function NuevoJuego() {
                                 <div className="flex items-center gap-4 mt-1">
                                     <button
                                         type="button"
-                                        onClick={() => addPlayer(awayPlayers, setAwayPlayers)}
+                                        onClick={() => addPlayer(setAwayPlayers)}
                                         className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 font-semibold transition-colors"
                                     >
                                         <Plus size={13} /> Añadir jugador
@@ -581,7 +587,7 @@ export default function NuevoJuego() {
                                     </label>
                                     <button
                                         type="button"
-                                        onClick={() => addReserve(awayReserves, setAwayReserves)}
+                                        onClick={() => addReserve(setAwayReserves)}
                                         className="flex items-center gap-1 text-xs text-amber-500 hover:text-amber-400 font-semibold transition-colors"
                                     >
                                         <Plus size={12} /> Añadir
@@ -596,9 +602,8 @@ export default function NuevoJuego() {
                                     <ReserveRowInput
                                         key={i}
                                         reserve={r}
-                                        index={i}
-                                        onChange={(f, v) => updateReserve(awayReserves, setAwayReserves, i, f, v)}
-                                        onRemove={() => removeReserve(awayReserves, setAwayReserves, i)}
+                                        onChange={(f, v) => updateReserve(setAwayReserves, i, f, v)}
+                                        onRemove={() => removeReserve(setAwayReserves, i)}
                                         canRemove={true}
                                     />
                                 ))}

@@ -44,10 +44,19 @@ export default function StreamAdminPanel({ gameId, forceView }: Props) {
     const [copiedId, setCopiedId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [showObs, setShowObs] = useState(false);
+    const [overlayAccessToken, setOverlayAccessToken] = useState<string | null>(null);
 
     const baseUrl = typeof window !== 'undefined'
         ? `${window.location.origin}/gamecast/${gameId}/overlay`
         : `/gamecast/${gameId}/overlay`;
+
+    const buildOverlayUrl = (overlay: OverlayConfig) => {
+        const url = new URL(`${baseUrl}${overlay.query}`, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+        if (overlayAccessToken) {
+            url.searchParams.set('ot', overlayAccessToken);
+        }
+        return typeof window !== 'undefined' ? url.toString() : `${baseUrl}${url.search}`;
+    };
 
     useEffect(() => {
         setIsAdmin(forceView === 'admin' || (forceView !== 'fan' && isLoggedIn()));
@@ -61,6 +70,7 @@ export default function StreamAdminPanel({ gameId, forceView }: Props) {
         if (!gameId) return;
         api.get(`/games/${gameId}/stream-info`).then(({ data }) => {
             if (data.facebookStreamUrl) setUrlInput(data.facebookStreamUrl);
+            if (data.overlayAccessToken) setOverlayAccessToken(data.overlayAccessToken);
             useGameStore.setState({
                 facebookStreamUrl: data.facebookStreamUrl ?? null,
                 streamStatus: data.streamStatus ?? 'offline',
@@ -94,14 +104,14 @@ export default function StreamAdminPanel({ gameId, forceView }: Props) {
     };
 
     const copyUrl = (overlay: OverlayConfig) => {
-        const url = `${baseUrl}${overlay.query}`;
+        const url = buildOverlayUrl(overlay);
         navigator.clipboard.writeText(url);
         setCopiedId(overlay.id);
         setTimeout(() => setCopiedId(null), 2000);
     };
 
     const openPreview = (overlay: OverlayConfig) => {
-        window.open(`${baseUrl}${overlay.query}`, '_blank', 'width=960,height=540');
+        window.open(buildOverlayUrl(overlay), '_blank', 'width=960,height=540');
     };
 
     const isLive = streamStatus === 'live';
@@ -172,7 +182,7 @@ export default function StreamAdminPanel({ gameId, forceView }: Props) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         {OVERLAYS.map((overlay) => {
                             const isCopied = copiedId === overlay.id;
-                            const overlayUrl = `${baseUrl}${overlay.query}`;
+                            const overlayUrl = buildOverlayUrl(overlay);
                             return (
                                 <div
                                     key={overlay.id}

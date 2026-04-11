@@ -1,4 +1,5 @@
 import { UseGuards, Body, Controller, Delete, Get, Param, Patch, Post, Query, Request } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { GamesService } from './games.service';
 import { AssignUmpireDto, CreateGameDto, UpdateGameDto, SetGameLineupDto, ChangeLineupDto, CambioSustitucionDto, CambioPosicionDto, CambioReingresoDto, ScheduleGameDto } from './dto/game.dto';
 import { SubmitManualStatsDto } from './dto/manual-stats.dto';
@@ -25,7 +26,41 @@ const buildRequestor = (user?: any): Requestor | undefined => {
 
 @Controller('api/games')
 export class GamesController {
-    constructor(private readonly gamesService: GamesService) { }
+    constructor(
+        private readonly gamesService: GamesService,
+        private readonly jwtService: JwtService,
+    ) { }
+
+    private createOverlayAccessToken(gameId: string) {
+        return this.jwtService.sign(
+            { type: 'overlay_access', gameId },
+            {
+                secret: process.env.JWT_SECRET,
+                expiresIn: '30d',
+            },
+        );
+    }
+
+    private buildReadRequestor(req: any, gameId: string, overlayToken?: string): Requestor | undefined {
+        const userRequestor = buildRequestor(req?.user);
+        if (userRequestor) return userRequestor;
+        if (!overlayToken) return undefined;
+
+        try {
+            const payload = this.jwtService.verify(overlayToken, { secret: process.env.JWT_SECRET }) as any;
+            if (payload?.type === 'overlay_access' && payload?.gameId === gameId) {
+                return {
+                    id: `overlay:${gameId}`,
+                    userId: `overlay:${gameId}`,
+                    role: 'overlay',
+                };
+            }
+        } catch {
+            return undefined;
+        }
+
+        return undefined;
+    }
 
     @Post()
     @UseGuards(JwtAuthGuard)
@@ -57,8 +92,8 @@ export class GamesController {
 
     @Get(':id')
     @UseGuards(OptionalJwtAuthGuard)
-    findOne(@Param('id') id: string, @Request() req: any) {
-        return this.gamesService.findOne(id, buildRequestor(req?.user));
+    findOne(@Param('id') id: string, @Request() req: any, @Query('ot') overlayToken?: string) {
+        return this.gamesService.findOne(id, this.buildReadRequestor(req, id, overlayToken));
     }
 
     @Patch(':id')
@@ -108,20 +143,20 @@ export class GamesController {
 
     @Get(':id/boxscore')
     @UseGuards(OptionalJwtAuthGuard)
-    getBoxscore(@Param('id') id: string, @Request() req: any) {
-        return this.gamesService.getGameBoxscore(id, buildRequestor(req?.user));
+    getBoxscore(@Param('id') id: string, @Request() req: any, @Query('ot') overlayToken?: string) {
+        return this.gamesService.getGameBoxscore(id, this.buildReadRequestor(req, id, overlayToken));
     }
 
     @Get(':id/state')
     @UseGuards(OptionalJwtAuthGuard)
-    getState(@Param('id') id: string, @Request() req: any) {
-        return this.gamesService.getGameState(id, buildRequestor(req?.user));
+    getState(@Param('id') id: string, @Request() req: any, @Query('ot') overlayToken?: string) {
+        return this.gamesService.getGameState(id, this.buildReadRequestor(req, id, overlayToken));
     }
 
     @Get(':id/pitcher-matchup')
     @UseGuards(OptionalJwtAuthGuard)
-    getPitcherMatchup(@Param('id') id: string, @Request() req: any) {
-        return this.gamesService.getPitcherMatchup(id, buildRequestor(req?.user));
+    getPitcherMatchup(@Param('id') id: string, @Request() req: any, @Query('ot') overlayToken?: string) {
+        return this.gamesService.getPitcherMatchup(id, this.buildReadRequestor(req, id, overlayToken));
     }
 
     @Get(':id/cambios/elegibles/:teamId')
@@ -168,8 +203,13 @@ export class GamesController {
 
     @Get(':id/stream-info')
     @UseGuards(OptionalJwtAuthGuard)
-    getStreamInfo(@Param('id') id: string, @Request() req: any) {
-        return this.gamesService.getStreamInfo(id, buildRequestor(req?.user));
+    async getStreamInfo(@Param('id') id: string, @Request() req: any, @Query('ot') overlayToken?: string) {
+        const requestor = this.buildReadRequestor(req, id, overlayToken);
+        const data = await this.gamesService.getStreamInfo(id, requestor);
+        return {
+            ...data,
+            overlayAccessToken: requestor ? this.createOverlayAccessToken(id) : null,
+        };
     }
 
     @Post(':id/stream')
