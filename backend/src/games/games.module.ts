@@ -7,6 +7,7 @@ import { AuthModule } from '../auth/auth.module';
 @Module({
   imports: [LiveModule, AuthModule],
   providers: [GamesService],
+  exports: [GamesService],
   controllers: [GamesController],
 })
 export class GamesModule {}

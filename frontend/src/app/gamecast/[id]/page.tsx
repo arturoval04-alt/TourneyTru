@@ -15,6 +15,7 @@ import Navbar from '@/components/Navbar';
 import StreamAdminPanel from '@/components/live/StreamAdminPanel';
 import TeamLineupCard from '@/components/live/TeamLineupCard';
 import PitchingBoxscore from '@/components/live/PitchingBoxscore';
+import { useOBSAutoConnect } from '@/hooks/useOBSAutoConnect';
 
 // Mapa de código numérico a nombre de posición
 const POS_LABEL: Record<string, string> = {
@@ -59,6 +60,8 @@ export default function PublicGamecast() {
         homeTeamName, awayTeamName,
         winningPitcher, mvpBatter1, mvpBatter2, pendingPlays
     } = useGameStore();
+
+    useOBSAutoConnect();
 
     const livePitcherId = useMemo(() => {
         const defensiveLineup = half === 'top' ? homeLineup : awayLineup;

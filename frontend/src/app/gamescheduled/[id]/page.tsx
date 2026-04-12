@@ -7,7 +7,8 @@ import Navbar from '@/components/Navbar';
 import CreateGameWizard from '@/components/game/CreateGameWizard';
 import StreamAdminPanel from '@/components/live/StreamAdminPanel';
 import { getUser, isLoggedIn } from '@/lib/auth';
-import { Calendar, Clock, MapPin, ChevronLeft, BarChart3, TrendingUp, Navigation, Swords, Radio, Users } from 'lucide-react';
+import { openOBSStreamDeck } from '@/lib/openOBSStreamDeck';
+import { Calendar, Clock, MapPin, ChevronLeft, BarChart3, TrendingUp, Navigation, Swords, Radio, Users, Layers } from 'lucide-react';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -93,15 +94,28 @@ export default function GameScheduled() {
     const [userRole, setUserRole]   = useState<string | null>(null);
     const [lineupGameId, setLineupGameId] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'previo' | 'stream'>('previo');
+    const canConfigureLineup = ['admin', 'organizer', 'presi', 'scorekeeper'].includes(userRole ?? '');
+    const canOpenStreamPanel = ['admin', 'organizer', 'presi', 'scorekeeper', 'streamer'].includes(userRole ?? '');
+    const showQuickActions = isLoggedIn() && (canConfigureLineup || canOpenStreamPanel);
 
     useEffect(() => {
         setUserRole(getUser()?.role ?? null);
-        // Read ?tab= from URL to allow direct linking to stream tab
-        if (typeof window !== 'undefined') {
-            const params = new URLSearchParams(window.location.search);
-            if (params.get('tab') === 'stream') setActiveTab('stream');
-        }
     }, []);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const params = new URLSearchParams(window.location.search);
+        const requestedTab = params.get('tab');
+
+        if (requestedTab === 'stream' && canOpenStreamPanel) {
+            setActiveTab('stream');
+            return;
+        }
+
+        if (!canOpenStreamPanel && activeTab === 'stream') {
+            setActiveTab('previo');
+        }
+    }, [activeTab, canOpenStreamPanel]);
 
     useEffect(() => {
         if (!gameId) return;
@@ -161,10 +175,6 @@ export default function GameScheduled() {
     const awayGames = finishedGames.filter((g: any) => g.homeTeamId === game.awayTeam.id || g.awayTeamId === game.awayTeam.id).length;
     const homeGames = finishedGames.filter((g: any) => g.homeTeamId === game.homeTeam.id || g.awayTeamId === game.homeTeam.id).length;
     const contextGames = Math.max(awayGames, homeGames);
-    const canConfigureLineup = ['admin', 'organizer', 'presi', 'scorekeeper'].includes(userRole ?? '');
-    const canOpenStreamPanel = ['admin', 'organizer', 'presi', 'scorekeeper', 'streamer'].includes(userRole ?? '');
-    const showQuickActions = isLoggedIn() && (canConfigureLineup || canOpenStreamPanel);
-
     // Head-to-head
     const h2h = finishedGames.filter((g: any) =>
         (g.homeTeamId === game.homeTeam.id && g.awayTeamId === game.awayTeam.id) ||
@@ -211,6 +221,16 @@ export default function GameScheduled() {
                                     >
                                         <Radio className="w-4 h-4" />
                                         Panel Stream
+                                    </button>
+                                )}
+                                {canOpenStreamPanel && (
+                                    <button
+                                        onClick={() => openOBSStreamDeck(gameId)}
+                                        className="inline-flex items-center gap-2 rounded-xl border border-fuchsia-500/40 bg-fuchsia-500/10 px-4 py-2 text-xs font-black uppercase tracking-wider text-fuchsia-300 hover:bg-fuchsia-500/20 transition"
+                                        title="Abre o reenfoca el Stream Deck en ventana flotante independiente"
+                                    >
+                                        <Layers className="w-4 h-4" />
+                                        Stream Deck ↗
                                     </button>
                                 )}
                             </div>

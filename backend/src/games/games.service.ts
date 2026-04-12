@@ -169,8 +169,9 @@ export class GamesService {
         const league = tournament?.league;
         const isSystemAdmin = requestor?.role === 'admin';
         const isOverlayViewer = requestor?.role === 'overlay';
+        const isPublicViewer = !requestor;
 
-        if (!isSystemAdmin && !isOverlayViewer) {
+        if (!isSystemAdmin && !isOverlayViewer && !isPublicViewer) {
             if (league?.isPrivate) {
                 const isLeagueAdmin = requestor?.id === league.adminId;
                 const isAssignedSK = requestor?.role === 'scorekeeper' && requestor.scorekeeperTournamentIds?.includes(game.tournamentId);

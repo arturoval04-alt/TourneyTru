@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { GamesService } from '../games/games.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const SHADOW_LEAGUE_NAME = '__streamer__';
@@ -6,7 +7,73 @@ const SHADOW_TOURNAMENT_SEASON = '__quick__';
 
 @Injectable()
 export class StreamerService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+        private gamesService: GamesService,
+    ) { }
+
+    private readonly defensivePositions = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'SF'];
+
+    private normalizePosition(position?: string | null): string | null {
+        if (!position) return null;
+        const raw = position.trim().toUpperCase();
+        if (!raw) return null;
+
+        const map: Record<string, string> = {
+            '1': 'P', 'P': 'P',
+            '2': 'C', 'C': 'C',
+            '3': '1B', '1B': '1B',
+            '4': '2B', '2B': '2B',
+            '5': '3B', '3B': '3B',
+            '6': 'SS', 'SS': 'SS',
+            '7': 'LF', 'LF': 'LF',
+            '8': 'CF', 'CF': 'CF',
+            '9': 'RF', 'RF': 'RF',
+            '10': 'SF', 'SF': 'SF',
+            'BD': 'DH', 'DH': 'DH',
+            'BE': 'BE',
+        };
+
+        return map[raw] || raw;
+    }
+
+    private normalizeDefensivePosition(position?: string | null): string | null {
+        const normalized = this.normalizePosition(position);
+        if (!normalized) return null;
+        return this.defensivePositions.includes(normalized) ? normalized : null;
+    }
+
+    private validateLineup(players: Array<{ position?: string | null; dhForPosition?: string | null }>) {
+        const defensiveUsed = new Set<string>();
+
+        for (const player of players) {
+            const normalized = this.normalizePosition(player.position);
+            if (!normalized || normalized === 'BE') continue;
+
+            const defensivePos = this.normalizeDefensivePosition(normalized);
+            if (defensivePos) {
+                if (defensiveUsed.has(defensivePos)) {
+                    throw new BadRequestException(`Posición defensiva duplicada: ${defensivePos}.`);
+                }
+                defensiveUsed.add(defensivePos);
+            }
+        }
+
+        const dhEntries = players.filter((p) => this.normalizePosition(p.position) === 'DH');
+        if (dhEntries.length > 1) {
+            throw new BadRequestException('Solo se permite un DH estándar por equipo.');
+        }
+
+        if (dhEntries.length === 1) {
+            const anchor = this.normalizeDefensivePosition(dhEntries[0].dhForPosition);
+            if (!anchor) {
+                throw new BadRequestException('Si se usa DH, debe anclarse a una posición defensiva válida.');
+            }
+            if (!defensiveUsed.has(anchor)) {
+                throw new BadRequestException(`El DH debe anclarse a una posición defensiva presente en el lineup (${anchor}).`);
+            }
+        }
+    }
 
     // ─── Shadow context ───────────────────────────────────────────────────────────
     // Each streamer owns one hidden league + one hidden tournament that holds
@@ -65,6 +132,8 @@ export class StreamerService {
         maxInnings?: number;
     }) {
         const { tournamentId } = await this.ensureShadowContext(streamerId);
+        this.validateLineup(data.homePlayers || []);
+        this.validateLineup(data.awayPlayers || []);
 
         // Create home team
         const homeTeam = await this.prisma.team.create({
@@ -72,13 +141,15 @@ export class StreamerService {
         });
 
         // Create home players (keep created records for lineup)
-        const homePlayers: any[] = [];
+        const homePlayers: Array<{ playerId: string; position: string | null; dhForPosition: string | null }> = [];
         for (const p of (data.homePlayers || [])) {
+            const normalizedPosition = this.normalizePosition(p.position);
+            const dhAnchor = normalizedPosition === 'DH' ? this.normalizeDefensivePosition(p.dhForPosition) : null;
             const player = await (this.prisma.player as any).create({
                 data: {
                     firstName: p.firstName,
                     lastName: p.lastName,
-                    position: p.position ?? null,
+                    position: normalizedPosition ?? null,
                     isStreamerCreated: true,
                 },
             });
@@ -88,11 +159,11 @@ export class StreamerService {
                     teamId: homeTeam.id,
                     tournamentId,
                     number: p.number ?? null,
-                    position: p.position ?? null,
+                    position: normalizedPosition ?? null,
                     isActive: true,
                 },
             });
-            homePlayers.push({ ...player, position: p.position });
+            homePlayers.push({ playerId: player.id, position: normalizedPosition, dhForPosition: dhAnchor });
         }
 
         // Create away team
@@ -101,13 +172,15 @@ export class StreamerService {
         });
 
         // Create away players (keep created records for lineup)
-        const awayPlayers: any[] = [];
+        const awayPlayers: Array<{ playerId: string; position: string | null; dhForPosition: string | null }> = [];
         for (const p of (data.awayPlayers || [])) {
+            const normalizedPosition = this.normalizePosition(p.position);
+            const dhAnchor = normalizedPosition === 'DH' ? this.normalizeDefensivePosition(p.dhForPosition) : null;
             const player = await (this.prisma.player as any).create({
                 data: {
                     firstName: p.firstName,
                     lastName: p.lastName,
-                    position: p.position ?? null,
+                    position: normalizedPosition ?? null,
                     isStreamerCreated: true,
                 },
             });
@@ -117,11 +190,11 @@ export class StreamerService {
                     teamId: awayTeam.id,
                     tournamentId,
                     number: p.number ?? null,
-                    position: p.position ?? null,
+                    position: normalizedPosition ?? null,
                     isActive: true,
                 },
             });
-            awayPlayers.push({ ...player, position: p.position });
+            awayPlayers.push({ playerId: player.id, position: normalizedPosition, dhForPosition: dhAnchor });
         }
 
         // Create the game
@@ -142,14 +215,17 @@ export class StreamerService {
 
         // Auto-crear lineups desde los jugadores registrados
         // Esto permite que el scorekeeper funcione de inmediato sin pasar por el wizard de lineup
-        const createLineups = async (players: any[], teamId: string) => {
+        const createLineups = async (
+            players: Array<{ playerId: string; position: string | null; dhForPosition: string | null }>,
+            teamId: string,
+        ) => {
             for (let i = 0; i < players.length; i++) {
                 const p = players[i];
                 await this.prisma.lineup.create({
                     data: {
                         gameId: game.id,
                         teamId,
-                        playerId: p.id,
+                        playerId: p.playerId,
                         battingOrder: i + 1,
                         position: p.position || 'UT',
                         dhForPosition: p.dhForPosition || null,
@@ -246,11 +322,15 @@ export class StreamerService {
         const game = await this.prisma.game.findUnique({
             where: { id: gameId },
             include: {
+                lineups: {
+                    orderBy: { battingOrder: 'asc' },
+                },
                 homeTeam: {
                     include: {
                         rosterEntries: {
                             where: { isActive: true },
                             include: { player: true },
+                            orderBy: { joinedAt: 'asc' },
                         },
                     },
                 },
@@ -259,6 +339,7 @@ export class StreamerService {
                         rosterEntries: {
                             where: { isActive: true },
                             include: { player: true },
+                            orderBy: { joinedAt: 'asc' },
                         },
                     },
                 },
@@ -267,19 +348,58 @@ export class StreamerService {
 
         if (!game) throw new NotFoundException('Juego no encontrado.');
 
-        // Delete existing lineups first (clean slate)
-        await this.prisma.lineup.deleteMany({ where: { gameId } });
+        const previousLineups = new Map<string, { battingOrder: number; position: string; dhForPosition: string | null }>(
+            (game.lineups || []).map((lineup: any) => [
+                lineup.playerId,
+                {
+                    battingOrder: lineup.battingOrder,
+                    position: lineup.position,
+                    dhForPosition: lineup.dhForPosition ?? null,
+                },
+            ]),
+        );
 
-        const insertLineups = async (entries: any[], teamId: string) => {
-            for (let i = 0; i < entries.length; i++) {
-                const entry = entries[i];
+        const buildLineupDraft = (entries: any[]) => {
+            const ordered = [...entries].sort((a, b) => {
+                const existingA = previousLineups.get(a.player.id);
+                const existingB = previousLineups.get(b.player.id);
+
+                if (existingA && existingB) return existingA.battingOrder - existingB.battingOrder;
+                if (existingA) return -1;
+                if (existingB) return 1;
+
+                return new Date(a.joinedAt).getTime() - new Date(b.joinedAt).getTime();
+            });
+
+            return ordered.map((entry, index) => {
+                const existing = previousLineups.get(entry.player.id);
+                const normalizedPosition = this.normalizePosition(existing?.position || entry.position || entry.player.position);
+                const dhAnchor = normalizedPosition === 'DH'
+                    ? this.normalizeDefensivePosition(existing?.dhForPosition)
+                    : null;
+
+                return {
+                    playerId: entry.player.id,
+                    battingOrder: index + 1,
+                    position: normalizedPosition || 'UT',
+                    dhForPosition: dhAnchor,
+                };
+            });
+        };
+
+        const insertLineups = async (
+            lineupDraft: Array<{ playerId: string; battingOrder: number; position: string; dhForPosition: string | null }>,
+            teamId: string,
+        ) => {
+            for (const entry of lineupDraft) {
                 await this.prisma.lineup.create({
                     data: {
                         gameId,
                         teamId,
-                        playerId: entry.player.id,
-                        battingOrder: i + 1,
-                        position: entry.position || entry.player.position || 'UT',
+                        playerId: entry.playerId,
+                        battingOrder: entry.battingOrder,
+                        position: entry.position,
+                        dhForPosition: entry.dhForPosition,
                         isStarter: true,
                         isActive: true,
                     } as any,
@@ -289,8 +409,17 @@ export class StreamerService {
 
         const homeEntries = game.homeTeam.rosterEntries;
         const awayEntries = game.awayTeam.rosterEntries;
-        if (homeEntries.length > 0) await insertLineups(homeEntries, game.homeTeamId);
-        if (awayEntries.length > 0) await insertLineups(awayEntries, game.awayTeamId);
+        const homeDraft = buildLineupDraft(homeEntries);
+        const awayDraft = buildLineupDraft(awayEntries);
+
+        if (homeDraft.length > 0) this.validateLineup(homeDraft);
+        if (awayDraft.length > 0) this.validateLineup(awayDraft);
+
+        // Delete existing lineups only after both teams validate successfully
+        await this.prisma.lineup.deleteMany({ where: { gameId } });
+
+        if (homeDraft.length > 0) await insertLineups(homeDraft, game.homeTeamId);
+        if (awayDraft.length > 0) await insertLineups(awayDraft, game.awayTeamId);
 
         return { created: (homeEntries.length + awayEntries.length) };
     }
@@ -342,30 +471,11 @@ export class StreamerService {
 
     async getBoxScore(gameId: string, streamerId: string) {
         await this.verifyGameOwnership(gameId, streamerId);
-
-        const game = await this.prisma.game.findUnique({
-            where: { id: gameId },
-            include: {
-                homeTeam: { include: { rosterEntries: { where: { isActive: true }, include: { player: true } } } },
-                awayTeam: { include: { rosterEntries: { where: { isActive: true }, include: { player: true } } } },
-                plays: {
-                    orderBy: { timestamp: 'asc' },
-                    include: {
-                        batter: { select: { id: true, firstName: true, lastName: true } },
-                        pitcher: { select: { id: true, firstName: true, lastName: true } },
-                    },
-                },
-                lineups: {
-                    include: {
-                        player: { select: { id: true, firstName: true, lastName: true } },
-                    },
-                    orderBy: { battingOrder: 'asc' },
-                },
-            },
-        }) as any;
-
-        if (!game) throw new NotFoundException('Juego no encontrado.');
-        return game;
+        return this.gamesService.getGameBoxscore(gameId, {
+            id: streamerId,
+            userId: streamerId,
+            role: 'streamer',
+        });
     }
 
     // ─── Delete quick game ───────────────────────────────────────────────────────

@@ -1,40 +1,22 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Radio, Copy, Check, ExternalLink, Monitor, Eye, ChevronDown, ChevronUp } from 'lucide-react';
+import { Radio, Copy, Check, ExternalLink, Monitor, Eye, ChevronDown, Layers } from 'lucide-react';
 import { useGameStore } from '@/store/gameStore';
 import { isLoggedIn } from '@/lib/auth';
 import api from '@/lib/api';
+import OBSConnectPanel from '@/components/obs/OBSConnectPanel';
+import OBSSceneInjector from '@/components/obs/OBSSceneInjector';
+import OBSStreamDeck from '@/components/obs/OBSStreamDeck';
+import ActionPanel from '@/components/controls/ActionPanel';
+import { useOBSAutoConnect } from '@/hooks/useOBSAutoConnect';
+import { OVERLAYS, OverlayConfig } from '@/lib/overlaysConfig';
+import { openOBSStreamDeck } from '@/lib/openOBSStreamDeck';
 
 interface Props {
     gameId: string;
     forceView?: 'admin' | 'fan';
 }
-
-interface OverlayConfig {
-    id: string;
-    name: string;
-    description: string;
-    query: string;
-    width: number;
-    height: number;
-    emoji: string;
-    color: string;
-}
-
-const OVERLAYS: OverlayConfig[] = [
-    { id: 'full', name: 'Full Overlay', description: 'Bateador, pitcher y marcador en pantalla completa', query: '?view=full', width: 1920, height: 1080, emoji: '🖥️', color: 'from-sky-500/20 to-sky-600/10' },
-    { id: 'compact', name: 'Compact ESPN', description: 'Scoreboard compacto estilo ESPN/MLB con bateador y pitcher', query: '?view=compact', width: 480, height: 180, emoji: '📊', color: 'from-amber-500/20 to-amber-600/10' },
-    { id: 'score', name: 'Score Bar', description: 'Solo la barra de marcador inferior', query: '?view=score', width: 1920, height: 120, emoji: '🏆', color: 'from-emerald-500/20 to-emerald-600/10' },
-    { id: 'field', name: 'Campo', description: 'Diamante con defensores y bases iluminadas', query: '?view=field', width: 800, height: 900, emoji: '⚾', color: 'from-green-500/20 to-green-600/10' },
-    { id: 'batter', name: 'Bateador', description: 'Tarjeta del bateador actual con foto y stats', query: '?view=batter', width: 400, height: 500, emoji: '🏏', color: 'from-sky-500/20 to-sky-600/10' },
-    { id: 'pitcher', name: 'Pitcher', description: 'Tarjeta del pitcher actual con foto y stats', query: '?view=pitcher', width: 400, height: 400, emoji: '⚡', color: 'from-emerald-500/20 to-emerald-600/10' },
-    { id: 'playbyplay', name: 'Play-by-Play', description: 'Últimas 4 jugadas como lower third', query: '?view=playbyplay', width: 600, height: 300, emoji: '📋', color: 'from-violet-500/20 to-violet-600/10' },
-    { id: 'ondeck', name: 'On Deck', description: 'Próximos 3 bateadores — ideal entre entradas', query: '?view=ondeck', width: 480, height: 400, emoji: '👥', color: 'from-orange-500/20 to-orange-600/10' },
-    { id: 'lineup-away', name: 'Lineup Visitante', description: 'Alineación completa del equipo visitante', query: '?view=lineup&team=away', width: 600, height: 800, emoji: '📑', color: 'from-rose-500/20 to-rose-600/10' },
-    { id: 'lineup-home', name: 'Lineup Local', description: 'Alineación completa del equipo local', query: '?view=lineup&team=home', width: 600, height: 800, emoji: '📑', color: 'from-cyan-500/20 to-cyan-600/10' },
-    { id: 'matchup', name: 'Duelo Pitchers', description: 'Comparativa de pitchers iniciales con stats del torneo', query: '?view=matchup', width: 1280, height: 500, emoji: '🔥', color: 'from-red-500/20 to-red-600/10' },
-];
 
 export default function StreamAdminPanel({ gameId, forceView }: Props) {
     const { facebookStreamUrl, streamStatus } = useGameStore();
@@ -117,10 +99,28 @@ export default function StreamAdminPanel({ gameId, forceView }: Props) {
     const isLive = streamStatus === 'live';
     const isEnded = streamStatus === 'ended';
 
+    // Auto-reconectar OBS si hay credenciales guardadas
+    useOBSAutoConnect();
+
+    // ── Preparar configs de inyección (URL dinámica con el gameId actual) ──
+    const overlayInjectConfigs = OVERLAYS.map(o => ({
+        id: o.id,
+        name: o.name,
+        url: buildOverlayUrl(o),
+        width: o.width,
+        height: o.height,
+    }));
+
+    const overlaysMeta = OVERLAYS.map(o => ({ id: o.id, name: o.name, emoji: o.emoji }));
+
     // ── VISTA ADMIN ────────────────────────────────────────────────────────────
     if (isAdmin) {
         return (
             <div className="flex flex-col gap-6 animate-fade-in-up">
+                <div className="rounded-2xl border border-slate-800/80 overflow-hidden">
+                    <ActionPanel />
+                </div>
+
                 {/* Stream Control Panel */}
                 <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-700/40 rounded-2xl p-6 shadow-lg">
                     <div className="flex items-center gap-3 mb-6 border-b border-slate-700/30 pb-4">
@@ -232,33 +232,64 @@ export default function StreamAdminPanel({ gameId, forceView }: Props) {
                         })}
                     </div>
 
-                    {/* OBS Instructions (collapsible) */}
-                    <div className="mt-6">
-                        <button
-                            onClick={() => setShowObs(!showObs)}
-                            className="flex items-center gap-2 text-sm font-black text-sky-400 uppercase tracking-widest hover:text-sky-300 transition-colors w-full"
-                        >
-                            <Monitor className="w-4 h-4" />
-                            Instrucciones OBS — Browser Source
-                            {showObs ? <ChevronUp className="w-4 h-4 ml-auto" /> : <ChevronDown className="w-4 h-4 ml-auto" />}
-                        </button>
+                </div>
 
-                        {showObs && (
-                            <div className="mt-3 bg-slate-800/50 border border-slate-700/40 rounded-xl p-5 flex flex-col gap-3 animate-fade-in-up">
-                                <ol className="text-xs text-slate-400 flex flex-col gap-2 list-decimal list-inside">
-                                    <li>En OBS, añade una nueva fuente <span className="text-white font-bold">&quot;Browser&quot;</span></li>
-                                    <li>Pega la URL del overlay que deseas usar (usa el botón <span className="text-sky-400 font-bold">Copiar URL</span> de arriba)</li>
-                                    <li>Configura las dimensiones recomendadas para ese overlay (se muestra en cada tarjeta)</li>
-                                    <li>En CSS personalizado, pega: <span className="font-mono text-slate-300 bg-slate-900/60 px-2 py-0.5 rounded">body {'{'} background: transparent !important; {'}'}</span></li>
-                                    <li>Activa <em className="text-white">&quot;Shutdown source when not visible&quot;</em></li>
-                                    <li>Activa <em className="text-white">&quot;Refresh browser when scene becomes active&quot;</em></li>
-                                </ol>
-                                <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-2 text-xs">
-                                    <span className="font-bold text-amber-400">💡 Pro tip:</span>
-                                    <span className="text-amber-200/80 ml-1">Puedes usar múltiples overlays a la vez en diferentes escenas de OBS para tener control total de lo que se muestra.</span>
+                {/* ── OBS WebSocket Control ──────────────────────────────────── */}
+                <div className="bg-slate-900/60 backdrop-blur-sm border border-fuchsia-700/30 rounded-2xl p-6 shadow-lg">
+                    <div className="flex items-center gap-3 mb-5 border-b border-slate-700/30 pb-4">
+                        <Monitor className="w-6 h-6 text-fuchsia-400" />
+                        <h2 className="text-xl font-black text-white">Control OBS</h2>
+                        <span className="ml-2 px-2 py-0.5 rounded-full bg-fuchsia-500/15 text-fuchsia-400 text-[10px] font-black uppercase tracking-widest border border-fuchsia-500/30">
+                            Plug &amp; Play
+                        </span>
+                        <button
+                            onClick={() => openOBSStreamDeck(gameId)}
+                            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-widest border border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-300 hover:bg-fuchsia-500/20 transition-all"
+                            title="Abre o reenfoca el Stream Deck en una ventana flotante independiente"
+                        >
+                            <Layers className="w-3.5 h-3.5" /> Stream Deck ↗
+                        </button>
+                    </div>
+                    <div className="flex flex-col gap-4">
+                        {/* 1. Conexión WebSocket */}
+                        <OBSConnectPanel />
+
+                        {/* 2. Inyectar escenas (solo si conectado) */}
+                        <OBSSceneInjector overlays={overlayInjectConfigs} />
+
+                        {/* 3. Stream Deck (solo si conectado y escena existe) */}
+                        <OBSStreamDeck overlaysMeta={overlaysMeta} />
+
+                        {/* 4. Fallback manual — siempre visible como alternativa */}
+                        <div className="border-t border-slate-700/30 pt-4">
+                            <button
+                                onClick={() => setShowObs(!showObs)}
+                                className="flex items-center gap-2 text-sm font-black text-slate-400 uppercase tracking-widest hover:text-slate-200 transition-colors w-full"
+                            >
+                                <ChevronDown className={`w-4 h-4 transition-transform ${showObs ? 'rotate-180' : ''}`} />
+                                Configuración manual (sin WebSocket)
+                            </button>
+
+                            {showObs && (
+                                <div className="mt-3 bg-slate-800/50 border border-slate-700/40 rounded-xl p-5 flex flex-col gap-3 animate-fade-in-up">
+                                    <p className="text-[11px] text-slate-500 italic">
+                                        Usa este método si estás en HTTPS o no puedes conectar vía WebSocket.
+                                    </p>
+                                    <ol className="text-xs text-slate-400 flex flex-col gap-2 list-decimal list-inside">
+                                        <li>Copia la URL del overlay que deseas usar desde la galería de arriba</li>
+                                        <li>En OBS, añade una nueva fuente <span className="text-white font-bold">&quot;Browser&quot;</span></li>
+                                        <li>Pega la URL y configura las dimensiones indicadas en cada tarjeta</li>
+                                        <li>En CSS personalizado: <span className="font-mono text-slate-300 bg-slate-900/60 px-2 py-0.5 rounded">body {'{'} background: transparent !important; {'}'}</span></li>
+                                        <li>Activa <em className="text-white">&quot;Shutdown source when not visible&quot;</em></li>
+                                        <li>Activa <em className="text-white">&quot;Refresh browser when scene becomes active&quot;</em></li>
+                                    </ol>
+                                    <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-2 text-xs">
+                                        <span className="font-bold text-amber-400">💡 Pro tip:</span>
+                                        <span className="text-amber-200/80 ml-1">Puedes mezclar múltiples overlays en diferentes escenas de OBS para control total de lo que se muestra.</span>
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>

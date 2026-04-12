@@ -11,9 +11,10 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { GameBoxscoreDto } from '@/types/boxscore';
 import { ScorebookTable } from '@/components/ScorebookTable';
 import api from '@/lib/api';
-import { Users, LayoutDashboard, Radio, Trophy, Printer } from 'lucide-react';
+import { Users, LayoutDashboard, Radio, Trophy, Printer, Layers } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import { isLoggedIn, getUser } from '@/lib/auth';
+import { openOBSStreamDeck } from '@/lib/openOBSStreamDeck';
 import StreamAdminPanel from '@/components/live/StreamAdminPanel';
 import TeamLineupCard from '@/components/live/TeamLineupCard';
 import PitchingBoxscore from '@/components/live/PitchingBoxscore';
@@ -330,7 +331,7 @@ export default function ScorekeeperLivePanel() {
             <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white flex flex-col gap-0">
 
                 {/* Sub-Navigation Tabs — arriba */}
-                <div className="flex justify-center py-3 px-3 gap-0">
+                <div className="flex justify-center py-3 px-3 gap-3 flex-wrap">
                     <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-700/40 p-1 rounded-xl shadow-lg inline-flex flex-wrap sm:flex-nowrap justify-center gap-1">
                         <button
                             onClick={() => setActiveTab('alineaciones')}
@@ -351,6 +352,14 @@ export default function ScorekeeperLivePanel() {
                             <Radio className="w-4 h-4" /> Stream
                         </button>
                     </div>
+                    <button
+                        onClick={() => openOBSStreamDeck(params.id as string)}
+                        className="bg-fuchsia-500/10 border border-fuchsia-500/40 text-fuchsia-300 hover:bg-fuchsia-500/20 rounded-xl shadow-lg inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 text-xs sm:text-sm font-black uppercase tracking-wider transition-all"
+                        title="Abre o reenfoca el Stream Deck en una ventana flotante independiente"
+                    >
+                        <Layers className="w-4 h-4" />
+                        Stream Deck ↗
+                    </button>
                 </div>
 
                 {/* ScoreCard — debajo de los tabs */}

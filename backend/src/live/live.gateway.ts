@@ -139,8 +139,9 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const overlayToken = typeof payload === 'string' ? undefined : payload?.overlayToken;
     const auth = this.verifySocketAuth(client, typeof payload === 'string' ? undefined : payload?.token);
     const hasOverlayAccess = this.verifyOverlayAccessToken(overlayToken, gameId);
+    const hasPublicReadAccess = !auth && !hasOverlayAccess;
 
-    if (!gameId || (!auth && !hasOverlayAccess)) {
+    if (!gameId || (!auth && !hasOverlayAccess && !hasPublicReadAccess)) {
       throw new WsException('Unauthorized');
     }
 
@@ -166,8 +167,9 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const overlayToken: string | undefined = typeof payload === 'string' ? undefined : payload?.overlayToken;
     const auth = this.verifySocketAuth(client, payload?.token);
     const hasOverlayAccess = this.verifyOverlayAccessToken(overlayToken, gameId);
+    const hasPublicReadAccess = !auth && !hasOverlayAccess;
 
-    if (!gameId || (!auth && !hasOverlayAccess)) {
+    if (!gameId || (!auth && !hasOverlayAccess && !hasPublicReadAccess)) {
       throw new WsException('Unauthorized');
     }
 
